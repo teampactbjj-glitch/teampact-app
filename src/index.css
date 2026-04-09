@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { direction: rtl; }
+body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; }
+#root { min-height: 100vh; }

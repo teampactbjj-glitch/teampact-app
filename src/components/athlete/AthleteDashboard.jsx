@@ -1,0 +1,261 @@
+import { useEffect, useState } from 'react'
+import { supabase } from '../../lib/supabase'
+
+const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
+const SUBSCRIPTION_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
+const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
+
+// Find the next occurrence of a recurring class (day_of_week + start_time)
+// Returns { daysUntil, displayDay, displayTime }
+function resolveNextOccurrence(cls) {
+  const now = new Date()
+  const todayDow = now.getDay()
+  const [h, m] = (cls.start_time || '00:00').split(':').map(Number)
+  const classDow = typeof cls.day_of_week === 'number' ? cls.day_of_week : 0
+
+  let daysUntil = (classDow - todayDow + 7) % 7
+  // If it's today but the class already passed, push to next week
+  if (daysUntil === 0) {
+    const nowMins = now.getHours() * 60 + now.getMinutes()
+    const classMins = h * 60 + m
+    if (classMins <= nowMins) daysUntil = 7
+  }
+
+  const nextDate = new Date(now)
+  nextDate.setDate(now.getDate() + daysUntil)
+  nextDate.setHours(h, m, 0, 0)
+
+  const displayDay = daysUntil === 0 ? 'היום' : daysUntil === 1 ? 'מחר' : `יום ${DAYS_HE[classDow]}`
+  const displayTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+
+  return { daysUntil, displayDay, displayTime, nextDate }
+}
+
+export default function AthleteDashboard({ profile }) {
+  const [nextClass, setNextClass] = useState(null)
+  const [isCheckedIn, setIsCheckedIn] = useState(false)
+  const [weeklyCheckins, setWeeklyCheckins] = useState(0)
+  const [announcements, setAnnouncements] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [checkinLoading, setCheckinLoading] = useState(false)
+
+  const limit = SUBSCRIPTION_LIMITS[profile?.subscription_type] ?? 2
+
+  useEffect(() => {
+    if (profile?.id) {
+      fetchNextClass()
+      fetchAnnouncements()
+      fetchWeeklyCheckins()
+    }
+  }, [profile])
+
+  async function fetchNextClass() {
+    setLoading(true)
+
+    // 1. Get athlete's member record to read group_ids
+    const { data: member, error: memberErr } = await supabase
+      .from('members')
+      .select('group_ids, group_id')
+      .eq('id', profile.id)
+      .maybeSingle()
+
+    if (memberErr) console.error('fetchMember error:', memberErr)
+
+    const groupIds = member?.group_ids || (member?.group_id ? [member.group_id] : [])
+    console.log('athlete group_ids:', groupIds)
+
+    if (groupIds.length === 0) {
+      setNextClass(null)
+      setLoading(false)
+      return
+    }
+
+    // 2. Fetch all classes the athlete belongs to
+    const { data: classes, error: classErr } = await supabase
+      .from('classes')
+      .select('*')
+      .in('id', groupIds)
+
+    if (classErr) console.error('fetchClasses error:', classErr)
+    console.log('athlete classes:', classes)
+
+    if (!classes || classes.length === 0) {
+      setNextClass(null)
+      setLoading(false)
+      return
+    }
+
+    // 3. Find the soonest next occurrence across all classes
+    const withNext = classes.map(cls => ({ cls, ...resolveNextOccurrence(cls) }))
+    withNext.sort((a, b) => a.daysUntil - b.daysUntil || a.nextDate - b.nextDate)
+    const soonest = withNext[0]
+
+    setNextClass({ ...soonest.cls, displayDay: soonest.displayDay, displayTime: soonest.displayTime })
+
+    // 4. Check if already checked in today for this class
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0)
+    const todayEnd   = new Date(); todayEnd.setHours(23,59,59,999)
+    const { data: chk } = await supabase
+      .from('checkins')
+      .select('id')
+      .eq('class_id', soonest.cls.id)
+      .eq('athlete_id', profile.id)
+      .gte('checked_in_at', todayStart.toISOString())
+      .lte('checked_in_at', todayEnd.toISOString())
+      .maybeSingle()
+
+    setIsCheckedIn(!!chk)
+    setLoading(false)
+  }
+
+  async function fetchWeeklyCheckins() {
+    const weekStart = new Date()
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+    weekStart.setHours(0, 0, 0, 0)
+
+    const { count } = await supabase
+      .from('checkins')
+      .select('id', { count: 'exact', head: true })
+      .eq('athlete_id', profile.id)
+      .gte('checked_in_at', weekStart.toISOString())
+
+    setWeeklyCheckins(count || 0)
+  }
+
+  async function fetchAnnouncements() {
+    const { data } = await supabase
+      .from('announcements')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10)
+    setAnnouncements(data || [])
+  }
+
+  async function handleCheckin() {
+    if (!nextClass) return
+    if (weeklyCheckins >= limit && !isCheckedIn) {
+      alert(`הגעת למגבלת ${limit} אימונים השבוע`)
+      return
+    }
+    setCheckinLoading(true)
+    if (isCheckedIn) {
+      await supabase.from('checkins').delete()
+        .eq('class_id', nextClass.id).eq('athlete_id', profile.id)
+      setIsCheckedIn(false)
+      setWeeklyCheckins(p => p - 1)
+    } else {
+      await supabase.from('checkins').insert({ class_id: nextClass.id, athlete_id: profile.id })
+      setIsCheckedIn(true)
+      setWeeklyCheckins(p => p + 1)
+    }
+    setCheckinLoading(false)
+  }
+
+  const usagePercent = limit === Infinity ? 0 : Math.min((weeklyCheckins / limit) * 100, 100)
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-emerald-700 text-white px-6 py-4 flex items-center justify-between shadow">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">💪</span>
+          <div>
+            <h1 className="font-bold text-lg leading-none">TeamPact</h1>
+            <p className="text-emerald-200 text-xs">שלום, {profile?.full_name}</p>
+          </div>
+        </div>
+        <button onClick={() => supabase.auth.signOut()} className="text-emerald-200 hover:text-white text-sm">
+          יציאה
+        </button>
+      </header>
+
+      <main className="p-4 max-w-lg mx-auto space-y-4">
+        {/* Subscription card */}
+        <div className="bg-white rounded-xl border shadow-sm p-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-medium text-gray-700">
+              מנוי: {SUBSCRIPTION_LABELS[profile?.subscription_type] || '—'}
+            </span>
+            <span className="text-sm text-gray-500">
+              {limit === Infinity ? 'ללא הגבלה' : `${weeklyCheckins}/${limit} השבוע`}
+            </span>
+          </div>
+          {limit !== Infinity && (
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${usagePercent >= 100 ? 'bg-red-500' : 'bg-emerald-500'}`}
+                style={{ width: `${usagePercent}%` }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Next class card */}
+        <div className="bg-white rounded-xl border shadow-sm p-5">
+          <h2 className="font-bold text-gray-800 mb-3">האימון הבא שלך</h2>
+          {loading ? (
+            <p className="text-gray-400 text-sm text-center py-4">טוען...</p>
+          ) : !nextClass ? (
+            <div className="text-center py-6 text-gray-400">
+              <div className="text-3xl mb-2">📅</div>
+              <p className="text-sm">אין אימונים קרובים</p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-lg font-semibold text-gray-800">{nextClass.name || nextClass.title}</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {nextClass.displayDay} · {nextClass.displayTime}
+              </p>
+              {nextClass.duration_minutes && (
+                <p className="text-xs text-gray-400">{nextClass.duration_minutes} דקות</p>
+              )}
+
+              <button
+                onClick={handleCheckin}
+                disabled={checkinLoading || (weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity)}
+                className={`mt-4 w-full py-3 rounded-xl font-semibold text-white transition disabled:opacity-50 ${
+                  isCheckedIn
+                    ? 'bg-green-500 hover:bg-green-600'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+              >
+                {checkinLoading ? '...' : isCheckedIn ? '✓ בוצע צ\'ק-אין — ביטול?' : 'צ\'ק-אין לאימון'}
+              </button>
+
+              {weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity && (
+                <p className="text-xs text-red-500 text-center mt-2">הגעת למגבלת האימונים השבועית</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Announcements */}
+        <div>
+          <h2 className="font-bold text-gray-800 mb-3">הודעות וסמינרים</h2>
+          {announcements.length === 0 ? (
+            <p className="text-gray-400 text-sm text-center py-4">אין הודעות</p>
+          ) : (
+            <ul className="space-y-3">
+              {announcements.map(item => (
+                <li key={item.id} className="bg-white rounded-xl border px-4 py-3 shadow-sm">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                      {item.type === 'seminar' ? '🎓 סמינר' : '📢 הודעה'}
+                    </span>
+                    {item.event_date && (
+                      <span className="text-xs text-emerald-600 font-medium">
+                        {new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
+                      </span>
+                    )}
+                  </div>
+                  <p className="font-semibold text-gray-800 text-sm">{item.title}</p>
+                  {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </main>
+    </div>
+  )
+}

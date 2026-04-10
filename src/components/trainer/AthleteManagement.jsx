@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import ImportAthletes from './ImportAthletes'
 
 const BRANCH_ID = '11111111-1111-1111-1111-111111111111'
 
@@ -214,12 +215,15 @@ export default function AthleteManagement({ trainerId, isAdmin }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-800">ניהול מתאמנים</h2>
-        <button
-          onClick={openAdd}
-          className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700"
-        >
-          + הוסף מתאמן
-        </button>
+        <div className="flex gap-2">
+          <ImportAthletes onImported={fetchAthletes} />
+          <button
+            onClick={openAdd}
+            className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700"
+          >
+            + הוסף מתאמן
+          </button>
+        </div>
       </div>
 
       <input

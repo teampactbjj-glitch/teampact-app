@@ -52,17 +52,18 @@ export default function AthleteDashboard({ profile }) {
   async function fetchNextClass() {
     setLoading(true)
 
-    // 1. Get athlete's member record to read group_ids
+    // 1. Get athlete's member record to read group_ids + branch_id
     const { data: member, error: memberErr } = await supabase
       .from('members')
-      .select('group_ids, group_id')
+      .select('group_ids, group_id, branch_id')
       .eq('id', profile.id)
       .maybeSingle()
 
     if (memberErr) console.error('fetchMember error:', memberErr)
 
     const groupIds = member?.group_ids || (member?.group_id ? [member.group_id] : [])
-    console.log('athlete group_ids:', groupIds)
+    const branchId = member?.branch_id
+    console.log('athlete group_ids:', groupIds, 'branch_id:', branchId)
 
     if (groupIds.length === 0) {
       setNextClass(null)
@@ -70,11 +71,10 @@ export default function AthleteDashboard({ profile }) {
       return
     }
 
-    // 2. Fetch all classes the athlete belongs to
-    const { data: classes, error: classErr } = await supabase
-      .from('classes')
-      .select('*')
-      .in('id', groupIds)
+    // 2. Fetch classes filtered by group_ids AND branch_id
+    let query = supabase.from('classes').select('*').in('id', groupIds)
+    if (branchId) query = query.eq('branch_id', branchId)
+    const { data: classes, error: classErr } = await query
 
     if (classErr) console.error('fetchClasses error:', classErr)
     console.log('athlete classes:', classes)

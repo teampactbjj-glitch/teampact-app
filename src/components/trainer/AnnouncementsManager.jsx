@@ -11,7 +11,9 @@ const EMPTY_FORM = { title: '', content: '', type: 'general', event_date: '', pr
 
 export default function AnnouncementsManager({ trainerId }) {
   const [items, setItems] = useState([])
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useState(() => {
+    return localStorage.getItem('announcementFormOpen') === 'true'
+  })
   const [form, setForm] = useState(() => {
     try {
       const saved = localStorage.getItem('announcementDraft')
@@ -23,6 +25,10 @@ export default function AnnouncementsManager({ trainerId }) {
   useEffect(() => {
     try { localStorage.setItem('announcementDraft', JSON.stringify(form)) } catch {}
   }, [form])
+
+  useEffect(() => {
+    localStorage.setItem('announcementFormOpen', showForm)
+  }, [showForm])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { fetchAnnouncements() }, [])
@@ -69,6 +75,8 @@ export default function AnnouncementsManager({ trainerId }) {
     setForm(EMPTY_FORM)
     setEditingId(null)
     setShowForm(false)
+    localStorage.removeItem('announcementDraft')
+    localStorage.removeItem('announcementFormOpen')
   }
 
   async function deleteItem(id) {

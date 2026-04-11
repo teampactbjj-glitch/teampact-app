@@ -42,6 +42,7 @@ function computeNextClass(allClasses, regIds) {
 export default function AthleteDashboard({ profile }) {
   const [branchId, setBranchId] = useState(null)
   const [subType, setSubType] = useState(null)
+  const [membershipEnd, setMembershipEnd] = useState(null)
   const [classes, setClasses] = useState([])
   const [registeredIds, setRegisteredIds] = useState(new Set())
   const [nextClass, setNextClass] = useState(null)
@@ -56,32 +57,52 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAll() {
     setLoading(true)
 
-    // 1. Get branch_id from profiles (reliable — tied to auth.uid)
-    const { data: profileData, error: profileErr } = await supabase
+    // 1. profiles → branch_id (columns: id, full_name, role, branch_id, is_admin, created_at)
+    const { data: profileRow, error: profileErr } = await supabase
       .from('profiles')
-      .select('branch_id, subscription_type')
+      .select('branch_id')
       .eq('id', profile.id)
       .maybeSingle()
 
-    console.log('profiles row:', profileData, 'error:', profileErr)
-
-    const bid = profileData?.branch_id
-    const stype = profileData?.subscription_type || profile?.subscription_type
+    console.log('profiles:', profileRow, profileErr)
+    const bid = profileRow?.branch_id
     setBranchId(bid)
-    setSubType(stype)
-    console.log('branch_id:', bid, 'subscription_type:', stype)
 
-    // 2. Parallel fetches
+    // 2. members → subscription_type, membership_end (columns include email, branch_id, subscription_type, membership_end)
+    const { data: memberRow, error: memberErr } = await supabase
+      .from('members')
+      .select('subscription_type, membership_type, membership_end')
+      .eq('branch_id', bid)
+      .eq('email', profile.email)
+      .maybeSingle()
+
+    console.log('members:', memberRow, memberErr)
+    setSubType(memberRow?.subscription_type || memberRow?.membership_type || null)
+    setMembershipEnd(memberRow?.membership_end || null)
+
+    // 3 & 4. classes + registrations + announcements (parallel)
     const [classRes, regRes, annRes] = await Promise.all([
       bid
-        ? supabase.from('classes').select('*').eq('branch_id', bid).order('day_of_week').order('start_time')
+        ? supabase
+            .from('classes')
+            .select('id, name, day_of_week, start_time, end_time, class_type, level, hall')
+            .eq('branch_id', bid)
+            .order('day_of_week')
+            .order('start_time')
         : Promise.resolve({ data: [], error: null }),
-      supabase.from('class_registrations').select('class_id').eq('athlete_id', profile.id),
-      supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(10),
+      supabase
+        .from('class_registrations')
+        .select('class_id')
+        .eq('athlete_id', profile.id),
+      supabase
+        .from('announcements')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10),
     ])
 
-    console.log('classes:', classRes.data, 'error:', classRes.error)
-    console.log('registrations:', regRes.data, 'error:', regRes.error)
+    console.log('classes:', classRes.data, classRes.error)
+    console.log('registrations:', regRes.data, regRes.error)
 
     const allClasses = classRes.data || []
     const regIds = new Set((regRes.data || []).map(r => r.class_id))
@@ -207,7 +228,7 @@ export default function AthleteDashboard({ profile }) {
                                 <p className="font-semibold text-gray-800 text-sm">{cls.name}</p>
                                 <p className="text-xs text-gray-500 mt-0.5">
                                   {formatTime(cls.start_time)}
-                                  {cls.duration_minutes && ` · ${cls.duration_minutes} דקות`}
+                                  {cls.end_time && ` — ${formatTime(cls.end_time)}`}
                                   {cls.hall && ` · ${cls.hall}`}
                                 </p>
                               </div>
@@ -244,10 +265,10 @@ export default function AthleteDashboard({ profile }) {
                 </div>
               ) : (
                 <div>
-                  <p className="text-lg font-semibold text-gray-800">{nextClass.name || nextClass.title}</p>
+                  <p className="text-lg font-semibold text-gray-800">{nextClass.name}</p>
                   <p className="text-sm text-gray-500 mt-1">{nextClass.displayDay} · {nextClass.displayTime}</p>
-                  {nextClass.duration_minutes && (
-                    <p className="text-xs text-gray-400">{nextClass.duration_minutes} דקות</p>
+                  {nextClass.end_time && (
+                    <p className="text-xs text-gray-400">עד {formatTime(nextClass.end_time)}</p>
                   )}
                   {nextClass.hall && (
                     <p className="text-xs text-gray-400">{nextClass.hall}</p>

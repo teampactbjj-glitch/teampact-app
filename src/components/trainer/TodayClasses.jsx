@@ -42,6 +42,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
   const [expanded, setExpanded] = useState(null)
   // classData[classId] = { members: [...], checkedIds: Set, absentIds: Set, weeklyCount: {memberId: n}, loading: bool }
   const [classData, setClassData] = useState({})
+  const [memberCounts, setMemberCounts] = useState({}) // { classId: number }
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [newClass, setNewClass] = useState({ name: '', start_time: '', duration_minutes: 60 })
@@ -78,10 +79,12 @@ export default function TodayClasses({ trainerId, isAdmin }) {
         .order('start_time')
 
       if (error) console.error('fetchTodayClasses error:', error)
-      setClasses((data || []).map(cls => ({
+      const mapped = (data || []).map(cls => ({
         ...cls,
         branchName: cls.branches?.name || cls.branch_id || '',
-      })))
+      }))
+      setClasses(mapped)
+      fetchMemberCounts(mapped.map(c => c.id))
       setLoading(false)
       return
     }
@@ -106,11 +109,26 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       .order('start_time')
 
     if (error) console.error('fetchTodayClasses error:', error)
-    setClasses((data || []).map(cls => ({
+    const mapped = (data || []).map(cls => ({
       ...cls,
       branchName: coachBranchMap[cls.coach_id] || '',
-    })))
+    }))
+    setClasses(mapped)
+    fetchMemberCounts(mapped.map(c => c.id))
     setLoading(false)
+  }
+
+  async function fetchMemberCounts(classIds) {
+    if (!classIds.length) return
+    // Pre-fill all with 0 so classes with no members still show a badge
+    const counts = Object.fromEntries(classIds.map(id => [id, 0]))
+    const { data, error } = await supabase
+      .from('member_classes')
+      .select('class_id')
+      .in('class_id', classIds)
+    if (error) { console.error('fetchMemberCounts error:', error); return }
+    ;(data || []).forEach(r => { counts[r.class_id] = (counts[r.class_id] || 0) + 1 })
+    setMemberCounts(counts)
   }
 
   async function fetchClassDetails(classId) {
@@ -167,6 +185,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       ...prev,
       [classId]: { members, checkedIds, absentIds, weeklyCount, loading: false },
     }))
+    setMemberCounts(prev => ({ ...prev, [classId]: members.length }))
   }
 
   async function markPresent(classId, memberId, membershipType) {
@@ -395,11 +414,15 @@ export default function TodayClasses({ trainerId, isAdmin }) {
                 <p className="text-sm text-gray-500">{formatTime(cls.start_time)} · {cls.duration_minutes} דקות</p>
               </div>
               <div className="flex items-center gap-2">
-                {data && !data.loading && (
+                {data && !data.loading ? (
                   <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
                     {presentCount}/{totalCount} נוכחים
                   </span>
-                )}
+                ) : cls.id in memberCounts ? (
+                  <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                    {memberCounts[cls.id]} רשומים
+                  </span>
+                ) : null}
                 <span className="text-gray-400">{isOpen ? '▲' : '▼'}</span>
               </div>
             </button>

@@ -6,10 +6,10 @@ import ProductRequests from './ProductRequests'
 import { supabase } from '../../lib/supabase'
 
 const TABS = [
-  { id: 'classes', label: 'היום' },
-  { id: 'athletes', label: 'מתאמנים' },
-  { id: 'announcements', label: 'הודעות' },
-  { id: 'products', label: 'בקשות 📦' },
+  { id: 'classes', icon: '📅', label: 'היום' },
+  { id: 'athletes', icon: '👥', label: 'מתאמנים' },
+  { id: 'announcements', icon: '📢', label: 'הודעות' },
+  { id: 'products', icon: '📦', label: 'בקשות' },
 ]
 
 export default function TrainerDashboard({ profile, isAdmin }) {
@@ -63,18 +63,19 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </header>
 
       {console.log('TrainerDashboard render — tab:', tab, 'pendingCount:', pendingCount)}
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', background:'white', borderBottom:'1px solid #e5e7eb'}}>
+      <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', background:'white', borderBottom:'1px solid #e5e7eb'}}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => handleTabChange(t.id)}
-            style={{padding:'10px', fontSize:'13px', fontWeight:'500', textAlign:'center',
+            style={{padding:'8px 2px', textAlign:'center',
               borderBottom: tab === t.id ? '2px solid #1d4ed8' : '2px solid transparent',
               color: tab === t.id ? '#1d4ed8' : '#6b7280', background:'none', cursor:'pointer',
-              position:'relative'}}>
-            {t.label}
+              position:'relative', display:'flex', flexDirection:'column', alignItems:'center', gap:'2px'}}>
+            <span style={{fontSize:'18px', lineHeight:'1'}}>{t.icon}</span>
+            <span style={{fontSize:'11px', fontWeight:'500'}}>{t.label}</span>
             {t.id === 'products' && pendingCount > 0 &&
-              <span style={{position:'absolute', top:'6px', right:'6px', background:'red', color:'white',
-                borderRadius:'50%', width:'16px', height:'16px', fontSize:'10px', display:'flex',
-                alignItems:'center', justifyContent:'center'}}>{pendingCount}</span>}
+              <span style={{position:'absolute', top:'4px', right:'8px', background:'red', color:'white',
+                borderRadius:'50%', width:'15px', height:'15px', fontSize:'9px', display:'flex',
+                alignItems:'center', justifyContent:'center', fontWeight:'bold'}}>{pendingCount}</span>}
           </button>
         ))}
       </div>

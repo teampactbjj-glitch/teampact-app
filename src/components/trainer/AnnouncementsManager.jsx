@@ -27,6 +27,11 @@ export default function AnnouncementsManager({ trainerId }) {
   const [editingId, setEditingId] = useState(null)
 
   useEffect(() => {
+    localStorage.removeItem('announcementDraft')
+    localStorage.removeItem('announcementFormOpen')
+  }, [])
+
+  useEffect(() => {
     try { localStorage.setItem('announcementDraft', JSON.stringify(form)) } catch {}
   }, [form])
 

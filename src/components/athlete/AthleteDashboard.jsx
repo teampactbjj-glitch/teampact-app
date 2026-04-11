@@ -58,12 +58,21 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAll() {
     setLoading(true)
 
-    // 1. Member record
-    const { data: memberData, error: memberErr } = await supabase
+    // 1. Member record — lookup by user_id (auth UUID) with email fallback
+    let { data: memberData, error: memberErr } = await supabase
       .from('members')
       .select('branch_id, subscription_type, membership_type')
-      .eq('email', profile.email)
+      .eq('user_id', profile.id)
       .maybeSingle()
+
+    // Fallback: Excel-imported members may not have user_id set — try email
+    if (!memberData && profile.email) {
+      ;({ data: memberData, error: memberErr } = await supabase
+        .from('members')
+        .select('branch_id, subscription_type, membership_type')
+        .eq('email', profile.email)
+        .maybeSingle())
+    }
 
     console.log('member:', memberData, 'error:', memberErr)
     setMember(memberData)

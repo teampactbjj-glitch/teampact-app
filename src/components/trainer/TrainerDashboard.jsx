@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import TodayClasses from './TodayClasses'
 import AthleteManagement from './AthleteManagement'
 import AnnouncementsManager from './AnnouncementsManager'
@@ -15,6 +15,19 @@ const TABS = [
 export default function TrainerDashboard({ profile, isAdmin }) {
   const [tab, setTab] = useState(() => localStorage.getItem('trainerTab') || 'classes')
   const [pendingCount, setPendingCount] = useState(0)
+
+  useEffect(() => {
+    fetchPendingCount()
+  }, [])
+
+  async function fetchPendingCount() {
+    const { count, error } = await supabase
+      .from('product_requests')
+      .select('*', { count: 'exact', head: true })
+      .neq('status', 'done')
+    if (error) console.error('fetchPendingCount error:', error)
+    setPendingCount(count || 0)
+  }
 
   function handleTabChange(id) {
     setTab(id)
@@ -82,7 +95,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
           <AnnouncementsManager trainerId={profile?.id} />
         </div>
         <div className={tab === 'products' ? '' : 'hidden'}>
-          <ProductRequests onPendingCount={setPendingCount} />
+          <ProductRequests onMarkedDone={fetchPendingCount} />
         </div>
       </main>
     </div>

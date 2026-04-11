@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
-export default function ProductRequests({ onPendingCount }) {
+export default function ProductRequests({ onMarkedDone }) {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [markingId, setMarkingId] = useState(null)
@@ -18,28 +18,19 @@ export default function ProductRequests({ onPendingCount }) {
       .order('created_at', { ascending: false })
     console.log('product_requests data:', data, 'error:', error)
     const rows = data || []
-    console.log('product_requests rows:', rows.map(r => ({ id: r.id, status: r.status, name: r.product_name })))
     setRequests(rows)
-    const pendingN = rows.filter(r => r.status !== 'done').length
-    console.log('pendingCount:', pendingN)
-    onPendingCount?.(pendingN)
     setLoading(false)
   }
 
   async function markDone(id) {
     setMarkingId(id)
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('product_requests')
       .update({ status: 'done' })
       .eq('id', id)
-      .select()
-    console.log('markDone result:', data, 'error:', error)
     if (error) { console.error('markDone error:', error); setMarkingId(null); return }
-    setRequests(prev => {
-      const updated = prev.map(r => r.id === id ? { ...r, status: 'done' } : r)
-      onPendingCount?.(updated.filter(r => r.status === 'pending').length)
-      return updated
-    })
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'done' } : r))
+    onMarkedDone?.()
     setMarkingId(null)
   }
 

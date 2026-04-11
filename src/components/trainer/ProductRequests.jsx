@@ -18,9 +18,9 @@ export default function ProductRequests({ onPendingCount }) {
       .order('created_at', { ascending: false })
     console.log('product_requests data:', data, 'error:', error)
     const rows = data || []
-    console.log('statuses:', rows.map(r => ({ id: r.id, status: r.status })))
+    console.log('product_requests rows:', rows.map(r => ({ id: r.id, status: r.status, name: r.product_name })))
     setRequests(rows)
-    const pendingN = rows.filter(r => r.status === 'pending').length
+    const pendingN = rows.filter(r => r.status !== 'done').length
     console.log('pendingCount:', pendingN)
     onPendingCount?.(pendingN)
     setLoading(false)
@@ -43,7 +43,7 @@ export default function ProductRequests({ onPendingCount }) {
     setMarkingId(null)
   }
 
-  const pending = requests.filter(r => r.status === 'pending')
+  const pending = requests.filter(r => r.status !== 'done')
   const done = requests.filter(r => r.status === 'done')
 
   return (
@@ -65,7 +65,7 @@ export default function ProductRequests({ onPendingCount }) {
       ) : (
         <ul className="space-y-2">
           {requests.map(req => {
-            const isDone = req.status === 'done'
+            const isDone = req.status === 'done' // pending / null / anything else → show button
             return (
               <li
                 key={req.id}

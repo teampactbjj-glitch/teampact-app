@@ -63,25 +63,28 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </header>
 
       {console.log('TrainerDashboard render — tab:', tab, 'pendingCount:', pendingCount)}
-      <nav className="bg-white border-b grid grid-cols-4">
+      <nav style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', borderBottom:'1px solid #e5e7eb', background:'white'}}>
         {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => handleTabChange(t.id)}
-            className={`py-3 text-sm font-medium transition ${
-              tab === t.id
-                ? 'text-blue-700 border-b-2 border-blue-700'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
+            style={{
+              padding:'12px 4px',
+              fontSize:'11px',
+              fontWeight:'500',
+              textAlign:'center',
+              borderBottom: tab === t.id ? '2px solid #1d4ed8' : 'none',
+              color: tab === t.id ? '#1d4ed8' : '#6b7280',
+              background:'none',
+              cursor:'pointer'
+            }}
           >
-            <span className="inline-flex items-center justify-center gap-1">
-              {t.label}
-              {t.id === 'products' && pendingCount > 0 && (
-                <span className="inline-flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 px-1 leading-none">
-                  {pendingCount}
-                </span>
-              )}
-            </span>
+            {t.label}
+            {t.id === 'products' && pendingCount > 0 && (
+              <span style={{background:'red',color:'white',borderRadius:'9999px',fontSize:'10px',padding:'0 4px',marginRight:'4px'}}>
+                {pendingCount}
+              </span>
+            )}
           </button>
         ))}
       </nav>

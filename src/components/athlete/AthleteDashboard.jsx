@@ -365,7 +365,6 @@ export default function AthleteDashboard({ profile }) {
           </>
         )}
       </main>
-    </div>
 
       {/* Product modal */}
       {productModal && (
@@ -417,5 +416,6 @@ export default function AthleteDashboard({ profile }) {
           </div>
         </div>
       )}
+    </div>
   )
 }

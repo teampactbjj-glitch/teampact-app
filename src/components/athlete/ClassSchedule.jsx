@@ -18,19 +18,24 @@ export default function ClassSchedule({ profile, member }) {
   const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
 
   useEffect(() => {
+    console.log('ClassSchedule effect — member:', member, 'profile.id:', profile?.id)
     if (member?.branch_id) {
-      fetchSchedule()
+      fetchSchedule(member.branch_id)
+    } else {
+      // member arrived as null (still loading in parent) — keep waiting
+      setLoading(true)
     }
-  }, [member])
+  }, [member?.branch_id])
 
-  async function fetchSchedule() {
+  async function fetchSchedule(branchId) {
     setLoading(true)
+    console.log('fetchSchedule — branch_id:', branchId, 'athlete_id:', profile.id)
 
     const [{ data: classData, error: classErr }, { data: regData, error: regErr }] = await Promise.all([
       supabase
         .from('classes')
         .select('id, name, day_of_week, start_time, duration_minutes, hall, class_type')
-        .eq('branch_id', member.branch_id)
+        .eq('branch_id', branchId)
         .order('day_of_week')
         .order('start_time'),
       supabase
@@ -39,8 +44,8 @@ export default function ClassSchedule({ profile, member }) {
         .eq('athlete_id', profile.id),
     ])
 
-    if (classErr) console.error('fetchSchedule classes error:', classErr)
-    if (regErr) console.error('fetchSchedule registrations error:', regErr)
+    console.log('classes result:', classData, classErr)
+    console.log('registrations result:', regData, regErr)
 
     setClasses(classData || [])
     setRegisteredIds(new Set((regData || []).map(r => r.class_id)))

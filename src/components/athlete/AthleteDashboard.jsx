@@ -227,9 +227,9 @@ export default function AthleteDashboard({ profile }) {
                 <p className="text-sm">אין אימונים קרובים</p>
                 <button
                   onClick={() => setTab('schedule')}
-                  className="mt-3 text-sm text-emerald-600 hover:underline"
+                  className="mt-4 w-full py-3 rounded-xl font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition flex items-center justify-center gap-2"
                 >
-                  הירשם לשיעורים בלוח השיעורים
+                  📅 הירשם לשיעורים
                 </button>
               </div>
             ) : (

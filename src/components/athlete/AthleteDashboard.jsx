@@ -50,6 +50,7 @@ export default function AthleteDashboard({ profile }) {
   }, [profile])
 
   async function fetchNextClass() {
+    console.log('profile:', profile)
     setLoading(true)
 
     // 1. Get athlete's member record to read group_ids + branch_id

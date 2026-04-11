@@ -63,12 +63,12 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </header>
 
       {console.log('TrainerDashboard render — tab:', tab, 'pendingCount:', pendingCount)}
-      <nav className="bg-white border-b flex">
+      <nav className="bg-white border-b flex overflow-x-auto">
         {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => handleTabChange(t.id)}
-            className={`flex-1 py-3 text-sm font-medium transition ${
+            className={`flex-1 py-3 text-sm font-medium transition whitespace-nowrap shrink-0 ${
               tab === t.id
                 ? 'text-blue-700 border-b-2 border-blue-700'
                 : 'text-gray-500 hover:text-gray-700'

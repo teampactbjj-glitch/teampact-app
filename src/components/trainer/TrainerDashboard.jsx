@@ -62,9 +62,15 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </nav>
 
       <main className="p-4 max-w-3xl mx-auto">
-        {tab === 'classes' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />}
-        {tab === 'athletes' && <AthleteManagement trainerId={profile?.id} isAdmin={isAdmin} />}
-        {tab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} />}
+        <div className={tab === 'classes' ? '' : 'hidden'}>
+          <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />
+        </div>
+        <div className={tab === 'athletes' ? '' : 'hidden'}>
+          <AthleteManagement trainerId={profile?.id} isAdmin={isAdmin} />
+        </div>
+        <div className={tab === 'announcements' ? '' : 'hidden'}>
+          <AnnouncementsManager trainerId={profile?.id} />
+        </div>
       </main>
     </div>
   )

@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import ImportAthletes from './ImportAthletes'
 
-const BRANCH_ID = '11111111-1111-1111-1111-111111111111'
+const BRANCHES = [
+  { id: '11111111-1111-1111-1111-111111111111', name: 'חולון' },
+  { id: '22222222-2222-2222-2222-222222222222', name: 'תל אביב' },
+]
 
 const MEMBERSHIP_LABELS = {
   '2x_week': '2× שבוע',
@@ -26,8 +29,9 @@ const EMPTY_FORM = {
   email: '',
   phone: '',
   membership_type: '2x_week',
-  group_ids: [], // array of selected class IDs
+  group_ids: [],
   active: true,
+  branch_id: BRANCHES[0].id,
 }
 
 export default function AthleteManagement({ trainerId, isAdmin }) {
@@ -41,16 +45,18 @@ export default function AthleteManagement({ trainerId, isAdmin }) {
 
   useEffect(() => {
     fetchAthletes()
-    fetchClasses()
   }, [trainerId, isAdmin])
 
-  async function fetchClasses() {
+  useEffect(() => {
+    fetchClasses(form.branch_id)
+  }, [form.branch_id])
+
+  async function fetchClasses(branchId) {
     const { data, error } = await supabase
       .from('classes')
       .select('id, name, day_of_week, start_time, hall, class_type')
-      .eq('branch_id', BRANCH_ID)
+      .eq('branch_id', branchId)
       .order('day_of_week')
-    console.log('fetchClasses result:', { data, error })
     if (error) console.error('fetchClasses error:', error)
     setClasses(data || [])
   }
@@ -140,7 +146,7 @@ export default function AthleteManagement({ trainerId, isAdmin }) {
       group_id: form.group_ids[0] || null,        // backwards compat
       group_name: selectedNames || null,
       active: form.active,
-      branch_id: BRANCH_ID,
+      branch_id: form.branch_id,
     }
     console.log('saving athlete:', payload)
 
@@ -172,13 +178,16 @@ export default function AthleteManagement({ trainerId, isAdmin }) {
 
   // When membership type changes, trim group_ids to new limit
   function handleMembershipChange(val) {
-    const limit = GROUP_LIMITS[val] ?? 1
     const newLimit = SESSION_LIMITS[val] ?? 2
     setForm(p => ({
       ...p,
       membership_type: val,
       group_ids: p.group_ids.slice(0, newLimit === Infinity ? undefined : newLimit),
     }))
+  }
+
+  function handleBranchChange(branchId) {
+    setForm(p => ({ ...p, branch_id: branchId, group_ids: [] }))
   }
 
   function startEdit(athlete) {
@@ -190,6 +199,7 @@ export default function AthleteManagement({ trainerId, isAdmin }) {
       membership_type: athlete.membership_type || athlete.subscription_type || '2x_week',
       group_ids: athlete.group_ids || (athlete.group_id ? [athlete.group_id] : []),
       active: athlete.active ?? true,
+      branch_id: athlete.branch_id || BRANCHES[0].id,
     })
     setEditing(athlete.id)
   }
@@ -238,6 +248,27 @@ export default function AthleteManagement({ trainerId, isAdmin }) {
           <h3 className="font-semibold text-gray-700">
             {editing === 'new' ? 'הוספת מתאמן' : 'עריכת מתאמן'}
           </h3>
+
+          {/* Branch selector */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">סניף</label>
+            <div className="flex gap-2">
+              {BRANCHES.map(b => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => handleBranchChange(b.id)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${
+                    form.branch_id === b.id
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                  }`}
+                >
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <input
             className="w-full border rounded-lg px-3 py-2 text-sm"

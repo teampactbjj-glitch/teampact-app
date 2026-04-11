@@ -17,7 +17,11 @@ export default function AnnouncementsManager({ trainerId }) {
   const [form, setForm] = useState(() => {
     try {
       const saved = localStorage.getItem('announcementDraft')
-      return saved ? JSON.parse(saved) : EMPTY_FORM
+      if (!saved) return EMPTY_FORM
+      const parsed = JSON.parse(saved)
+      const validTypes = ['general', 'seminar', 'product']
+      if (!validTypes.includes(parsed.type)) parsed.type = 'general'
+      return parsed
     } catch { return EMPTY_FORM }
   })
   const [editingId, setEditingId] = useState(null)

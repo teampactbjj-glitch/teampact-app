@@ -210,20 +210,23 @@ export default function AthleteDashboard({ profile }) {
                 <p className="text-xs text-gray-400">{nextClass.duration_minutes} דקות</p>
               )}
 
-              <button
-                onClick={handleCheckin}
-                disabled={checkinLoading || (weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity)}
-                className={`mt-4 w-full py-3 rounded-xl font-semibold text-white transition disabled:opacity-50 ${
-                  isCheckedIn
-                    ? 'bg-green-500 hover:bg-green-600'
-                    : 'bg-emerald-600 hover:bg-emerald-700'
-                }`}
-              >
-                {checkinLoading ? '...' : isCheckedIn ? '✓ בוצע צ\'ק-אין — ביטול?' : 'צ\'ק-אין לאימון'}
-              </button>
-
-              {weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity && (
-                <p className="text-xs text-red-500 text-center mt-2">הגעת למגבלת האימונים השבועית</p>
+              {weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity ? (
+                <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-center">
+                  <p className="text-sm font-semibold text-orange-700">הגעת למגבלת {limit} האימונים השבועיים</p>
+                  <p className="text-xs text-orange-500 mt-1">פנה למאמן להוספת אימון חריג</p>
+                </div>
+              ) : (
+                <button
+                  onClick={handleCheckin}
+                  disabled={checkinLoading}
+                  className={`mt-4 w-full py-3 rounded-xl font-semibold text-white transition disabled:opacity-50 ${
+                    isCheckedIn
+                      ? 'bg-green-500 hover:bg-green-600'
+                      : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  {checkinLoading ? '...' : isCheckedIn ? "✓ בוצע צ'ק-אין — ביטול?" : "צ'ק-אין לאימון"}
+                </button>
               )}
             </div>
           )}

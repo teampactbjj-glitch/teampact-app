@@ -2,41 +2,74 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
 const WEEKLY_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
+const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 
 function formatTime(timeStr) {
-  // timeStr can be "18:00:00" or "18:00"
   return timeStr ? timeStr.slice(0, 5) : ''
 }
 
-function getWeekRange() {
-  const now = new Date()
-  const day = now.getDay() // 0=Sun
-  const weekStart = new Date(now)
-  weekStart.setDate(now.getDate() - day)
-  weekStart.setHours(0, 0, 0, 0)
+function startOfDay(date) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function getWeekRange(refDate) {
+  const d = startOfDay(refDate || new Date())
+  const weekStart = new Date(d)
+  weekStart.setDate(d.getDate() - d.getDay())
   const weekEnd = new Date(weekStart)
   weekEnd.setDate(weekStart.getDate() + 6)
   weekEnd.setHours(23, 59, 59, 999)
   return { weekStart: weekStart.toISOString(), weekEnd: weekEnd.toISOString() }
 }
 
+function formatDateLabel(date) {
+  const today = startOfDay(new Date())
+  const d = startOfDay(date)
+  const diff = Math.round((d - today) / 86400000)
+  const dayName = `יום ${DAYS_HE[date.getDay()]}`
+  const dateStr = date.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })
+  if (diff === 0) return `היום · ${dayName} · ${dateStr}`
+  if (diff === 1) return `מחר · ${dayName} · ${dateStr}`
+  if (diff === -1) return `אתמול · ${dayName} · ${dateStr}`
+  return `${dayName} · ${dateStr}`
+}
+
 export default function TodayClasses({ trainerId, isAdmin }) {
+  const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
   const [classes, setClasses] = useState([])
   const [expanded, setExpanded] = useState(null)
-  const [classData, setClassData] = useState({}) // { classId: { registrations, checkedIds, errors } }
+  // classData[classId] = { members: [...], checkedIds: Set, absentIds: Set, weeklyCount: {memberId: n}, loading: bool }
+  const [classData, setClassData] = useState({})
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [newClass, setNewClass] = useState({ name: '', start_time: '', duration_minutes: 60 })
-  const [checkinLoading, setCheckinLoading] = useState({}) // { athleteId: bool }
+  const [actionLoading, setActionLoading] = useState({}) // { `${classId}_${memberId}`: bool }
+  // Visitor search state per class
+  const [visitorSearch, setVisitorSearch] = useState({}) // { classId: query }
+  const [visitorResults, setVisitorResults] = useState({}) // { classId: [member] }
+  const [visitorLoading, setVisitorLoading] = useState({}) // { classId: bool }
 
-  useEffect(() => { fetchTodayClasses() }, [trainerId])
+  useEffect(() => {
+    setExpanded(null)
+    setClassData({})
+    fetchDayClasses(selectedDate)
+  }, [trainerId, selectedDate])
 
-  async function fetchTodayClasses() {
+  function navigate(delta) {
+    setSelectedDate(prev => {
+      const d = new Date(prev)
+      d.setDate(d.getDate() + delta)
+      return d
+    })
+  }
+
+  async function fetchDayClasses(date) {
     setLoading(true)
-    const todayDow = new Date().getDay() // 0=ראשון, 4=חמישי
+    const todayDow = date.getDay()
 
     if (isAdmin) {
-      // Admin: all classes from all coaches/branches, ordered by branch then time
       const { data, error } = await supabase
         .from('classes')
         .select('*, branches(name)')
@@ -44,38 +77,25 @@ export default function TodayClasses({ trainerId, isAdmin }) {
         .order('branch_id')
         .order('start_time')
 
-      console.log('fetchTodayClasses [admin]:', { todayDow, data, error })
       if (error) console.error('fetchTodayClasses error:', error)
-
-      const classesWithBranch = (data || []).map(cls => ({
+      setClasses((data || []).map(cls => ({
         ...cls,
         branchName: cls.branches?.name || cls.branch_id || '',
-      }))
-      setClasses(classesWithBranch)
+      })))
       setLoading(false)
       return
     }
 
-    // Regular trainer: find all coach records for this user (one per branch)
     const { data: coaches, error: coachErr } = await supabase
       .from('coaches')
       .select('id, branch_id, branches(name)')
       .eq('user_id', trainerId)
 
-    console.log('coaches for trainer:', { coaches, coachErr })
     if (coachErr) console.error('fetchCoaches error:', coachErr)
+    if (!coaches || coaches.length === 0) { setClasses([]); setLoading(false); return }
 
-    if (!coaches || coaches.length === 0) {
-      setClasses([])
-      setLoading(false)
-      return
-    }
-
-    // Build lookup: coachId → branchName
     const coachBranchMap = {}
-    coaches.forEach(c => {
-      coachBranchMap[c.id] = c.branches?.name || c.branch_id
-    })
+    coaches.forEach(c => { coachBranchMap[c.id] = c.branches?.name || c.branch_id })
     const coachIds = coaches.map(c => c.id)
 
     const { data, error } = await supabase
@@ -85,125 +105,168 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       .eq('day_of_week', todayDow)
       .order('start_time')
 
-    console.log('fetchTodayClasses [trainer]:', { todayDow, coachIds, data, error })
     if (error) console.error('fetchTodayClasses error:', error)
-
-    const classesWithBranch = (data || []).map(cls => ({
+    setClasses((data || []).map(cls => ({
       ...cls,
       branchName: coachBranchMap[cls.coach_id] || '',
-    }))
-    setClasses(classesWithBranch)
+    })))
     setLoading(false)
   }
 
   async function fetchClassDetails(classId) {
-    const [{ data: regs, error: regsErr }, { data: chks, error: chksErr }] = await Promise.all([
-      supabase
-        .from('registrations')
-        .select('*, members(id, full_name, membership_type, subscription_type, group_name, group_id)')
-        .eq('class_id', classId),
-      supabase
+    setClassData(prev => ({ ...prev, [classId]: { ...prev[classId], loading: true } }))
+
+    // 1. Members registered to this class via member_classes
+    const { data: mcRows, error: mcErr } = await supabase
+      .from('member_classes')
+      .select('member_id, members(id, full_name, membership_type, subscription_type, group_name)')
+      .eq('class_id', classId)
+
+    if (mcErr) console.error('member_classes error:', mcErr)
+    const members = (mcRows || []).map(r => r.members).filter(Boolean)
+
+    // 2. Selected-date check-ins for this class
+    const dayStart = startOfDay(selectedDate)
+    const dayEnd = new Date(dayStart); dayEnd.setHours(23, 59, 59, 999)
+    const { data: dayChks, error: chkErr } = await supabase
+      .from('checkins')
+      .select('athlete_id, status')
+      .eq('class_id', classId)
+      .gte('checked_in_at', dayStart.toISOString())
+      .lte('checked_in_at', dayEnd.toISOString())
+
+    if (chkErr) console.error('checkins error:', chkErr)
+
+    const checkedIds = new Set()
+    const absentIds = new Set()
+    ;(dayChks || []).forEach(c => {
+      if (c.status === 'absent') absentIds.add(c.athlete_id)
+      else checkedIds.add(c.athlete_id)
+    })
+
+    // 3. Weekly checkin counts per member (for over-limit detection)
+    const { weekStart, weekEnd } = getWeekRange(selectedDate)
+    const memberIds = members.map(m => m.id)
+    let weeklyCount = {}
+    if (memberIds.length > 0) {
+      const { data: weekChks, error: wErr } = await supabase
         .from('checkins')
         .select('athlete_id')
-        .eq('class_id', classId),
-    ])
-    if (regsErr) console.error('fetchClassDetails regs error:', regsErr)
-    if (chksErr) console.error('fetchClassDetails chks error:', chksErr)
+        .in('athlete_id', memberIds)
+        .gte('checked_in_at', weekStart)
+        .lte('checked_in_at', weekEnd)
+        .neq('status', 'absent')
 
-    const checkedIds = new Set((chks || []).map(c => c.athlete_id))
+      if (wErr) console.error('weekly checkins error:', wErr)
+      ;(weekChks || []).forEach(c => {
+        weeklyCount[c.athlete_id] = (weeklyCount[c.athlete_id] || 0) + 1
+      })
+    }
+
     setClassData(prev => ({
       ...prev,
-      [classId]: { registrations: regs || [], checkedIds, athleteErrors: {} },
+      [classId]: { members, checkedIds, absentIds, weeklyCount, loading: false },
     }))
   }
 
-  async function validateCheckin(classId, athleteId, memberData) {
-    const membershipType = memberData?.membership_type || memberData?.subscription_type
-    console.log('validateCheckin:', { classId, athleteId, membershipType })
+  async function markPresent(classId, memberId, membershipType) {
+    const key = `${classId}_${memberId}`
+    setActionLoading(p => ({ ...p, [key]: true }))
 
-    // unlimited — always OK
-    if (membershipType === 'unlimited') return null
+    const dayStart = startOfDay(selectedDate)
+    await supabase.from('checkins').delete()
+      .eq('class_id', classId).eq('athlete_id', memberId)
+      .gte('checked_in_at', dayStart.toISOString())
 
-    // 1. Check member_classes registration
-    const { data: memberClass, error: mcErr } = await supabase
-      .from('member_classes')
-      .select('id')
-      .eq('member_id', athleteId)
-      .eq('class_id', classId)
-      .maybeSingle()
+    const checkedAt = new Date(selectedDate); checkedAt.setHours(12, 0, 0, 0)
+    await supabase.from('checkins').insert({
+      class_id: classId,
+      athlete_id: memberId,
+      status: 'present',
+      checked_in_at: checkedAt.toISOString(),
+    })
 
-    if (mcErr) console.error('member_classes lookup error:', mcErr)
-
-    if (!memberClass) {
-      return `המתאמן אינו רשום לקבוצה זו`
-    }
-
-    // 2. Count weekly checkins
-    const { weekStart, weekEnd } = getWeekRange()
-    const { count, error: countErr } = await supabase
-      .from('checkins')
-      .select('id', { count: 'exact', head: true })
-      .eq('athlete_id', athleteId)
-      .gte('checked_in_at', weekStart)
-      .lte('checked_in_at', weekEnd)
-
-    if (countErr) console.error('weekly checkins count error:', countErr)
-
-    const limit = WEEKLY_LIMITS[membershipType] ?? 2
-    console.log(`weekly checkins: ${count}/${limit} (${membershipType})`)
-
-    if (count >= limit) {
-      return `חרג ממכסה שבועית — ${count}/${limit} אימונים`
-    }
-
-    return null // OK
-  }
-
-  async function toggleCheckin(classId, athleteId, isChecked, memberData) {
-    setCheckinLoading(prev => ({ ...prev, [athleteId]: true }))
-
-    if (!isChecked) {
-      // Validate before checking in
-      const error = await validateCheckin(classId, athleteId, memberData)
-      if (error) {
-        console.warn('checkin blocked:', error)
-        setClassData(prev => ({
-          ...prev,
-          [classId]: {
-            ...prev[classId],
-            athleteErrors: { ...prev[classId]?.athleteErrors, [athleteId]: error },
-          },
-        }))
-        setCheckinLoading(prev => ({ ...prev, [athleteId]: false }))
-        return
-      }
-    }
-
-    // Clear any previous error
-    setClassData(prev => ({
-      ...prev,
-      [classId]: {
-        ...prev[classId],
-        athleteErrors: { ...prev[classId]?.athleteErrors, [athleteId]: null },
-      },
-    }))
-
-    if (isChecked) {
-      const { error } = await supabase
-        .from('checkins')
-        .delete()
-        .eq('class_id', classId)
-        .eq('athlete_id', athleteId)
-      if (error) console.error('delete checkin error:', error)
-    } else {
-      const { error } = await supabase
-        .from('checkins')
-        .insert({ class_id: classId, athlete_id: athleteId })
-      if (error) console.error('insert checkin error:', error)
-    }
-
-    setCheckinLoading(prev => ({ ...prev, [athleteId]: false }))
+    setActionLoading(p => ({ ...p, [key]: false }))
     fetchClassDetails(classId)
+  }
+
+  async function markAbsent(classId, memberId) {
+    const key = `${classId}_${memberId}`
+    setActionLoading(p => ({ ...p, [key]: true }))
+
+    const dayStart = startOfDay(selectedDate)
+    await supabase.from('checkins').delete()
+      .eq('class_id', classId).eq('athlete_id', memberId)
+      .gte('checked_in_at', dayStart.toISOString())
+
+    const checkedAt = new Date(selectedDate); checkedAt.setHours(12, 0, 0, 0)
+    await supabase.from('checkins').insert({
+      class_id: classId,
+      athlete_id: memberId,
+      status: 'absent',
+      checked_in_at: checkedAt.toISOString(),
+    })
+
+    setActionLoading(p => ({ ...p, [key]: false }))
+    fetchClassDetails(classId)
+  }
+
+  async function addNewVisitor(classId, branchId, name) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+
+    // Create new member with trial membership
+    const { data: newMember, error } = await supabase
+      .from('members')
+      .insert({ full_name: trimmed, membership_type: 'trial', subscription_type: 'trial', branch_id: branchId, active: true })
+      .select('id, full_name, membership_type')
+      .single()
+
+    if (error) { console.error('addNewVisitor insert error:', error); return }
+
+    // Clear search
+    setVisitorSearch(p => ({ ...p, [classId]: '' }))
+    setVisitorResults(p => ({ ...p, [classId]: [] }))
+
+    // Register and mark present
+    await addVisitor(classId, newMember)
+  }
+
+  async function addVisitor(classId, member) {
+    // First register them to the class in member_classes
+    const { error: regErr } = await supabase
+      .from('member_classes')
+      .upsert({ class_id: classId, member_id: member.id }, { onConflict: 'class_id,member_id' })
+
+    if (regErr) console.error('addVisitor registration error:', regErr)
+
+    // Then mark present
+    await markPresent(classId, member.id, member.membership_type)
+
+    // Clear visitor search
+    setVisitorSearch(p => ({ ...p, [classId]: '' }))
+    setVisitorResults(p => ({ ...p, [classId]: [] }))
+  }
+
+  async function searchVisitor(classId, query) {
+    setVisitorSearch(p => ({ ...p, [classId]: query }))
+    if (!query.trim()) { setVisitorResults(p => ({ ...p, [classId]: [] })); return }
+
+    setVisitorLoading(p => ({ ...p, [classId]: true }))
+    const { data, error } = await supabase
+      .from('members')
+      .select('id, full_name, membership_type, subscription_type')
+      .ilike('full_name', `%${query}%`)
+      .eq('active', true)
+      .limit(8)
+
+    if (error) console.error('searchVisitor error:', error)
+
+    // Filter out already-registered members
+    const registered = new Set((classData[classId]?.members || []).map(m => m.id))
+    const results = (data || []).filter(m => !registered.has(m.id))
+    setVisitorResults(p => ({ ...p, [classId]: results }))
+    setVisitorLoading(p => ({ ...p, [classId]: false }))
   }
 
   async function addClass(e) {
@@ -211,12 +274,12 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     const { error } = await supabase.from('classes').insert({
       ...newClass,
       coach_id: trainerId,
-      day_of_week: new Date().getDay(),
+      day_of_week: selectedDate.getDay(),
     })
     if (error) { console.error('addClass error:', error); return }
     setShowAdd(false)
     setNewClass({ name: '', start_time: '', duration_minutes: 60 })
-    fetchTodayClasses()
+    fetchDayClasses(selectedDate)
   }
 
   function handleExpand(id) {
@@ -229,13 +292,42 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-gray-800">
-          שיעורים היום — {new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </h2>
+      {/* Date navigation */}
+      <div className="flex items-center justify-between gap-2">
+        <button
+          onClick={() => navigate(-1)}
+          className="w-9 h-9 flex items-center justify-center rounded-lg border hover:bg-gray-50 text-gray-600 text-lg"
+          title="יום קודם"
+        >
+          ›
+        </button>
+
+        <div className="flex-1 text-center">
+          <p className="font-bold text-gray-800 text-sm leading-tight">{formatDateLabel(selectedDate)}</p>
+        </div>
+
+        <button
+          onClick={() => navigate(1)}
+          className="w-9 h-9 flex items-center justify-center rounded-lg border hover:bg-gray-50 text-gray-600 text-lg"
+          title="יום הבא"
+        >
+          ‹
+        </button>
+
+        <button
+          onClick={() => setSelectedDate(startOfDay(new Date()))}
+          className={`px-2.5 py-1 rounded-lg text-xs border transition ${
+            selectedDate.toDateString() === new Date().toDateString()
+              ? 'bg-blue-600 text-white border-blue-600'
+              : 'text-blue-600 border-blue-300 hover:bg-blue-50'
+          }`}
+        >
+          היום
+        </button>
+
         <button
           onClick={() => setShowAdd(!showAdd)}
-          className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700"
+          className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap"
         >
           + הוסף שיעור
         </button>
@@ -271,19 +363,22 @@ export default function TodayClasses({ trainerId, isAdmin }) {
         </form>
       )}
 
-      {classes.length === 0 && (
+      {!loading && classes.length === 0 && (
         <div className="text-center py-12 text-gray-400">
           <div className="text-4xl mb-2">📭</div>
-          <p>אין שיעורים מתוכננים להיום</p>
+          <p>אין שיעורים ביום {DAYS_HE[selectedDate.getDay()]}</p>
         </div>
       )}
 
       {classes.map(cls => {
         const data = classData[cls.id]
         const isOpen = expanded === cls.id
+        const presentCount = data?.checkedIds?.size ?? 0
+        const totalCount = data?.members?.length ?? 0
 
         return (
           <div key={cls.id} className="bg-white rounded-xl shadow-sm overflow-hidden border">
+            {/* Class header */}
             <button
               onClick={() => handleExpand(cls.id)}
               className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition"
@@ -300,9 +395,9 @@ export default function TodayClasses({ trainerId, isAdmin }) {
                 <p className="text-sm text-gray-500">{formatTime(cls.start_time)} · {cls.duration_minutes} דקות</p>
               </div>
               <div className="flex items-center gap-2">
-                {data && (
-                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                    {data.checkedIds.size}/{data.registrations.length} צ'ק-אין
+                {data && !data.loading && (
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                    {presentCount}/{totalCount} נוכחים
                   </span>
                 )}
                 <span className="text-gray-400">{isOpen ? '▲' : '▼'}</span>
@@ -310,55 +405,138 @@ export default function TodayClasses({ trainerId, isAdmin }) {
             </button>
 
             {isOpen && (
-              <div className="border-t px-4 py-3">
-                {!data ? (
+              <div className="border-t px-4 py-3 space-y-3">
+                {!data || data.loading ? (
                   <p className="text-sm text-gray-400 text-center py-2">טוען...</p>
-                ) : data.registrations.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-2">אין מתאמנים רשומים</p>
                 ) : (
-                  <ul className="divide-y">
-                    {data.registrations.map(reg => {
-                      const member = reg.members
-                      const athleteId = reg.athlete_id
-                      const checked = data.checkedIds.has(athleteId)
-                      const isLoading = checkinLoading[athleteId]
-                      const errorMsg = data.athleteErrors?.[athleteId]
-                      const membershipType = member?.membership_type || member?.subscription_type
+                  <>
+                    {/* Registered members list */}
+                    {data.members.length === 0 ? (
+                      <p className="text-sm text-gray-400 text-center py-4">אין מתאמנים רשומים לשיעור זה</p>
+                    ) : (
+                      <ul className="divide-y">
+                        {data.members.map(member => {
+                          const membershipType = member.membership_type || member.subscription_type
+                          const limit = WEEKLY_LIMITS[membershipType] ?? 2
+                          const weekCount = data.weeklyCount[member.id] || 0
+                          const isPresent = data.checkedIds.has(member.id)
+                          const isAbsent = data.absentIds.has(member.id)
+                          const isOverLimit = limit !== Infinity && weekCount >= limit && !isPresent
+                          const key = `${cls.id}_${member.id}`
+                          const busy = actionLoading[key]
 
-                      return (
-                        <li key={reg.id} className="py-2.5">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium text-gray-800">{member?.full_name}</p>
-                              <p className="text-xs text-gray-400">
-                                {member?.group_name || '—'} ·{' '}
-                                {membershipType === '2x_week' ? '2× שבוע'
-                                  : membershipType === '4x_week' ? '4× שבוע'
-                                  : membershipType === 'unlimited' ? 'ללא הגבלה'
-                                  : membershipType || '—'}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => toggleCheckin(cls.id, athleteId, checked, member)}
-                              disabled={isLoading}
-                              className={`text-xs px-3 py-1 rounded-full font-medium transition disabled:opacity-40 ${
-                                checked
-                                  ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                              }`}
-                            >
-                              {isLoading ? '...' : checked ? "✓ נוכח" : "צ'ק-אין"}
-                            </button>
-                          </div>
-                          {errorMsg && (
-                            <p className="text-xs text-red-500 mt-1 bg-red-50 rounded px-2 py-1">
-                              ⚠️ {errorMsg}
-                            </p>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
+                          return (
+                            <li key={member.id} className="py-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <p className="text-sm font-medium text-gray-800">{member.full_name}</p>
+                                    {isOverLimit && (
+                                      <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+                                        ⚠️ חרג ממנוי ({weekCount}/{limit})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-400 mt-0.5">
+                                    {membershipType === '2x_week' ? '2× שבוע'
+                                      : membershipType === '4x_week' ? '4× שבוע'
+                                      : membershipType === 'unlimited' ? 'ללא הגבלה'
+                                      : membershipType || '—'}
+                                    {limit !== Infinity && ` · ${weekCount}/${limit} השבוע`}
+                                  </p>
+                                </div>
+
+                                <div className="flex gap-1.5 shrink-0">
+                                  {/* נוכח button */}
+                                  <button
+                                    onClick={() => markPresent(cls.id, member.id, membershipType)}
+                                    disabled={busy}
+                                    title="סמן נוכח"
+                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition disabled:opacity-40 ${
+                                      isPresent
+                                        ? 'bg-green-500 text-white shadow-sm'
+                                        : 'bg-gray-100 text-gray-500 hover:bg-green-100 hover:text-green-700'
+                                    }`}
+                                  >
+                                    {busy ? '...' : '✓ נוכח'}
+                                  </button>
+
+                                  {/* נעדר button */}
+                                  <button
+                                    onClick={() => markAbsent(cls.id, member.id)}
+                                    disabled={busy}
+                                    title="סמן נעדר"
+                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition disabled:opacity-40 ${
+                                      isAbsent
+                                        ? 'bg-red-500 text-white shadow-sm'
+                                        : 'bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600'
+                                    }`}
+                                  >
+                                    {busy ? '...' : '✕ נעדר'}
+                                  </button>
+                                </div>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+
+                    {/* Visitor / walk-in section */}
+                    <div className={`pt-2 ${data.members.length > 0 ? 'border-t' : ''}`}>
+                      <p className="text-xs font-medium text-gray-500 mb-2">הוסף מבקר (לא רשום לשיעור)</p>
+                      <div className="relative">
+                        <input
+                          className="w-full border rounded-lg px-3 py-2 text-sm"
+                          placeholder="חפש מתאמן לפי שם..."
+                          value={visitorSearch[cls.id] || ''}
+                          onChange={e => searchVisitor(cls.id, e.target.value)}
+                        />
+                        {visitorLoading[cls.id] && (
+                          <span className="absolute left-3 top-2.5 text-xs text-gray-400">טוען...</span>
+                        )}
+                      </div>
+
+                      {(visitorResults[cls.id] || []).length > 0 && (
+                        <ul className="mt-1 border rounded-lg divide-y bg-white shadow-sm">
+                          {visitorResults[cls.id].map(m => {
+                            const mtype = m.membership_type || m.subscription_type
+                            return (
+                              <li key={m.id} className="flex items-center justify-between px-3 py-2">
+                                <div>
+                                  <p className="text-sm font-medium text-gray-800">{m.full_name}</p>
+                                  <p className="text-xs text-gray-400">
+                                    {mtype === '2x_week' ? '2× שבוע'
+                                      : mtype === '4x_week' ? '4× שבוע'
+                                      : mtype === 'unlimited' ? 'ללא הגבלה'
+                                      : mtype || '—'}
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => addVisitor(cls.id, m)}
+                                  className="text-xs bg-orange-100 text-orange-700 hover:bg-orange-200 px-2.5 py-1 rounded-lg font-medium transition"
+                                >
+                                  + הוסף כמבקר
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+
+                      {visitorSearch[cls.id] && !visitorLoading[cls.id] && (visitorResults[cls.id] || []).length === 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs text-gray-400 text-center mb-2">לא נמצאו מתאמנים קיימים</p>
+                          <button
+                            onClick={() => addNewVisitor(cls.id, cls.branch_id, visitorSearch[cls.id])}
+                            className="w-full text-sm bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 px-3 py-2 rounded-lg font-medium transition text-right"
+                          >
+                            + הוסף מבקר חדש: <span className="font-bold">{visitorSearch[cls.id]}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             )}

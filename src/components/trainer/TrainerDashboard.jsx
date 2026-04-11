@@ -11,11 +11,15 @@ const TABS = [
 ]
 
 export default function TrainerDashboard({ profile, isAdmin }) {
-  const [tab, setTab] = useState('classes')
+  const [tab, setTab] = useState(() => localStorage.getItem('trainerTab') || 'classes')
+
+  function handleTabChange(id) {
+    setTab(id)
+    localStorage.setItem('trainerTab', id)
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-blue-700 text-white px-6 py-4 flex items-center justify-between shadow">
         <div className="flex items-center gap-3">
           <span className="text-2xl">🥋</span>
@@ -41,12 +45,11 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         </button>
       </header>
 
-      {/* Tabs */}
       <nav className="bg-white border-b flex">
         {TABS.map(t => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => handleTabChange(t.id)}
             className={`flex-1 py-3 text-sm font-medium transition ${
               tab === t.id
                 ? 'text-blue-700 border-b-2 border-blue-700'
@@ -58,7 +61,6 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         ))}
       </nav>
 
-      {/* Content */}
       <main className="p-4 max-w-3xl mx-auto">
         {tab === 'classes' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />}
         {tab === 'athletes' && <AthleteManagement trainerId={profile?.id} isAdmin={isAdmin} />}

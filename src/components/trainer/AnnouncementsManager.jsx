@@ -37,8 +37,16 @@ export default function AnnouncementsManager({ trainerId }) {
     if (editingId) {
       await supabase.from('announcements').update({ ...form }).eq('id', editingId)
     } else {
-      console.log('submitting:', JSON.stringify({...form, trainer_id: trainerId}))
-      await supabase.from('announcements').insert({ ...form, trainer_id: trainerId })
+      const payload = {
+        title: form.title,
+        content: form.content || null,
+        type: form.type,
+        event_date: form.event_date || null,
+        price: form.price || null,
+        image_url: form.image_url || null,
+        trainer_id: trainerId,
+      }
+      await supabase.from('announcements').insert(payload)
     }
     setForm(EMPTY_FORM)
     setShowForm(false)

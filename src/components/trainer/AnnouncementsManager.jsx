@@ -12,8 +12,17 @@ const EMPTY_FORM = { title: '', content: '', type: 'general', event_date: '', pr
 export default function AnnouncementsManager({ trainerId }) {
   const [items, setItems] = useState([])
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState(EMPTY_FORM)
+  const [form, setForm] = useState(() => {
+    try {
+      const saved = localStorage.getItem('announcementDraft')
+      return saved ? JSON.parse(saved) : EMPTY_FORM
+    } catch { return EMPTY_FORM }
+  })
   const [editingId, setEditingId] = useState(null)
+
+  useEffect(() => {
+    try { localStorage.setItem('announcementDraft', JSON.stringify(form)) } catch {}
+  }, [form])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { fetchAnnouncements() }, [])
@@ -36,6 +45,7 @@ export default function AnnouncementsManager({ trainerId }) {
       await supabase.from('announcements').insert({ ...form, trainer_id: trainerId })
     }
     setForm(EMPTY_FORM)
+    localStorage.removeItem('announcementDraft')
     setShowForm(false)
     setEditingId(null)
     fetchAnnouncements()

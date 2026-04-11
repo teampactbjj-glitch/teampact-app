@@ -40,15 +40,13 @@ function computeNextClass(allClasses, regIds) {
 }
 
 export default function AthleteDashboard({ profile }) {
-  const [member, setMember] = useState(null)
+  const [branchId, setBranchId] = useState(null)
+  const [subType, setSubType] = useState(null)
   const [classes, setClasses] = useState([])
   const [registeredIds, setRegisteredIds] = useState(new Set())
   const [nextClass, setNextClass] = useState(null)
-  const [isCheckedIn, setIsCheckedIn] = useState(false)
-  const [weeklyCheckins, setWeeklyCheckins] = useState(0)
   const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
-  const [checkinLoading, setCheckinLoading] = useState(false)
   const [regLoading, setRegLoading] = useState({}) // { classId: bool }
 
   useEffect(() => {
@@ -58,45 +56,32 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAll() {
     setLoading(true)
 
-    // 1. Member record — lookup by user_id (auth UUID) with email fallback
-    let { data: memberData, error: memberErr } = await supabase
-      .from('members')
-      .select('branch_id, subscription_type, membership_type')
-      .eq('user_id', profile.id)
+    // 1. Get branch_id from profiles (reliable — tied to auth.uid)
+    const { data: profileData, error: profileErr } = await supabase
+      .from('profiles')
+      .select('branch_id, subscription_type')
+      .eq('id', profile.id)
       .maybeSingle()
 
-    // Fallback: Excel-imported members may not have user_id set — try email
-    if (!memberData && profile.email) {
-      ;({ data: memberData, error: memberErr } = await supabase
-        .from('members')
-        .select('branch_id, subscription_type, membership_type')
-        .eq('email', profile.email)
-        .maybeSingle())
-    }
+    console.log('profiles row:', profileData, 'error:', profileErr)
 
-    console.log('member:', memberData, 'error:', memberErr)
-    setMember(memberData)
-
-    const branchId = memberData?.branch_id
-    console.log('branch_id:', branchId)
-
-    const weekStart = new Date()
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay())
-    weekStart.setHours(0, 0, 0, 0)
+    const bid = profileData?.branch_id
+    const stype = profileData?.subscription_type || profile?.subscription_type
+    setBranchId(bid)
+    setSubType(stype)
+    console.log('branch_id:', bid, 'subscription_type:', stype)
 
     // 2. Parallel fetches
-    const [classRes, regRes, annRes, chkRes] = await Promise.all([
-      branchId
-        ? supabase.from('classes').select('*').eq('branch_id', branchId).order('day_of_week').order('start_time')
+    const [classRes, regRes, annRes] = await Promise.all([
+      bid
+        ? supabase.from('classes').select('*').eq('branch_id', bid).order('day_of_week').order('start_time')
         : Promise.resolve({ data: [], error: null }),
       supabase.from('class_registrations').select('class_id').eq('athlete_id', profile.id),
       supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(10),
-      supabase.from('checkins').select('id', { count: 'exact', head: true })
-        .eq('athlete_id', profile.id).gte('checked_in_at', weekStart.toISOString()),
     ])
 
-    console.log('classes result:', classRes.data, 'error:', classRes.error)
-    console.log('registrations result:', regRes.data, 'error:', regRes.error)
+    console.log('classes:', classRes.data, 'error:', classRes.error)
+    console.log('registrations:', regRes.data, 'error:', regRes.error)
 
     const allClasses = classRes.data || []
     const regIds = new Set((regRes.data || []).map(r => r.class_id))
@@ -104,30 +89,14 @@ export default function AthleteDashboard({ profile }) {
     setClasses(allClasses)
     setRegisteredIds(regIds)
     setAnnouncements(annRes.data || [])
-    setWeeklyCheckins(chkRes.count || 0)
-
-    // 3. Compute next class + today's check-in
-    const next = computeNextClass(allClasses, regIds)
-    setNextClass(next)
-    if (next) await fetchCheckin(next.id)
+    setNextClass(computeNextClass(allClasses, regIds))
 
     setLoading(false)
   }
 
-  async function fetchCheckin(classId) {
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
-    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999)
-    const { data: chk } = await supabase
-      .from('checkins').select('id')
-      .eq('class_id', classId).eq('athlete_id', profile.id)
-      .gte('checked_in_at', todayStart.toISOString())
-      .lte('checked_in_at', todayEnd.toISOString())
-      .maybeSingle()
-    setIsCheckedIn(!!chk)
-  }
-
   async function toggleRegistration(classId) {
     const isReg = registeredIds.has(classId)
+    const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
 
     if (!isReg && limit !== Infinity && registeredIds.size >= limit) {
       alert(`הגעת למגבלת ${limit} שיעורים שבועיים לפי המנוי שלך`)
@@ -150,36 +119,12 @@ export default function AthleteDashboard({ profile }) {
     if (isReg) newRegIds.delete(classId)
     else newRegIds.add(classId)
     setRegisteredIds(newRegIds)
-
-    const next = computeNextClass(classes, newRegIds)
-    setNextClass(next)
-    if (next && next.id !== nextClass?.id) await fetchCheckin(next.id)
+    setNextClass(computeNextClass(classes, newRegIds))
 
     setRegLoading(p => ({ ...p, [classId]: false }))
   }
 
-  async function handleCheckin() {
-    if (!nextClass) return
-    if (weeklyCheckins >= limit && !isCheckedIn) {
-      alert(`הגעת למגבלת ${limit} אימונים השבוע`)
-      return
-    }
-    setCheckinLoading(true)
-    if (isCheckedIn) {
-      await supabase.from('checkins').delete().eq('class_id', nextClass.id).eq('athlete_id', profile.id)
-      setIsCheckedIn(false)
-      setWeeklyCheckins(p => p - 1)
-    } else {
-      await supabase.from('checkins').insert({ class_id: nextClass.id, athlete_id: profile.id })
-      setIsCheckedIn(true)
-      setWeeklyCheckins(p => p + 1)
-    }
-    setCheckinLoading(false)
-  }
-
-  const subType = profile?.subscription_type || member?.subscription_type || member?.membership_type
   const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
-  const usagePercent = limit === Infinity ? 0 : Math.min((weeklyCheckins / limit) * 100, 100)
 
   // Group all branch classes by day_of_week
   const grouped = DAYS_HE.map((dayName, dow) => ({
@@ -210,19 +155,21 @@ export default function AthleteDashboard({ profile }) {
           <>
             {/* 1. Subscription card */}
             <div className="bg-white rounded-xl border shadow-sm p-4">
-              <div className="flex justify-between items-center mb-2">
+              <div className="flex justify-between items-center">
                 <span className="text-sm font-medium text-gray-700">
                   מנוי: {SUBSCRIPTION_LABELS[subType] || '—'}
                 </span>
                 <span className="text-sm text-gray-500">
-                  {limit === Infinity ? 'ללא הגבלה' : `${weeklyCheckins}/${limit} אימונים השבוע`}
+                  {limit === Infinity ? 'ללא הגבלה' : `${registeredIds.size}/${limit} שיעורים`}
                 </span>
               </div>
               {limit !== Infinity && (
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-2">
                   <div
-                    className={`h-full rounded-full transition-all ${usagePercent >= 100 ? 'bg-red-500' : 'bg-emerald-500'}`}
-                    style={{ width: `${usagePercent}%` }}
+                    className={`h-full rounded-full transition-all ${
+                      registeredIds.size >= limit ? 'bg-emerald-500' : 'bg-emerald-400'
+                    }`}
+                    style={{ width: `${Math.min((registeredIds.size / limit) * 100, 100)}%` }}
                   />
                 </div>
               )}
@@ -232,7 +179,7 @@ export default function AthleteDashboard({ profile }) {
             <div>
               <h2 className="font-bold text-gray-800 mb-3">לוח שיעורים שבועי</h2>
 
-              {!member?.branch_id ? (
+              {!branchId ? (
                 <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
                   <p className="text-sm font-semibold text-orange-700">לא נמצא סניף משויך לחשבון שלך</p>
                   <p className="text-xs text-orange-500 mt-1">פנה למאמן לשיוך לסניף</p>
@@ -241,11 +188,6 @@ export default function AthleteDashboard({ profile }) {
                 <p className="text-sm text-gray-400 text-center py-4">אין שיעורים בסניף שלך</p>
               ) : (
                 <div className="space-y-4">
-                  {limit !== Infinity && (
-                    <p className="text-xs text-gray-500 text-center">
-                      {registeredIds.size}/{limit} שיעורים נבחרו לפי המנוי שלך
-                    </p>
-                  )}
                   {grouped.map(({ dow, dayName, classes: dayCls }) => (
                     <div key={dow}>
                       <p className="text-xs font-bold text-gray-400 tracking-wide mb-2 px-1">יום {dayName}</p>
@@ -292,7 +234,7 @@ export default function AthleteDashboard({ profile }) {
               )}
             </div>
 
-            {/* 3. Next class + check-in */}
+            {/* 3. Next class */}
             <div className="bg-white rounded-xl border shadow-sm p-5">
               <h2 className="font-bold text-gray-800 mb-3">האימון הבא שלך</h2>
               {!nextClass ? (
@@ -307,21 +249,8 @@ export default function AthleteDashboard({ profile }) {
                   {nextClass.duration_minutes && (
                     <p className="text-xs text-gray-400">{nextClass.duration_minutes} דקות</p>
                   )}
-                  {weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity ? (
-                    <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-center">
-                      <p className="text-sm font-semibold text-orange-700">הגעת למגבלת {limit} האימונים השבועיים</p>
-                      <p className="text-xs text-orange-500 mt-1">פנה למאמן להוספת אימון חריג</p>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleCheckin}
-                      disabled={checkinLoading}
-                      className={`mt-4 w-full py-3 rounded-xl font-semibold text-white transition disabled:opacity-50 ${
-                        isCheckedIn ? 'bg-green-500 hover:bg-green-600' : 'bg-emerald-600 hover:bg-emerald-700'
-                      }`}
-                    >
-                      {checkinLoading ? '...' : isCheckedIn ? "✓ בוצע צ'ק-אין — ביטול?" : "צ'ק-אין לאימון"}
-                    </button>
+                  {nextClass.hall && (
+                    <p className="text-xs text-gray-400">{nextClass.hall}</p>
                   )}
                 </div>
               )}

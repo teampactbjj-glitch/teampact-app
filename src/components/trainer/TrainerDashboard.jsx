@@ -63,35 +63,21 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </header>
 
       {console.log('TrainerDashboard render — tab:', tab, 'pendingCount:', pendingCount)}
-      <nav style={{display:'grid', gridTemplateColumns:'repeat(2,1fr)', borderBottom:'1px solid #e5e7eb', background:'white'}}>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', background:'white', borderBottom:'1px solid #e5e7eb'}}>
         {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => handleTabChange(t.id)}
-            style={{
-              padding:'10px 4px',
-              fontSize:'12px',
-              fontWeight:'500',
-              textAlign:'center',
-              borderBottom: tab === t.id ? '2px solid #1d4ed8' : '1px solid #e5e7eb',
-              color: tab === t.id ? '#1d4ed8' : '#6b7280',
-              background: tab === t.id ? '#eff6ff' : 'none',
-              cursor:'pointer',
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              gap:'4px',
-            }}
-          >
+          <button key={t.id} onClick={() => handleTabChange(t.id)}
+            style={{padding:'10px', fontSize:'13px', fontWeight:'500', textAlign:'center',
+              borderBottom: tab === t.id ? '2px solid #1d4ed8' : '2px solid transparent',
+              color: tab === t.id ? '#1d4ed8' : '#6b7280', background:'none', cursor:'pointer',
+              position:'relative'}}>
             {t.label}
-            {t.id === 'products' && pendingCount > 0 && (
-              <span style={{background:'red',color:'white',borderRadius:'9999px',fontSize:'10px',padding:'1px 5px',lineHeight:'1.4'}}>
-                {pendingCount}
-              </span>
-            )}
+            {t.id === 'products' && pendingCount > 0 &&
+              <span style={{position:'absolute', top:'6px', right:'6px', background:'red', color:'white',
+                borderRadius:'50%', width:'16px', height:'16px', fontSize:'10px', display:'flex',
+                alignItems:'center', justifyContent:'center'}}>{pendingCount}</span>}
           </button>
         ))}
-      </nav>
+      </div>
 
       <main className="p-4 max-w-3xl mx-auto">
         <div className={tab === 'classes' ? '' : 'hidden'}>

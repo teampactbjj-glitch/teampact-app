@@ -25,7 +25,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       .from('product_requests')
       .select('*', { count: 'exact', head: true })
       .neq('status', 'done')
-    if (error) console.error('fetchPendingCount error:', error)
+    console.log('fetchPendingCount → count:', count, 'error:', error)
     setPendingCount(count || 0)
   }
 
@@ -61,6 +61,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         </button>
       </header>
 
+      {console.log('render — pendingCount:', pendingCount)}
       <nav className="bg-white border-b flex">
         {TABS.map(t => (
           <button

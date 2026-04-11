@@ -35,6 +35,8 @@ export default function TrainerDashboard({ profile, isAdmin }) {
     localStorage.setItem('trainerTab', id)
   }
 
+  console.log('TABS length:', TABS.length, TABS.map(t => t.id))
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-blue-700 text-white px-6 py-4 flex items-center justify-between shadow">

@@ -11,36 +11,16 @@ const EMPTY_FORM = { title: '', content: '', type: 'general', event_date: '', pr
 
 export default function AnnouncementsManager({ trainerId }) {
   const [items, setItems] = useState([])
-  const [showForm, setShowForm] = useState(() => {
-    return localStorage.getItem('announcementFormOpen') === 'true'
-  })
-  const [form, setForm] = useState(() => {
-    try {
-      const saved = localStorage.getItem('announcementDraft')
-      if (!saved) return EMPTY_FORM
-      const parsed = JSON.parse(saved)
-      const validTypes = ['general', 'seminar', 'product']
-      if (!validTypes.includes(parsed.type)) parsed.type = 'general'
-      return parsed
-    } catch { return EMPTY_FORM }
-  })
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState(EMPTY_FORM)
   const [editingId, setEditingId] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     localStorage.removeItem('announcementDraft')
     localStorage.removeItem('announcementFormOpen')
+    fetchAnnouncements()
   }, [])
-
-  useEffect(() => {
-    try { localStorage.setItem('announcementDraft', JSON.stringify(form)) } catch {}
-  }, [form])
-
-  useEffect(() => {
-    localStorage.setItem('announcementFormOpen', showForm)
-  }, [showForm])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => { fetchAnnouncements() }, [])
 
   async function fetchAnnouncements() {
     setLoading(true)
@@ -60,7 +40,6 @@ export default function AnnouncementsManager({ trainerId }) {
       await supabase.from('announcements').insert({ ...form, trainer_id: trainerId })
     }
     setForm(EMPTY_FORM)
-    localStorage.removeItem('announcementDraft')
     setShowForm(false)
     setEditingId(null)
     fetchAnnouncements()
@@ -84,8 +63,6 @@ export default function AnnouncementsManager({ trainerId }) {
     setForm(EMPTY_FORM)
     setEditingId(null)
     setShowForm(false)
-    localStorage.removeItem('announcementDraft')
-    localStorage.removeItem('announcementFormOpen')
   }
 
   async function deleteItem(id) {

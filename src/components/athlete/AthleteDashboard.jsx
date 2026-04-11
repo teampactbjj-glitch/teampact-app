@@ -56,7 +56,7 @@ export default function AthleteDashboard({ profile }) {
     const { data: member, error: memberErr } = await supabase
       .from('members')
       .select('group_ids, group_id, branch_id')
-      .eq('id', profile.id)
+      .eq('email', profile.email)
       .maybeSingle()
 
     if (memberErr) console.error('fetchMember error:', memberErr)

@@ -16,19 +16,24 @@ export default function ProductRequests({ onPendingCount }) {
       .from('product_requests')
       .select('*')
       .order('created_at', { ascending: false })
-    if (error) console.error('fetchRequests error:', error)
+    console.log('product_requests data:', data, 'error:', error)
     const rows = data || []
+    console.log('statuses:', rows.map(r => ({ id: r.id, status: r.status })))
     setRequests(rows)
-    onPendingCount?.(rows.filter(r => r.status === 'pending').length)
+    const pendingN = rows.filter(r => r.status === 'pending').length
+    console.log('pendingCount:', pendingN)
+    onPendingCount?.(pendingN)
     setLoading(false)
   }
 
   async function markDone(id) {
     setMarkingId(id)
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('product_requests')
       .update({ status: 'done' })
       .eq('id', id)
+      .select()
+    console.log('markDone result:', data, 'error:', error)
     if (error) { console.error('markDone error:', error); setMarkingId(null); return }
     setRequests(prev => {
       const updated = prev.map(r => r.id === id ? { ...r, status: 'done' } : r)

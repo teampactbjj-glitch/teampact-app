@@ -17,6 +17,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => {
+    console.log('TrainerDashboard mounted, tab:', tab)
     fetchPendingCount()
   }, [])
 
@@ -61,7 +62,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         </button>
       </header>
 
-      {console.log('render — pendingCount:', pendingCount)}
+      {console.log('TrainerDashboard render — tab:', tab, 'pendingCount:', pendingCount)}
       <nav className="bg-white border-b flex">
         {TABS.map(t => (
           <button

@@ -63,25 +63,29 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </header>
 
       {console.log('TrainerDashboard render — tab:', tab, 'pendingCount:', pendingCount)}
-      <nav style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', borderBottom:'1px solid #e5e7eb', background:'white'}}>
+      <nav style={{display:'grid', gridTemplateColumns:'repeat(2,1fr)', borderBottom:'1px solid #e5e7eb', background:'white'}}>
         {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => handleTabChange(t.id)}
             style={{
-              padding:'12px 4px',
-              fontSize:'11px',
+              padding:'10px 4px',
+              fontSize:'12px',
               fontWeight:'500',
               textAlign:'center',
-              borderBottom: tab === t.id ? '2px solid #1d4ed8' : 'none',
+              borderBottom: tab === t.id ? '2px solid #1d4ed8' : '1px solid #e5e7eb',
               color: tab === t.id ? '#1d4ed8' : '#6b7280',
-              background:'none',
-              cursor:'pointer'
+              background: tab === t.id ? '#eff6ff' : 'none',
+              cursor:'pointer',
+              display:'flex',
+              alignItems:'center',
+              justifyContent:'center',
+              gap:'4px',
             }}
           >
             {t.label}
             {t.id === 'products' && pendingCount > 0 && (
-              <span style={{background:'red',color:'white',borderRadius:'9999px',fontSize:'10px',padding:'0 4px',marginRight:'4px'}}>
+              <span style={{background:'red',color:'white',borderRadius:'9999px',fontSize:'10px',padding:'1px 5px',lineHeight:'1.4'}}>
                 {pendingCount}
               </span>
             )}

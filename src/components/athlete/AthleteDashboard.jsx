@@ -49,6 +49,9 @@ export default function AthleteDashboard({ profile }) {
   const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
   const [regLoading, setRegLoading] = useState({}) // { classId: bool }
+  const [productModal, setProductModal] = useState(null) // announcement item
+  const [requestSent, setRequestSent] = useState(false)
+  const [requestLoading, setRequestLoading] = useState(false)
 
   useEffect(() => {
     if (profile?.id) fetchAll()
@@ -143,6 +146,24 @@ export default function AthleteDashboard({ profile }) {
     setNextClass(computeNextClass(classes, newRegIds))
 
     setRegLoading(p => ({ ...p, [classId]: false }))
+  }
+
+  async function sendProductRequest(item) {
+    setRequestLoading(true)
+    const { error } = await supabase.from('product_requests').insert({
+      athlete_id: profile.id,
+      athlete_name: profile.full_name,
+      product_id: item.id,
+      product_name: item.title,
+    })
+    if (error) console.error('product_request error:', error)
+    setRequestLoading(false)
+    setRequestSent(true)
+  }
+
+  function closeProductModal() {
+    setProductModal(null)
+    setRequestSent(false)
   }
 
   const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
@@ -325,9 +346,12 @@ export default function AthleteDashboard({ profile }) {
                             <p className="text-sm text-gray-500 mt-2 whitespace-pre-wrap">{item.content}</p>
                           )}
                           {(isProduct || isSeminar) && (
-                            <button className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition ${
-                              isProduct ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-purple-600 text-white hover:bg-purple-700'
-                            }`}>
+                            <button
+                              onClick={() => isProduct && setProductModal(item)}
+                              className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition ${
+                                isProduct ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-purple-600 text-white hover:bg-purple-700'
+                              }`}
+                            >
                               {isProduct ? '🛒 לפרטים ורכישה' : '📝 לפרטים והרשמה'}
                             </button>
                           )}
@@ -342,5 +366,56 @@ export default function AthleteDashboard({ profile }) {
         )}
       </main>
     </div>
+
+      {/* Product modal */}
+      {productModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4 sm:pb-0"
+          onClick={closeProductModal}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {productModal.image_url && (
+              <img src={productModal.image_url} alt="" className="w-full h-52 object-cover" />
+            )}
+            <div className="p-5 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="font-bold text-gray-800 text-lg leading-tight">{productModal.title}</h3>
+                {productModal.price != null && (
+                  <span className="text-lg font-bold text-green-700 bg-green-50 border border-green-200 px-3 py-1 rounded-full shrink-0">
+                    ₪{productModal.price}
+                  </span>
+                )}
+              </div>
+              {productModal.content && (
+                <p className="text-sm text-gray-600 whitespace-pre-wrap">{productModal.content}</p>
+              )}
+
+              {requestSent ? (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                  <p className="text-green-700 font-semibold">הבקשה נשלחה למאמן ✓</p>
+                </div>
+              ) : (
+                <button
+                  onClick={() => sendProductRequest(productModal)}
+                  disabled={requestLoading}
+                  className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition disabled:opacity-50"
+                >
+                  {requestLoading ? '...' : '🙋 אני מעוניין'}
+                </button>
+              )}
+
+              <button
+                onClick={closeProductModal}
+                className="w-full py-2 border rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition"
+              >
+                סגור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
   )
 }

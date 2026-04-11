@@ -2,12 +2,14 @@ import { useState } from 'react'
 import TodayClasses from './TodayClasses'
 import AthleteManagement from './AthleteManagement'
 import AnnouncementsManager from './AnnouncementsManager'
+import ProductRequests from './ProductRequests'
 import { supabase } from '../../lib/supabase'
 
 const TABS = [
   { id: 'classes', label: '📅 שיעורים היום' },
   { id: 'athletes', label: '👥 מתאמנים' },
   { id: 'announcements', label: '📢 הודעות' },
+  { id: 'products', label: '📦 בקשות' },
 ]
 
 export default function TrainerDashboard({ profile, isAdmin }) {
@@ -70,6 +72,9 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         </div>
         <div className={tab === 'announcements' ? '' : 'hidden'}>
           <AnnouncementsManager trainerId={profile?.id} />
+        </div>
+        <div className={tab === 'products' ? '' : 'hidden'}>
+          <ProductRequests />
         </div>
       </main>
     </div>

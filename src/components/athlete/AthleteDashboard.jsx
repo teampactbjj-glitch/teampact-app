@@ -239,22 +239,67 @@ export default function AthleteDashboard({ profile }) {
             <p className="text-gray-400 text-sm text-center py-4">אין הודעות</p>
           ) : (
             <ul className="space-y-3">
-              {announcements.map(item => (
-                <li key={item.id} className="bg-white rounded-xl border px-4 py-3 shadow-sm">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                      {item.type === 'seminar' ? '🎓 סמינר' : '📢 הודעה'}
-                    </span>
-                    {item.event_date && (
-                      <span className="text-xs text-emerald-600 font-medium">
-                        {new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
-                      </span>
+              {announcements.map(item => {
+                const isSeminar = item.type === 'seminar'
+                const isProduct = item.type === 'product'
+                return (
+                  <li key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    {item.image_url && (
+                      <img src={item.image_url} alt="" className="w-full h-44 object-cover" />
                     )}
-                  </div>
-                  <p className="font-semibold text-gray-800 text-sm">{item.title}</p>
-                  {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
-                </li>
-              ))}
+                    <div className="px-4 py-3">
+                      {/* Badge row */}
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          isSeminar ? 'bg-purple-100 text-purple-700'
+                          : isProduct ? 'bg-green-100 text-green-700'
+                          : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {isSeminar ? '🎓 סמינר' : isProduct ? '🛒 מוצר' : '📢 הודעה'}
+                        </span>
+
+                        {item.price != null && (
+                          <span className="text-sm font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full">
+                            ₪{item.price}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="font-semibold text-gray-800">{item.title}</p>
+
+                      {/* Seminar date — prominent */}
+                      {item.event_date && (
+                        <div className="mt-2 flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
+                          <span className="text-lg">📅</span>
+                          <div>
+                            <p className="text-sm font-semibold text-purple-800">
+                              {new Date(item.event_date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                            </p>
+                            <p className="text-xs text-purple-600">
+                              {new Date(item.event_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {item.content && (
+                        <p className="text-sm text-gray-500 mt-2 whitespace-pre-wrap">{item.content}</p>
+                      )}
+
+                      {/* CTA for product / seminar */}
+                      {(isProduct || isSeminar) && (
+                        <button className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition ${
+                          isProduct
+                            ? 'bg-green-600 text-white hover:bg-green-700'
+                            : 'bg-purple-600 text-white hover:bg-purple-700'
+                        }`}>
+                          {isProduct ? '🛒 לפרטים ורכישה' : '📝 לפרטים והרשמה'}
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>

@@ -6,7 +6,7 @@ import ProductRequests from './ProductRequests'
 import { supabase } from '../../lib/supabase'
 
 const TABS = [
-  { id: 'classes', label: '📅 שיעורים היום' },
+  { id: 'classes', label: '📅 היום' },
   { id: 'athletes', label: '👥 מתאמנים' },
   { id: 'announcements', label: '📢 הודעות' },
   { id: 'products', label: '📦 בקשות' },

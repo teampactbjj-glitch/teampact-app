@@ -44,6 +44,7 @@ export default function AthleteDashboard({ profile }) {
   const [subType, setSubType] = useState(null)
   const [membershipEnd, setMembershipEnd] = useState(null)
   const [classes, setClasses] = useState([])
+  const [coachMap, setCoachMap] = useState({})
   const [registeredIds, setRegisteredIds] = useState(new Set())
   const [nextClass, setNextClass] = useState(null)
   const [announcements, setAnnouncements] = useState([])
@@ -87,7 +88,7 @@ export default function AthleteDashboard({ profile }) {
     const [classRes, regRes, annRes] = await Promise.all([
       bid
         ? supabase
-            .from('classes_with_coaches')
+            .from('classes')
             .select('*')
             .eq('branch_id', bid)
             .order('day_of_week')
@@ -103,6 +104,11 @@ export default function AthleteDashboard({ profile }) {
         .order('created_at', { ascending: false })
         .limit(10),
     ])
+
+    const { data: coachData } = await supabase.from('coaches').select('id, name')
+    const map = {}
+    coachData?.forEach(c => { map[c.id] = c.name })
+    setCoachMap(map)
 
     const allClasses = classRes.data || []
     const regIds = new Set((regRes.data || []).map(r => r.class_id))
@@ -243,7 +249,7 @@ export default function AthleteDashboard({ profile }) {
                               }`}
                             >
                               <div className="min-w-0">
-                                <p className="font-semibold text-gray-800 text-sm">{cls.name}{cls.coach_name ? ` · ${cls.coach_name}` : ''}</p>
+                                <p className="font-semibold text-gray-800 text-sm">{cls.name}{coachMap[cls.coach_id] ? ` · ${coachMap[cls.coach_id]}` : ''}</p>
                                 <p className="text-xs text-gray-500 mt-0.5">
                                   {formatTime(cls.start_time)}
                                   {cls.end_time && ` — ${formatTime(cls.end_time)}`}
@@ -283,7 +289,7 @@ export default function AthleteDashboard({ profile }) {
                 </div>
               ) : (
                 <div>
-                  <p className="text-lg font-semibold text-gray-800">{nextClass.name}{nextClass.coach_name ? ` · ${nextClass.coach_name}` : ''}</p>
+                  <p className="text-lg font-semibold text-gray-800">{nextClass.name}{coachMap[nextClass.coach_id] ? ` · ${coachMap[nextClass.coach_id]}` : ''}</p>
                   <p className="text-sm text-gray-500 mt-1">{nextClass.displayDay} · {nextClass.displayTime}</p>
                   {nextClass.end_time && (
                     <p className="text-xs text-gray-400">עד {formatTime(nextClass.end_time)}</p>

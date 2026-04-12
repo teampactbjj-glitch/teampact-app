@@ -87,7 +87,7 @@ export default function AthleteDashboard({ profile }) {
     const [classRes, regRes, annRes] = await Promise.all([
       bid
         ? supabase
-            .from('classes_with_coaches')
+            .from('classes')
             .select('*')
             .eq('branch_id', bid)
             .order('day_of_week')

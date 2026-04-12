@@ -72,7 +72,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
     if (isAdmin) {
       const { data, error } = await supabase
-        .from('classes_with_coaches')
+        .from('classes')
         .select('*, branches(name)')
         .eq('day_of_week', todayDow)
         .order('branch_id')
@@ -102,7 +102,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     const coachIds = coaches.map(c => c.id)
 
     const { data, error } = await supabase
-      .from('classes_with_coaches')
+      .from('classes')
       .select('*')
       .in('coach_id', coachIds)
       .eq('day_of_week', todayDow)

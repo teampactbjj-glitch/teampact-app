@@ -16,6 +16,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   const [tab, setTab] = useState(() => localStorage.getItem('trainerTab') || 'classes')
   const [pendingCount, setPendingCount] = useState(0)
   const [memberCounts, setMemberCounts] = useState({})
+  const [branchMap, setBranchMap] = useState({})
 
   useEffect(() => {
     console.log('TrainerDashboard mounted, tab:', tab)
@@ -24,10 +25,16 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   }, [])
 
   async function fetchMemberCounts() {
-    const { data: membersData } = await supabase.from('members').select('branch_id')
+    const [{ data: membersData }, { data: branchesData }] = await Promise.all([
+      supabase.from('members').select('branch_id'),
+      supabase.from('branches').select('id, name'),
+    ])
     const counts = {}
     membersData?.forEach(m => { counts[m.branch_id] = (counts[m.branch_id] || 0) + 1 })
     setMemberCounts(counts)
+    const bmap = {}
+    branchesData?.forEach(b => { bmap[b.id] = b.name })
+    setBranchMap(bmap)
   }
 
   async function fetchPendingCount() {
@@ -96,7 +103,8 @@ export default function TrainerDashboard({ profile, isAdmin }) {
             {Object.entries(memberCounts).map(([branchId, count]) => (
               <div key={branchId} style={{background:'#f0fdf4', border:'1px solid #86efac', borderRadius:'8px', padding:'12px 20px', textAlign:'center'}}>
                 <div style={{fontSize:'24px', fontWeight:'bold', color:'#166534'}}>{count}</div>
-                <div style={{fontSize:'13px', color:'#166534'}}>מתאמנים</div>
+                <div style={{fontSize:'13px', fontWeight:'600', color:'#166534'}}>{branchMap[branchId] || branchId}</div>
+                <div style={{fontSize:'11px', color:'#4ade80'}}>מתאמנים</div>
               </div>
             ))}
           </div>

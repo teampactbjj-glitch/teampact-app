@@ -35,8 +35,10 @@ export default function AnnouncementsManager({ trainerId }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    console.log('saving:', form)
     if (editingId) {
-      await supabase.from('announcements').update({ ...form }).eq('id', editingId)
+      const { data, error } = await supabase.from('announcements').update({ ...form }).eq('id', editingId)
+      console.log('result:', data, error)
     } else {
       const payload = {
         title: form.title,

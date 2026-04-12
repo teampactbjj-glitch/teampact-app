@@ -73,7 +73,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     if (isAdmin) {
       const { data, error } = await supabase
         .from('classes')
-        .select('*, branches(name), coaches(name)')
+        .select('*, branches(name), coaches!coach_id(name)')
         .eq('day_of_week', todayDow)
         .order('branch_id')
         .order('start_time')
@@ -104,7 +104,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
     const { data, error } = await supabase
       .from('classes')
-      .select('*, coaches(name)')
+      .select('*, coaches!coach_id(name)')
       .in('coach_id', coachIds)
       .eq('day_of_week', todayDow)
       .order('start_time')

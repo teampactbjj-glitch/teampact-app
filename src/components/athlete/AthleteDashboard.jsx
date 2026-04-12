@@ -109,6 +109,7 @@ export default function AthleteDashboard({ profile }) {
     const map = {}
     coachData?.forEach(c => { map[c.id] = c.name })
     setCoachMap(map)
+    setCoachMap(map)
 
     const allClasses = classRes.data || []
     const regIds = new Set((regRes.data || []).map(r => r.class_id))

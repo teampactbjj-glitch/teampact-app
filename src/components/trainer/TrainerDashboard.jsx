@@ -91,14 +91,16 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </div>
 
       <main className="p-4 max-w-3xl mx-auto">
-        <div style={{display:'flex', gap:'16px', marginBottom:'16px'}}>
-          {Object.entries(memberCounts).map(([branchId, count]) => (
-            <div key={branchId} style={{background:'#f0fdf4', border:'1px solid #86efac', borderRadius:'8px', padding:'12px 20px', textAlign:'center'}}>
-              <div style={{fontSize:'24px', fontWeight:'bold', color:'#166534'}}>{count}</div>
-              <div style={{fontSize:'13px', color:'#166534'}}>מתאמנים</div>
-            </div>
-          ))}
-        </div>
+        {isAdmin && (
+          <div style={{display:'flex', gap:'16px', marginBottom:'16px'}}>
+            {Object.entries(memberCounts).map(([branchId, count]) => (
+              <div key={branchId} style={{background:'#f0fdf4', border:'1px solid #86efac', borderRadius:'8px', padding:'12px 20px', textAlign:'center'}}>
+                <div style={{fontSize:'24px', fontWeight:'bold', color:'#166534'}}>{count}</div>
+                <div style={{fontSize:'13px', color:'#166534'}}>מתאמנים</div>
+              </div>
+            ))}
+          </div>
+        )}
         <div className={tab === 'classes' ? '' : 'hidden'}>
           <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />
         </div>

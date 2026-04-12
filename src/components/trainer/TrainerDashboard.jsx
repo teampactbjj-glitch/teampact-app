@@ -15,11 +15,20 @@ const TABS = [
 export default function TrainerDashboard({ profile, isAdmin }) {
   const [tab, setTab] = useState(() => localStorage.getItem('trainerTab') || 'classes')
   const [pendingCount, setPendingCount] = useState(0)
+  const [memberCounts, setMemberCounts] = useState({})
 
   useEffect(() => {
     console.log('TrainerDashboard mounted, tab:', tab)
     fetchPendingCount()
+    fetchMemberCounts()
   }, [])
+
+  async function fetchMemberCounts() {
+    const { data: membersData } = await supabase.from('members').select('branch_id')
+    const counts = {}
+    membersData?.forEach(m => { counts[m.branch_id] = (counts[m.branch_id] || 0) + 1 })
+    setMemberCounts(counts)
+  }
 
   async function fetchPendingCount() {
     const { count, error } = await supabase
@@ -82,6 +91,14 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </div>
 
       <main className="p-4 max-w-3xl mx-auto">
+        <div style={{display:'flex', gap:'16px', marginBottom:'16px'}}>
+          {Object.entries(memberCounts).map(([branchId, count]) => (
+            <div key={branchId} style={{background:'#f0fdf4', border:'1px solid #86efac', borderRadius:'8px', padding:'12px 20px', textAlign:'center'}}>
+              <div style={{fontSize:'24px', fontWeight:'bold', color:'#166534'}}>{count}</div>
+              <div style={{fontSize:'13px', color:'#166534'}}>מתאמנים</div>
+            </div>
+          ))}
+        </div>
         <div className={tab === 'classes' ? '' : 'hidden'}>
           <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />
         </div>

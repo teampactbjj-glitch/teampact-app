@@ -44,7 +44,6 @@ export default function AthleteDashboard({ profile }) {
   const [subType, setSubType] = useState(null)
   const [membershipEnd, setMembershipEnd] = useState(null)
   const [classes, setClasses] = useState([])
-  const [coachMap, setCoachMap] = useState({})
   const [registeredIds, setRegisteredIds] = useState(new Set())
   const [nextClass, setNextClass] = useState(null)
   const [announcements, setAnnouncements] = useState([])
@@ -84,12 +83,12 @@ export default function AthleteDashboard({ profile }) {
     setSubType(memberRow?.subscription_type || memberRow?.membership_type || null)
     setMembershipEnd(memberRow?.membership_end || null)
 
-    // 3 & 4. classes + registrations + announcements + coaches (parallel)
-    const [classRes, regRes, annRes, coachRes] = await Promise.all([
+    // 3. classes + registrations + announcements (parallel)
+    const [classRes, regRes, annRes] = await Promise.all([
       bid
         ? supabase
-            .from('classes')
-            .select('id, name, day_of_week, start_time, end_time, class_type, level, hall, coach_id')
+            .from('classes_with_coaches')
+            .select('*')
             .eq('branch_id', bid)
             .order('day_of_week')
             .order('start_time')
@@ -103,15 +102,7 @@ export default function AthleteDashboard({ profile }) {
         .select('*')
         .order('created_at', { ascending: false })
         .limit(10),
-      supabase.from('coaches').select('id, name'),
     ])
-
-    const map = {}
-    coachRes.data?.forEach(c => { map[c.id] = c.name })
-    setCoachMap(map)
-
-    console.log('classes:', classRes.data, classRes.error)
-    console.log('registrations:', regRes.data, regRes.error)
 
     const allClasses = classRes.data || []
     const regIds = new Set((regRes.data || []).map(r => r.class_id))
@@ -252,7 +243,7 @@ export default function AthleteDashboard({ profile }) {
                               }`}
                             >
                               <div className="min-w-0">
-                                <p className="font-semibold text-gray-800 text-sm">{cls.name}{coachMap[cls.coach_id] ? ` · ${cls.coaches.name}` : ''}</p>
+                                <p className="font-semibold text-gray-800 text-sm">{cls.name}{cls.coach_name ? ` · ${cls.coaches.name}` : ''}</p>
                                 <p className="text-xs text-gray-500 mt-0.5">
                                   {formatTime(cls.start_time)}
                                   {cls.end_time && ` — ${formatTime(cls.end_time)}`}
@@ -292,7 +283,7 @@ export default function AthleteDashboard({ profile }) {
                 </div>
               ) : (
                 <div>
-                  <p className="text-lg font-semibold text-gray-800">{nextClass.name}{coachMap[nextClass.coach_id] ? ` · ${nextClass.coaches.name}` : ''}</p>
+                  <p className="text-lg font-semibold text-gray-800">{nextClass.name}{nextClass.coach_name ? ` · ${nextClass.coaches.name}` : ''}</p>
                   <p className="text-sm text-gray-500 mt-1">{nextClass.displayDay} · {nextClass.displayTime}</p>
                   {nextClass.end_time && (
                     <p className="text-xs text-gray-400">עד {formatTime(nextClass.end_time)}</p>

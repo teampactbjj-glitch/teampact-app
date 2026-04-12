@@ -15,6 +15,7 @@ export default function AnnouncementsManager({ trainerId }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [editingId, setEditingId] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [uploadingImage, setUploadingImage] = useState(false)
 
   useEffect(() => {
     localStorage.removeItem('announcementDraft')
@@ -79,6 +80,19 @@ export default function AnnouncementsManager({ trainerId }) {
     setItems(prev => prev.filter(i => i.id !== id))
   }
 
+  async function handleImageUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingImage(true)
+    const ext = file.name.split('.').pop()
+    const fileName = `${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('products').upload(fileName, file)
+    if (error) { console.error('upload error:', error); setUploadingImage(false); return }
+    const { data } = supabase.storage.from('products').getPublicUrl(fileName)
+    setForm(p => ({ ...p, image_url: data.publicUrl }))
+    setUploadingImage(false)
+  }
+
   const typeInfo = (type) => TYPES.find(t => t.value === type) || TYPES[0]
 
   return (
@@ -122,8 +136,17 @@ export default function AnnouncementsManager({ trainerId }) {
               value={form.price}
               onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
           )}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">תמונה</label>
+            <input type="file" accept="image/*" onChange={handleImageUpload}
+              className="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+            {uploadingImage && <p className="text-xs text-gray-400 mt-1">מעלה תמונה...</p>}
+            {form.image_url && (
+              <img src={form.image_url} alt="" className="mt-2 w-full max-h-40 object-cover rounded-lg" />
+            )}
+          </div>
           <div className="flex gap-2">
-            <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm">
+            <button type="submit" disabled={uploadingImage} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm disabled:opacity-50">
               {editingId ? 'שמור שינויים' : 'פרסם'}
             </button>
             <button type="button" onClick={cancelForm} className="flex-1 border py-2 rounded-lg text-sm">ביטול</button>

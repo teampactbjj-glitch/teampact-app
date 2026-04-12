@@ -85,6 +85,7 @@ export default function AthleteDashboard({ profile }) {
     setMembershipEnd(memberRow?.membership_end || null)
 
     // 3 & 4. classes + registrations + announcements + coaches (parallel)
+    console.log('fetching coaches...')
     const [classRes, regRes, annRes, coachRes] = await Promise.all([
       bid
         ? supabase
@@ -114,7 +115,7 @@ export default function AthleteDashboard({ profile }) {
     setCoachMap(map)
 
     const allClasses = classRes.data || []
-    console.log('coaches:', coachRes.data)
+    console.log('coachRes:', coachRes.data, 'error:', coachRes.error)
     console.log('coachMap:', map)
     console.log('first class coach_id:', allClasses[0]?.coach_id)
     const regIds = new Set((regRes.data || []).map(r => r.class_id))

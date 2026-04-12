@@ -241,7 +241,7 @@ export default function AthleteDashboard({ profile }) {
                               }`}
                             >
                               <div className="min-w-0">
-                                <p className="font-semibold text-gray-800 text-sm">{cls.name}{cls.coach_name ? ` · ${cls.coach_name}` : ''}</p>
+                                <p className="font-semibold text-gray-800 text-sm">{cls.name} · TEST:{cls.coach_name || 'NULL'}</p>
                                 <p className="text-xs text-gray-500 mt-0.5">
                                   {formatTime(cls.start_time)}
                                   {cls.end_time && ` — ${formatTime(cls.end_time)}`}

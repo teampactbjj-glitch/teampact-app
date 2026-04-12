@@ -73,7 +73,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     if (isAdmin) {
       const { data, error } = await supabase
         .from('classes')
-        .select('*, branches(name)')
+        .select('*, branches(name), coaches(name)')
         .eq('day_of_week', todayDow)
         .order('branch_id')
         .order('start_time')
@@ -82,6 +82,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       const mapped = (data || []).map(cls => ({
         ...cls,
         branchName: cls.branches?.name || cls.branch_id || '',
+        coachName: cls.coaches?.name || '',
       }))
       setClasses(mapped)
       fetchMemberCounts(mapped.map(c => c.id))
@@ -103,7 +104,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
     const { data, error } = await supabase
       .from('classes')
-      .select('*')
+      .select('*, coaches(name)')
       .in('coach_id', coachIds)
       .eq('day_of_week', todayDow)
       .order('start_time')
@@ -112,6 +113,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     const mapped = (data || []).map(cls => ({
       ...cls,
       branchName: coachBranchMap[cls.coach_id] || '',
+      coachName: cls.coaches?.name || '',
     }))
     setClasses(mapped)
     fetchMemberCounts(mapped.map(c => c.id))
@@ -404,7 +406,9 @@ export default function TodayClasses({ trainerId, isAdmin }) {
             >
               <div className="text-right">
                 <div className="flex items-center gap-2">
-                  <p className="font-semibold text-gray-800">{cls.name || cls.title}</p>
+                  <p className="font-semibold text-gray-800">
+                    {cls.name || cls.title}{cls.coachName ? ` · ${cls.coachName}` : ''}
+                  </p>
                   {cls.branchName && (
                     <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
                       {cls.branchName}

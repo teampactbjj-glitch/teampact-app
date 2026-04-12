@@ -88,7 +88,7 @@ export default function AthleteDashboard({ profile }) {
       bid
         ? supabase
             .from('classes')
-            .select('id, name, day_of_week, start_time, end_time, class_type, level, hall')
+            .select('id, name, day_of_week, start_time, end_time, class_type, level, hall, coaches(name)')
             .eq('branch_id', bid)
             .order('day_of_week')
             .order('start_time')
@@ -246,7 +246,7 @@ export default function AthleteDashboard({ profile }) {
                               }`}
                             >
                               <div className="min-w-0">
-                                <p className="font-semibold text-gray-800 text-sm">{cls.name}</p>
+                                <p className="font-semibold text-gray-800 text-sm">{cls.name}{cls.coaches?.name ? ` · ${cls.coaches.name}` : ''}</p>
                                 <p className="text-xs text-gray-500 mt-0.5">
                                   {formatTime(cls.start_time)}
                                   {cls.end_time && ` — ${formatTime(cls.end_time)}`}
@@ -286,7 +286,7 @@ export default function AthleteDashboard({ profile }) {
                 </div>
               ) : (
                 <div>
-                  <p className="text-lg font-semibold text-gray-800">{nextClass.name}</p>
+                  <p className="text-lg font-semibold text-gray-800">{nextClass.name}{nextClass.coaches?.name ? ` · ${nextClass.coaches.name}` : ''}</p>
                   <p className="text-sm text-gray-500 mt-1">{nextClass.displayDay} · {nextClass.displayTime}</p>
                   {nextClass.end_time && (
                     <p className="text-xs text-gray-400">עד {formatTime(nextClass.end_time)}</p>

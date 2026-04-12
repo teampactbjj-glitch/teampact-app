@@ -83,16 +83,8 @@ export default function AthleteDashboard({ profile }) {
     setSubType(memberRow?.subscription_type || memberRow?.membership_type || null)
     setMembershipEnd(memberRow?.membership_end || null)
 
-    // 3. classes + registrations + announcements (parallel)
-    const [classRes, regRes, annRes] = await Promise.all([
-      bid
-        ? supabase
-            .from('classes')
-            .select('id, name, day_of_week, start_time, end_time, branch_id, coach_id, coach_name, max_participants')
-            .eq('branch_id', bid)
-            .order('day_of_week')
-            .order('start_time')
-        : Promise.resolve({ data: [], error: null }),
+    // 3. registrations + announcements (parallel)
+    const [regRes, annRes] = await Promise.all([
       supabase
         .from('class_registrations')
         .select('class_id')
@@ -103,6 +95,12 @@ export default function AthleteDashboard({ profile }) {
         .order('created_at', { ascending: false })
         .limit(10),
     ])
+
+    // 4. classes via RPC (includes coach_name)
+    const classRes = bid
+      ? await supabase.rpc('get_classes_with_coach', { p_branch_id: bid })
+      : { data: [], error: null }
+    console.log('classRes:', classRes.data, classRes.error)
 
     const allClasses = classRes.data || []
     const regIds = new Set((regRes.data || []).map(r => r.class_id))

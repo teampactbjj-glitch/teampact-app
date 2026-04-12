@@ -37,7 +37,15 @@ export default function AnnouncementsManager({ trainerId }) {
     e.preventDefault()
     console.log('saving:', form)
     if (editingId) {
-      const { data, error } = await supabase.from('announcements').update({ ...form }).eq('id', editingId)
+      const payload = {
+        title: form.title,
+        content: form.content || null,
+        type: form.type,
+        event_date: form.event_date || null,
+        price: form.price || null,
+        image_url: form.image_url || null,
+      }
+      const { data, error } = await supabase.from('announcements').update(payload).eq('id', editingId)
       console.log('result:', data, error)
       console.log('update error details:', JSON.stringify(error))
     } else {

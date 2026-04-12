@@ -72,19 +72,16 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
     if (isAdmin) {
       const { data, error } = await supabase
-        .from('classes')
+        .from('classes_with_coaches')
         .select('*, branches(name)')
         .eq('day_of_week', todayDow)
         .order('branch_id')
         .order('start_time')
       if (error) console.error('fetchTodayClasses error:', error)
-      const { data: coachData } = await supabase.from('coaches').select('id, name')
-      const cMap = {}
-      coachData?.forEach(c => { cMap[c.id] = c.name })
       const mapped = (data || []).map(cls => ({
         ...cls,
         branchName: cls.branches?.name || cls.branch_id || '',
-        coachName: cMap[cls.coach_id] || '',
+        coachName: cls.coach_name || '',
       }))
       setClasses(mapped)
       fetchMemberCounts(mapped.map(c => c.id))
@@ -105,7 +102,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     const coachIds = coaches.map(c => c.id)
 
     const { data, error } = await supabase
-      .from('classes')
+      .from('classes_with_coaches')
       .select('*')
       .in('coach_id', coachIds)
       .eq('day_of_week', todayDow)

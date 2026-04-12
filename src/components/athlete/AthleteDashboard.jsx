@@ -88,7 +88,7 @@ export default function AthleteDashboard({ profile }) {
       bid
         ? supabase
             .from('classes')
-            .select('*, coaches(name)')
+            .select('*, coaches!coach_id(name)')
             .eq('branch_id', bid)
             .order('day_of_week')
             .order('start_time')

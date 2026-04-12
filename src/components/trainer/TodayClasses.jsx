@@ -71,18 +71,17 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     const todayDow = date.getDay()
 
     if (isAdmin) {
-      const { data, error } = await supabase
-        .from('classes')
-        .select('*, branches(name), coaches!coach_id(name)')
-        .eq('day_of_week', todayDow)
-        .order('branch_id')
-        .order('start_time')
-
+      const [{ data, error }, { data: allCoaches }] = await Promise.all([
+        supabase.from('classes').select('*, branches(name)').eq('day_of_week', todayDow).order('branch_id').order('start_time'),
+        supabase.from('coaches').select('id, name'),
+      ])
       if (error) console.error('fetchTodayClasses error:', error)
+      const cMap = {}
+      allCoaches?.forEach(c => { cMap[c.id] = c.name })
       const mapped = (data || []).map(cls => ({
         ...cls,
         branchName: cls.branches?.name || cls.branch_id || '',
-        coachName: cls.coaches?.name || '',
+        coachName: cMap[cls.coach_id] || '',
       }))
       setClasses(mapped)
       fetchMemberCounts(mapped.map(c => c.id))
@@ -92,19 +91,23 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
     const { data: coaches, error: coachErr } = await supabase
       .from('coaches')
-      .select('id, branch_id, branches(name)')
+      .select('id, name, branch_id, branches(name)')
       .eq('user_id', trainerId)
 
     if (coachErr) console.error('fetchCoaches error:', coachErr)
     if (!coaches || coaches.length === 0) { setClasses([]); setLoading(false); return }
 
     const coachBranchMap = {}
-    coaches.forEach(c => { coachBranchMap[c.id] = c.branches?.name || c.branch_id })
+    const coachNameMap = {}
+    coaches.forEach(c => {
+      coachBranchMap[c.id] = c.branches?.name || c.branch_id
+      coachNameMap[c.id] = c.name
+    })
     const coachIds = coaches.map(c => c.id)
 
     const { data, error } = await supabase
       .from('classes')
-      .select('*, coaches!coach_id(name)')
+      .select('*')
       .in('coach_id', coachIds)
       .eq('day_of_week', todayDow)
       .order('start_time')
@@ -113,7 +116,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     const mapped = (data || []).map(cls => ({
       ...cls,
       branchName: coachBranchMap[cls.coach_id] || '',
-      coachName: cls.coaches?.name || '',
+      coachName: coachNameMap[cls.coach_id] || '',
     }))
     setClasses(mapped)
     fetchMemberCounts(mapped.map(c => c.id))

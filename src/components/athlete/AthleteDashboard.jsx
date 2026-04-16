@@ -10,36 +10,6 @@ function formatTime(t) {
   return t ? t.slice(0, 5) : ''
 }
 
-function resolveNextOccurrence(cls) {
-  const now = new Date()
-  const todayDow = now.getDay()
-  const [h, m] = (cls.start_time || '00:00').split(':').map(Number)
-  const classDow = typeof cls.day_of_week === 'number' ? cls.day_of_week : 0
-
-  let daysUntil = (classDow - todayDow + 7) % 7
-  if (daysUntil === 0) {
-    const nowMins = now.getHours() * 60 + now.getMinutes()
-    if (h * 60 + m <= nowMins) daysUntil = 7
-  }
-
-  const nextDate = new Date(now)
-  nextDate.setDate(now.getDate() + daysUntil)
-  nextDate.setHours(h, m, 0, 0)
-
-  const displayDay = daysUntil === 0 ? 'היום' : daysUntil === 1 ? 'מחר' : `יום ${DAYS_HE[classDow]}`
-  const displayTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-  return { daysUntil, displayDay, displayTime, nextDate }
-}
-
-function computeNextClass(allClasses, regIds) {
-  const registered = allClasses.filter(c => regIds.has(c.id))
-  if (registered.length === 0) return null
-  const withNext = registered.map(cls => ({ cls, ...resolveNextOccurrence(cls) }))
-  withNext.sort((a, b) => a.daysUntil - b.daysUntil || a.nextDate - b.nextDate)
-  const s = withNext[0]
-  return { ...s.cls, displayDay: s.displayDay, displayTime: s.displayTime }
-}
-
 const VALID_TABS = ['schedule', 'shop', 'profile']
 
 function getSavedTab() {
@@ -49,12 +19,10 @@ function getSavedTab() {
 
 export default function AthleteDashboard({ profile }) {
   const [activeTab, setActiveTab] = useState(getSavedTab)
-  const [branchId, setBranchId] = useState(null)
   const [subType, setSubType] = useState(null)
   const [membershipEnd, setMembershipEnd] = useState(null)
   const [classes, setClasses] = useState([])
   const [registeredIds, setRegisteredIds] = useState(new Set())
-  const [nextClass, setNextClass] = useState(null)
   const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
   const [regLoading, setRegLoading] = useState({})
@@ -69,28 +37,27 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAll() {
     setLoading(true)
 
-    const { data: profileRow, error: profileErr } = await supabase
-      .from('profiles')
-      .select('branch_id')
-      .eq('id', profile.id)
-      .maybeSingle()
-
-    console.log('profiles:', profileRow, profileErr)
-    const bid = profileRow?.branch_id
-    setBranchId(bid)
-
-    const { data: memberRow, error: memberErr } = await supabase
+    // Fetch member record by email → get branch_ids array + subscription info
+    const { data: memberRow } = await supabase
       .from('members')
-      .select('subscription_type, membership_type, membership_end')
-      .eq('branch_id', bid)
+      .select('branch_ids, subscription_type, membership_type, membership_end')
       .eq('email', profile.email)
       .maybeSingle()
 
-    console.log('members:', memberRow, memberErr)
+    const branchIds = memberRow?.branch_ids || []
     setSubType(memberRow?.subscription_type || memberRow?.membership_type || null)
     setMembershipEnd(memberRow?.membership_end || null)
 
-    const [regRes, annRes] = await Promise.all([
+    // Fetch classes for the athlete's branches + registrations + announcements
+    const [classRes, regRes, annRes] = await Promise.all([
+      branchIds.length > 0
+        ? supabase
+            .from('classes')
+            .select('id, name, day_of_week, start_time, end_time, hall')
+            .in('branch_id', branchIds)
+            .order('day_of_week')
+            .order('start_time')
+        : Promise.resolve({ data: [] }),
       supabase
         .from('class_registrations')
         .select('class_id')
@@ -102,19 +69,9 @@ export default function AthleteDashboard({ profile }) {
         .limit(10),
     ])
 
-    const classRes = bid
-      ? await supabase.rpc('get_classes_with_coach', { p_branch_id: bid })
-      : { data: [], error: null }
-    console.log('classRes:', classRes.data, classRes.error)
-
-    const allClasses = classRes.data || []
-    const regIds = new Set((regRes.data || []).map(r => r.class_id))
-
-    setClasses(allClasses)
-    setRegisteredIds(regIds)
+    setClasses(classRes.data || [])
+    setRegisteredIds(new Set((regRes.data || []).map(r => r.class_id)))
     setAnnouncements(annRes.data || [])
-    setNextClass(computeNextClass(allClasses, regIds))
-
     setLoading(false)
   }
 
@@ -139,12 +96,12 @@ export default function AthleteDashboard({ profile }) {
       if (error) { console.error('register error:', error); setRegLoading(p => ({ ...p, [classId]: false })); return }
     }
 
-    const newRegIds = new Set(registeredIds)
-    if (isReg) newRegIds.delete(classId)
-    else newRegIds.add(classId)
-    setRegisteredIds(newRegIds)
-    setNextClass(computeNextClass(classes, newRegIds))
-
+    setRegisteredIds(prev => {
+      const next = new Set(prev)
+      if (isReg) next.delete(classId)
+      else next.add(classId)
+      return next
+    })
     setRegLoading(p => ({ ...p, [classId]: false }))
   }
 
@@ -200,14 +157,9 @@ export default function AthleteDashboard({ profile }) {
           <>
             {/* ── SCHEDULE TAB ── */}
             <div className={activeTab === 'schedule' ? '' : 'hidden'}>
-              <h2 className="font-bold text-gray-800 mb-3">לוח שיעורים שבועי</h2>
-              {!branchId ? (
-                <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
-                  <p className="text-sm font-semibold text-orange-700">לא נמצא סניף משויך לחשבון שלך</p>
-                  <p className="text-xs text-orange-500 mt-1">פנה למאמן לשיוך לסניף</p>
-                </div>
-              ) : grouped.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">אין שיעורים בסניף שלך</p>
+              <h2 className="font-bold text-gray-800 mb-3">לוח שיעורים שבועי מלא</h2>
+              {grouped.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">אין שיעורים זמינים</p>
               ) : (
                 <div className="space-y-4">
                   {grouped.map(({ dow, dayName, classes: dayCls }) => (
@@ -226,7 +178,7 @@ export default function AthleteDashboard({ profile }) {
                               }`}
                             >
                               <div className="min-w-0">
-                                <p className="font-semibold text-gray-800 text-sm">{cls.name}{cls.coach_name ? ' · ' + cls.coach_name : ''}</p>
+                                <p className="font-semibold text-gray-800 text-sm">{cls.name}</p>
                                 <p className="text-xs text-gray-500 mt-0.5">
                                   {formatTime(cls.start_time)}
                                   {cls.end_time && ` — ${formatTime(cls.end_time)}`}
@@ -234,6 +186,7 @@ export default function AthleteDashboard({ profile }) {
                                 </p>
                               </div>
                               <button
+                                type="button"
                                 onClick={() => toggleRegistration(cls.id)}
                                 disabled={busy || atLimit}
                                 className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-40 ${
@@ -305,6 +258,7 @@ export default function AthleteDashboard({ profile }) {
                           )}
                           {(isProduct || isSeminar) && (
                             <button
+                              type="button"
                               onClick={() => isProduct && setProductModal(item)}
                               className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition ${
                                 isProduct ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-purple-600 text-white hover:bg-purple-700'
@@ -353,28 +307,8 @@ export default function AthleteDashboard({ profile }) {
                   )}
                 </div>
 
-                <div className="bg-white rounded-xl border shadow-sm p-5">
-                  <h2 className="font-bold text-gray-800 mb-3">האימון הבא שלך</h2>
-                  {!nextClass ? (
-                    <div className="text-center py-6 text-gray-400">
-                      <div className="text-3xl mb-2">📅</div>
-                      <p className="text-sm">הירשם לשיעורים בלוח האימונים</p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="text-lg font-semibold text-gray-800">{nextClass.name}{nextClass.coach_name ? ` · ${nextClass.coach_name}` : ''}</p>
-                      <p className="text-sm text-gray-500 mt-1">{nextClass.displayDay} · {nextClass.displayTime}</p>
-                      {nextClass.end_time && (
-                        <p className="text-xs text-gray-400">עד {formatTime(nextClass.end_time)}</p>
-                      )}
-                      {nextClass.hall && (
-                        <p className="text-xs text-gray-400">{nextClass.hall}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
                 <button
+                  type="button"
                   onClick={() => supabase.auth.signOut()}
                   className="w-full py-3 border border-red-200 text-red-500 rounded-xl font-medium hover:bg-red-50 transition"
                 >
@@ -389,7 +323,8 @@ export default function AthleteDashboard({ profile }) {
       {/* Product modal */}
       {productModal && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4 sm:pb-0"
+          className="fixed inset-0 flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4 sm:pb-0"
+          style={{ zIndex: 10000 }}
           onClick={closeProductModal}
         >
           <div
@@ -411,13 +346,13 @@ export default function AthleteDashboard({ profile }) {
               {productModal.content && (
                 <p className="text-sm text-gray-600 whitespace-pre-wrap">{productModal.content}</p>
               )}
-
               {requestSent ? (
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
                   <p className="text-green-700 font-semibold">הבקשה נשלחה למאמן ✓</p>
                 </div>
               ) : (
                 <button
+                  type="button"
                   onClick={() => sendProductRequest(productModal)}
                   disabled={requestLoading}
                   className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition disabled:opacity-50"
@@ -425,8 +360,8 @@ export default function AthleteDashboard({ profile }) {
                   {requestLoading ? '...' : '🙋 אני מעוניין'}
                 </button>
               )}
-
               <button
+                type="button"
                 onClick={closeProductModal}
                 className="w-full py-2 border rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition"
               >

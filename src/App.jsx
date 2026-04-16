@@ -4,8 +4,10 @@ import TrainerLogin from './components/auth/TrainerLogin'
 import AthleteLogin from './components/auth/AthleteLogin'
 import TrainerDashboard from './components/trainer/TrainerDashboard'
 import AthleteDashboard from './components/athlete/AthleteDashboard'
+import RegisterPage from './components/auth/RegisterPage'
 
 export default function App() {
+  if (window.location.pathname === '/register') return <RegisterPage />
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loginMode, setLoginMode] = useState('athlete') // 'trainer' | 'athlete'

@@ -1,11 +1,6 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../../lib/supabase'
-
-const BRANCHES = [
-  { id: '11111111-1111-1111-1111-111111111111', name: 'חולון' },
-  { id: '22222222-2222-2222-2222-222222222222', name: 'תל אביב' },
-]
 
 // Map Hebrew / various formats → internal membership_type
 const MEMBERSHIP_MAP = {
@@ -92,7 +87,17 @@ function parseFile(file) {
 export default function ImportAthletes({ onImported }) {
   const inputRef = useRef()
   const [show, setShow] = useState(false)
-  const [branchId, setBranchId] = useState(BRANCHES[0].id)
+  const [branches, setBranches] = useState([])
+  const [branchId, setBranchId] = useState('')
+
+  useEffect(() => {
+    supabase.from('branches').select('id, name').order('name').then(({ data }) => {
+      if (data?.length) {
+        setBranches(data)
+        setBranchId(p => p || data[0].id)
+      }
+    })
+  }, [])
   const [rows, setRows] = useState([])   // { full_name, email, phone, membership_type, group_name, errors[] }
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState(null) // { saved, failed }
@@ -147,7 +152,7 @@ export default function ImportAthletes({ onImported }) {
     setShow(false)
     setRows([])
     setResult(null)
-    setBranchId(BRANCHES[0].id)
+    setBranchId(branches[0]?.id || '')
   }
 
   const validCount = rows.filter(r => r.errors.length === 0).length
@@ -186,8 +191,8 @@ export default function ImportAthletes({ onImported }) {
               {!result && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">סניף</label>
-                  <div className="flex gap-2">
-                    {BRANCHES.map(b => (
+                  <div className="flex gap-2 flex-wrap">
+                    {branches.map(b => (
                       <button
                         key={b.id}
                         type="button"

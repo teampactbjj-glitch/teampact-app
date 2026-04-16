@@ -1,10 +1,17 @@
 export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCount = 0 }) {
-  const tabs = [
-    { id: 'schedule', icon: '📅', label: 'לוח אימונים' },
-    { id: 'shop', icon: '🛒', label: 'חנות' },
-    { id: 'profile', icon: '👤', label: 'פרופיל' },
-    ...(isTrainer ? [{ id: 'athletes', icon: '👥', label: 'ניהול מתאמנים' }] : []),
-  ]
+  const tabs = isTrainer
+    ? [
+        { id: 'schedule', icon: '📅', label: 'לוח אימונים' },
+        { id: 'shop',     icon: '🛒', label: 'חנות' },
+        { id: 'athletes', icon: '👥', label: 'מתאמנים' },
+        { id: 'profile',  icon: '👤', label: 'פרופיל' },
+      ]
+    : [
+        { id: 'schedule',      icon: '📅', label: 'לוח אימונים' },
+        { id: 'announcements', icon: '📢', label: 'הודעות' },
+        { id: 'shop',          icon: '🛒', label: 'חנות' },
+        { id: 'profile',       icon: '👤', label: 'פרופיל' },
+      ]
 
   return (
     <nav

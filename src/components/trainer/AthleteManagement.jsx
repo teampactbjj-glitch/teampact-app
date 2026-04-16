@@ -2,11 +2,6 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import ImportAthletes from './ImportAthletes'
 
-const BRANCHES = [
-  { id: '11111111-1111-1111-1111-111111111111', name: 'חולון' },
-  { id: '22222222-2222-2222-2222-222222222222', name: 'תל אביב' },
-]
-
 const MEMBERSHIP_LABELS = {
   '2x_week': '2× שבוע',
   '4x_week': '4× שבוע',
@@ -31,17 +26,29 @@ const EMPTY_FORM = {
   membership_type: '2x_week',
   group_ids: [],
   active: true,
-  branch_id: BRANCHES[0].id,
+  branch_id: '',
 }
 
 export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null }) {
   const [athletes, setAthletes] = useState([])
+  const [pendingAthletes, setPendingAthletes] = useState([])
+  const [branches, setBranches] = useState([])
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
+  const [subTab, setSubTab] = useState('active') // 'active' | 'pending'
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [search, setSearch] = useState('')
   const [saveError, setSaveError] = useState('')
+
+  useEffect(() => {
+    supabase.from('branches').select('id, name').order('name').then(({ data }) => {
+      if (data?.length) {
+        setBranches(data)
+        setForm(p => p.branch_id ? p : { ...p, branch_id: data[0].id })
+      }
+    })
+  }, [])
 
   useEffect(() => {
     fetchAthletes()
@@ -64,11 +71,20 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   async function fetchAthletes() {
     setLoading(true)
 
+    // Always fetch pending registrations
+    const { data: pendingData } = await supabase
+      .from('members')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+    setPendingAthletes(pendingData || [])
+
     if (isAdmin) {
-      // Admin: all members from all branches
+      // Admin: all active/approved members from all branches
       const { data, error } = await supabase
         .from('members')
         .select('*')
+        .neq('status', 'pending')
         .order('full_name')
       if (error) console.error('fetchAthletes [admin] error:', error)
       setAthletes(data || [])
@@ -199,15 +215,25 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       membership_type: athlete.membership_type || athlete.subscription_type || '2x_week',
       group_ids: athlete.group_ids || (athlete.group_id ? [athlete.group_id] : []),
       active: athlete.active ?? true,
-      branch_id: athlete.branch_id || BRANCHES[0].id,
+      branch_id: athlete.branch_id || branches[0]?.id || '',
     })
     setEditing(athlete.id)
   }
 
   function openAdd() {
     setSaveError('')
-    setForm(EMPTY_FORM)
+    setForm({ ...EMPTY_FORM, branch_id: branches[0]?.id || '' })
     setEditing('new')
+  }
+
+  async function approvePending(id) {
+    await supabase.from('members').update({ status: 'approved', active: true }).eq('id', id)
+    fetchAthletes()
+  }
+
+  async function rejectPending(id) {
+    await supabase.from('members').delete().eq('id', id)
+    fetchAthletes()
   }
 
   const limit = SESSION_LIMITS[form.membership_type] ?? 2
@@ -237,12 +263,37 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
         </div>
       </div>
 
-      <input
-        className="w-full border rounded-lg px-3 py-2 text-sm"
-        placeholder="חיפוש לפי שם, אימייל או קבוצה..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-      />
+      {/* Sub-tabs: active / pending */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+        <button
+          type="button"
+          onClick={() => setSubTab('active')}
+          className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition ${subTab === 'active' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          מתאמנים פעילים
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubTab('pending')}
+          className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition relative ${subTab === 'pending' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          ממתינים לאישור
+          {pendingAthletes.length > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+              {pendingAthletes.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {subTab === 'active' && (
+        <input
+          className="w-full border rounded-lg px-3 py-2 text-sm"
+          placeholder="חיפוש לפי שם, אימייל או קבוצה..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      )}
 
       {editing && (
         <form onSubmit={saveAthlete} className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
@@ -253,8 +304,8 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
           {/* Branch selector */}
           <div>
             <label className="block text-xs text-gray-500 mb-1">סניף</label>
-            <div className="flex gap-2">
-              {BRANCHES.map(b => (
+            <div className="flex gap-2 flex-wrap">
+              {branches.map(b => (
                 <button
                   key={b.id}
                   type="button"
@@ -364,7 +415,45 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
         </form>
       )}
 
-      {loading ? (
+      {subTab === 'pending' ? (
+        pendingAthletes.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            <div className="text-4xl mb-2">✅</div>
+            <p>אין נרשמים ממתינים לאישור</p>
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {pendingAthletes.map(a => (
+              <li key={a.id} className="bg-white rounded-xl border px-4 py-3 shadow-sm space-y-2">
+                <div>
+                  <p className="font-semibold text-gray-800">{a.full_name}</p>
+                  <p className="text-xs text-gray-500">
+                    {a.email && <span>{a.email} · </span>}
+                    {a.phone && <span>{a.phone} · </span>}
+                    {branches.find(b => b.id === a.branch_id)?.name || a.branch_id}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => approvePending(a.id)}
+                    className="flex-1 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition"
+                  >
+                    ✓ אשר
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => rejectPending(a.id)}
+                    className="flex-1 py-1.5 border border-red-300 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50 transition"
+                  >
+                    ✕ דחה
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : loading ? (
         <p className="text-center text-gray-400 py-8">טוען מתאמנים...</p>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-gray-400">

@@ -10,7 +10,7 @@ function formatTime(t) {
   return t ? t.slice(0, 5) : ''
 }
 
-const VALID_TABS = ['schedule', 'shop', 'profile']
+const VALID_TABS = ['schedule', 'announcements', 'shop', 'profile']
 
 function getSavedTab() {
   const saved = localStorage.getItem('athleteTab')
@@ -164,56 +164,6 @@ export default function AthleteDashboard({ profile }) {
           <>
             {/* ── SCHEDULE TAB ── */}
             <div className={activeTab === 'schedule' ? '' : 'hidden'}>
-              {/* Announcements & seminars at the top */}
-              {announcements.filter(i => i.type !== 'product').length > 0 && (
-                <div className="mb-5">
-                  <h2 className="font-bold text-gray-800 mb-3">הודעות וסמינרים</h2>
-                  <ul className="space-y-3">
-                    {announcements.filter(i => i.type !== 'product').map(item => {
-                      const isSeminar = item.type === 'seminar'
-                      return (
-                        <li key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                          {item.image_url && (
-                            <img src={item.image_url} alt="" className="w-full h-44 object-cover" />
-                          )}
-                          <div className="px-4 py-3">
-                            <div className="flex flex-wrap items-center gap-2 mb-2">
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isSeminar ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                                {isSeminar ? '🎓 סמינר' : '📢 הודעה'}
-                              </span>
-                              {item.price != null && (
-                                <span className="text-sm font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full">₪{item.price}</span>
-                              )}
-                            </div>
-                            <p className="font-semibold text-gray-800">{item.title}</p>
-                            {item.event_date && (
-                              <div className="mt-2 flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
-                                <span className="text-lg">📅</span>
-                                <div>
-                                  <p className="text-sm font-semibold text-purple-800">
-                                    {new Date(item.event_date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                                  </p>
-                                  <p className="text-xs text-purple-600">
-                                    {new Date(item.event_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-                                  </p>
-                                </div>
-                              </div>
-                            )}
-                            {item.content && <p className="text-sm text-gray-500 mt-2 whitespace-pre-wrap">{item.content}</p>}
-                            {isSeminar && (
-                              <button type="button" className="mt-3 w-full py-2 rounded-xl text-sm font-semibold bg-purple-600 text-white hover:bg-purple-700 transition">
-                                📝 לפרטים והרשמה
-                              </button>
-                            )}
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              )}
-
-              {/* Weekly schedule */}
               <h2 className="font-bold text-gray-800 mb-3">לוח שיעורים שבועי</h2>
               {noBranch ? (
                 <div className="bg-orange-50 border border-orange-200 rounded-xl p-6 text-center">
@@ -269,6 +219,55 @@ export default function AthleteDashboard({ profile }) {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+
+            {/* ── ANNOUNCEMENTS TAB ── */}
+            <div className={activeTab === 'announcements' ? '' : 'hidden'}>
+              <h2 className="font-bold text-gray-800 mb-3">הודעות וסמינרים</h2>
+              {announcements.filter(i => i.type !== 'product').length === 0 ? (
+                <p className="text-gray-400 text-sm text-center py-4">אין הודעות</p>
+              ) : (
+                <ul className="space-y-3">
+                  {announcements.filter(i => i.type !== 'product').map(item => {
+                    const isSeminar = item.type === 'seminar'
+                    return (
+                      <li key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                        {item.image_url && <img src={item.image_url} alt="" className="w-full h-44 object-cover" />}
+                        <div className="px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isSeminar ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {isSeminar ? '🎓 סמינר' : '📢 הודעה'}
+                            </span>
+                            {item.price != null && (
+                              <span className="text-sm font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full">₪{item.price}</span>
+                            )}
+                          </div>
+                          <p className="font-semibold text-gray-800">{item.title}</p>
+                          {item.event_date && (
+                            <div className="mt-2 flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
+                              <span className="text-lg">📅</span>
+                              <div>
+                                <p className="text-sm font-semibold text-purple-800">
+                                  {new Date(item.event_date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                                </p>
+                                <p className="text-xs text-purple-600">
+                                  {new Date(item.event_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          {item.content && <p className="text-sm text-gray-500 mt-2 whitespace-pre-wrap">{item.content}</p>}
+                          {isSeminar && (
+                            <button type="button" className="mt-3 w-full py-2 rounded-xl text-sm font-semibold bg-purple-600 text-white hover:bg-purple-700 transition">
+                              📝 לפרטים והרשמה
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
               )}
             </div>
 

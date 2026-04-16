@@ -4,14 +4,15 @@ import TrainerLogin from './components/auth/TrainerLogin'
 import AthleteLogin from './components/auth/AthleteLogin'
 import TrainerDashboard from './components/trainer/TrainerDashboard'
 import AthleteDashboard from './components/athlete/AthleteDashboard'
-import RegisterPage from './components/auth/RegisterPage'
+import RegisterPage from './components/RegisterPage'
 
 export default function App() {
-  if (window.location.pathname === '/register') return <RegisterPage />
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
-  const [loginMode, setLoginMode] = useState('athlete') // 'trainer' | 'athlete'
+  const [loginMode, setLoginMode] = useState('athlete')
   const [loadingProfile, setLoadingProfile] = useState(false)
+
+  if (window.location.pathname === '/register') return <RegisterPage />
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -44,13 +45,11 @@ export default function App() {
       : <AthleteLogin onSwitch={() => setLoginMode('trainer')} />
   }
 
-  if (loadingProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-400">טוען...</p>
-      </div>
-    )
-  }
+  if (loadingProfile) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <p className="text-gray-400">טוען...</p>
+    </div>
+  )
 
   if (profile?.role === 'trainer') return <TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} />
   return <AthleteDashboard profile={profile} />

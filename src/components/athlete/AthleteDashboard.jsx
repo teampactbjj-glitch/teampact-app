@@ -6,412 +6,295 @@ const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const SUBSCRIPTION_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 
-function formatTime(t) {
-  return t ? t.slice(0, 5) : ''
+function resolveNextOccurrence(cls) {
+  const now = new Date()
+  const todayDow = now.getDay()
+  const [h, m] = (cls.start_time || '00:00').split(':').map(Number)
+  const classDow = typeof cls.day_of_week === 'number' ? cls.day_of_week : 0
+  let daysUntil = (classDow - todayDow + 7) % 7
+  if (daysUntil === 0) {
+    const nowMins = now.getHours() * 60 + now.getMinutes()
+    if ((h * 60 + m) <= nowMins) daysUntil = 7
+  }
+  const nextDate = new Date(now)
+  nextDate.setDate(now.getDate() + daysUntil)
+  nextDate.setHours(h, m, 0, 0)
+  const displayDay = daysUntil === 0 ? 'היום' : daysUntil === 1 ? 'מחר' : `יום ${DAYS_HE[classDow]}`
+  const displayTime = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`
+  return { daysUntil, displayDay, displayTime, nextDate }
 }
 
-const VALID_TABS = ['schedule', 'announcements', 'shop', 'profile']
-
-function getSavedTab() {
-  const saved = localStorage.getItem('athleteTab')
-  return VALID_TABS.includes(saved) ? saved : 'schedule'
-}
-
-export default function AthleteDashboard({ profile }) {
-  const [activeTab, setActiveTab] = useState(getSavedTab)
-  const [subType, setSubType] = useState(null)
-  const [membershipEnd, setMembershipEnd] = useState(null)
-  const [classes, setClasses] = useState([])
-  const [registeredIds, setRegisteredIds] = useState(new Set())
-  const [announcements, setAnnouncements] = useState([])
-  const [noBranch, setNoBranch] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [regLoading, setRegLoading] = useState({})
-  const [productModal, setProductModal] = useState(null)
-  const [requestSent, setRequestSent] = useState(false)
-  const [requestLoading, setRequestLoading] = useState(false)
-
-  useEffect(() => {
-    if (profile?.id) fetchAll()
-  }, [profile?.id])
-
-  async function fetchAll() {
-    setLoading(true)
-
-    // Fetch member record by email → get branch_ids array + subscription info
-    const { data: memberRow } = await supabase
-      .from('members')
-      .select('branch_id, branch_ids, subscription_type, membership_type, membership_end')
-      .eq('email', profile.email)
-      .maybeSingle()
-
-    // Support both branch_ids (array) and branch_id (singular) formats
-    const branchIds = memberRow?.branch_ids?.length
-      ? memberRow.branch_ids
-      : memberRow?.branch_id
-        ? [memberRow.branch_id]
-        : []
-    setNoBranch(branchIds.length === 0)
-    setSubType(memberRow?.subscription_type || memberRow?.membership_type || null)
-    setMembershipEnd(memberRow?.membership_end || null)
-
-    // Fetch classes for the athlete's branches + registrations + announcements
-    const [classRes, regRes, annRes] = await Promise.all([
-      branchIds.length > 0
-        ? supabase
-            .from('classes')
-            .select('id, name, day_of_week, start_time, end_time, hall')
-            .in('branch_id', branchIds)
-            .order('day_of_week')
-            .order('start_time')
-        : Promise.resolve({ data: [] }),
-      supabase
-        .from('class_registrations')
-        .select('class_id')
-        .eq('athlete_id', profile.id),
-      supabase
-        .from('announcements')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10),
-    ])
-
-    setClasses(classRes.data || [])
-    setRegisteredIds(new Set((regRes.data || []).map(r => r.class_id)))
-    setAnnouncements(annRes.data || [])
-    setLoading(false)
-  }
-
-  async function toggleRegistration(classId) {
-    const isReg = registeredIds.has(classId)
-    const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
-
-    if (!isReg && limit !== Infinity && registeredIds.size >= limit) {
-      alert(`הגעת למגבלת ${limit} שיעורים שבועיים לפי המנוי שלך`)
-      return
-    }
-
-    setRegLoading(p => ({ ...p, [classId]: true }))
-
-    if (isReg) {
-      const { error } = await supabase.from('class_registrations').delete()
-        .eq('athlete_id', profile.id).eq('class_id', classId)
-      if (error) { console.error('unregister error:', error); setRegLoading(p => ({ ...p, [classId]: false })); return }
-    } else {
-      const { error } = await supabase.from('class_registrations')
-        .insert({ athlete_id: profile.id, class_id: classId })
-      if (error) { console.error('register error:', error); setRegLoading(p => ({ ...p, [classId]: false })); return }
-    }
-
-    setRegisteredIds(prev => {
-      const next = new Set(prev)
-      if (isReg) next.delete(classId)
-      else next.add(classId)
-      return next
-    })
-    setRegLoading(p => ({ ...p, [classId]: false }))
-  }
-
-  async function sendProductRequest(item) {
-    setRequestLoading(true)
-    const { error } = await supabase.from('product_requests').insert({
-      athlete_id: profile.id,
-      athlete_name: profile.full_name,
-      product_id: item.id,
-      product_name: item.title,
-    })
-    if (error) console.error('product_request error:', error)
-    setRequestLoading(false)
-    setRequestSent(true)
-  }
-
-  function closeProductModal() {
-    setProductModal(null)
-    setRequestSent(false)
-  }
-
-  function handleTabChange(id) {
-    setActiveTab(id)
-    localStorage.setItem('athleteTab', id)
-  }
-
-  const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
-  const grouped = DAYS_HE.map((dayName, dow) => ({
-    dow,
-    dayName,
-    classes: classes.filter(c => c.day_of_week === dow),
-  })).filter(g => g.classes.length > 0)
-
+function HomeTab({ profile, nextClass, isCheckedIn, weeklyCheckins, limit, checkinLoading, onCheckin, generalAnnouncements }) {
+  const usagePercent = limit === Infinity ? 0 : Math.min((weeklyCheckins / limit) * 100, 100)
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <header className="bg-emerald-700 text-white px-6 py-4 flex items-center justify-between shadow">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">💪</span>
-          <div>
-            <h1 className="font-bold text-lg leading-none">TeamPact</h1>
-            <p className="text-emerald-200 text-xs">שלום, {profile?.full_name}</p>
-          </div>
-        </div>
-        <button onClick={() => supabase.auth.signOut()} className="text-emerald-200 hover:text-white text-sm">
-          יציאה
-        </button>
-      </header>
-
-      <main className="p-4 max-w-lg mx-auto">
-        {loading ? (
-          <p className="text-center text-gray-400 py-16">טוען...</p>
-        ) : (
-          <>
-            {/* ── SCHEDULE TAB ── */}
-            <div className={activeTab === 'schedule' ? '' : 'hidden'}>
-              <h2 className="font-bold text-gray-800 mb-3">לוח שיעורים שבועי</h2>
-              {noBranch ? (
-                <div className="bg-orange-50 border border-orange-200 rounded-xl p-6 text-center">
-                  <div className="text-3xl mb-2">🏫</div>
-                  <p className="text-sm font-semibold text-orange-700">טרם שויכת לסניף</p>
-                  <p className="text-xs text-orange-500 mt-1">פנה להנהלה לשיוך לסניף</p>
-                </div>
-              ) : grouped.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">אין שיעורים זמינים בסניף שלך</p>
-              ) : (
-                <div className="space-y-4">
-                  {grouped.map(({ dow, dayName, classes: dayCls }) => (
-                    <div key={dow}>
-                      <p className="text-xs font-bold text-gray-400 tracking-wide mb-2 px-1">יום {dayName}</p>
-                      <ul className="space-y-2">
-                        {dayCls.map(cls => {
-                          const isReg = registeredIds.has(cls.id)
-                          const atLimit = !isReg && limit !== Infinity && registeredIds.size >= limit
-                          const busy = regLoading[cls.id]
-                          return (
-                            <li
-                              key={cls.id}
-                              className={`bg-white rounded-xl border shadow-sm px-4 py-3 flex items-center justify-between gap-3 transition ${
-                                isReg ? 'border-emerald-300 bg-emerald-50' : ''
-                              }`}
-                            >
-                              <div className="min-w-0">
-                                <p className="font-semibold text-gray-800 text-sm">{cls.name}</p>
-                                <p className="text-xs text-gray-500 mt-0.5">
-                                  {formatTime(cls.start_time)}
-                                  {cls.end_time && ` — ${formatTime(cls.end_time)}`}
-                                  {cls.hall && ` · ${cls.hall}`}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => toggleRegistration(cls.id)}
-                                disabled={busy || atLimit}
-                                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-40 ${
-                                  isReg
-                                    ? 'bg-emerald-500 text-white hover:bg-red-100 hover:text-red-700'
-                                    : atLimit
-                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                                }`}
-                              >
-                                {busy ? '...' : isReg ? '✓ רשום · בטל' : atLimit ? 'מגבלת מנוי' : 'הירשם'}
-                              </button>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              )}
+    <div className="space-y-4">
+      {generalAnnouncements.length > 0 && (
+        <div className="space-y-2">
+          {generalAnnouncements.map(item => (
+            <div key={item.id} className="bg-yellow-50 border-r-4 border-yellow-400 rounded-xl px-4 py-3 flex items-start gap-3">
+              <span className="text-xl mt-0.5">📢</span>
+              <div>
+                <p className="font-semibold text-yellow-900 text-sm">{item.title}</p>
+                {item.content && <p className="text-xs text-yellow-700 mt-0.5">{item.content}</p>}
+              </div>
             </div>
+          ))}
+        </div>
+      )}
+      <div className="bg-white rounded-xl border shadow-sm p-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-sm font-medium text-gray-700">מנוי: {SUBSCRIPTION_LABELS[profile?.subscription_type] || '—'}</span>
+          <span className="text-sm text-gray-500">{limit === Infinity ? 'ללא הגבלה' : `${weeklyCheckins}/${limit} השבוע`}</span>
+        </div>
+        {limit !== Infinity && (
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all ${usagePercent >= 100 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${usagePercent}%` }} />
+          </div>
+        )}
+      </div>
+      <div className="bg-white rounded-xl border shadow-sm p-5">
+        <h2 className="font-bold text-gray-800 mb-3">האימון הבא שלך</h2>
+        {!nextClass ? (
+          <div className="text-center py-6 text-gray-400"><div className="text-3xl mb-2">📅</div><p className="text-sm">אין אימונים קרובים</p></div>
+        ) : (
+          <div>
+            <p className="text-lg font-semibold text-gray-800">{nextClass.name || nextClass.title}</p>
+            <p className="text-sm text-gray-500 mt-1">{nextClass.displayDay} · {nextClass.displayTime}</p>
+            {nextClass.duration_minutes && <p className="text-xs text-gray-400">{nextClass.duration_minutes} דקות</p>}
+            <button onClick={onCheckin} disabled={checkinLoading || (weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity)}
+              className={`mt-4 w-full py-3 rounded-xl font-semibold text-white transition disabled:opacity-50 ${isCheckedIn ? 'bg-green-500 hover:bg-green-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+              {checkinLoading ? '...' : isCheckedIn ? "✓ בוצע צ'ק-אין — ביטול?" : "צ'ק-אין לאימון"}
+            </button>
+            {weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity && (
+              <p className="text-xs text-red-500 text-center mt-2">הגעת למגבלת האימונים השבועית</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
-            {/* ── ANNOUNCEMENTS TAB ── */}
-            <div className={activeTab === 'announcements' ? '' : 'hidden'}>
-              <h2 className="font-bold text-gray-800 mb-3">הודעות וסמינרים</h2>
-              {announcements.filter(i => i.type !== 'product').length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">אין הודעות</p>
-              ) : (
-                <ul className="space-y-3">
-                  {announcements.filter(i => i.type !== 'product').map(item => {
-                    const isSeminar = item.type === 'seminar'
+function ScheduleTab({ generalAnnouncements }) {
+  const [classes, setClasses] = useState([])
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    supabase.from('classes').select('*').order('day_of_week').order('start_time')
+      .then(({ data }) => { setClasses(data || []); setLoading(false) })
+  }, [])
+  const byDay = DAYS_HE.reduce((acc, _, idx) => { acc[idx] = classes.filter(c => c.day_of_week === idx); return acc }, {})
+  return (
+    <div className="space-y-4">
+      {generalAnnouncements.length > 0 && (
+        <div className="space-y-2">
+          {generalAnnouncements.map(item => (
+            <div key={item.id} className="bg-yellow-50 border-r-4 border-yellow-400 rounded-xl px-4 py-3 flex items-start gap-3">
+              <span className="text-xl mt-0.5">⚠️</span>
+              <div>
+                <p className="font-semibold text-yellow-900 text-sm">{item.title}</p>
+                {item.content && <p className="text-xs text-yellow-700 mt-0.5">{item.content}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {loading ? <p className="text-center text-gray-400 py-8">טוען...</p> : (
+        <div className="space-y-4">
+          {DAYS_HE.map((dayName, idx) => {
+            const dayCls = byDay[idx]
+            if (!dayCls || dayCls.length === 0) return null
+            return (
+              <div key={idx} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                <div className="bg-gray-50 border-b px-4 py-2"><h3 className="font-bold text-gray-700 text-sm">יום {dayName}</h3></div>
+                <ul className="divide-y">
+                  {dayCls.map(cls => {
+                    const [h, m] = (cls.start_time || '00:00').split(':').map(Number)
+                    const endMins = h * 60 + m + (cls.duration_minutes || 60)
                     return (
-                      <li key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                        {item.image_url && <img src={item.image_url} alt="" className="w-full h-44 object-cover" />}
-                        <div className="px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-2 mb-2">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isSeminar ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {isSeminar ? '🎓 סמינר' : '📢 הודעה'}
-                            </span>
-                            {item.price != null && (
-                              <span className="text-sm font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full">₪{item.price}</span>
-                            )}
-                          </div>
-                          <p className="font-semibold text-gray-800">{item.title}</p>
-                          {item.event_date && (
-                            <div className="mt-2 flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
-                              <span className="text-lg">📅</span>
-                              <div>
-                                <p className="text-sm font-semibold text-purple-800">
-                                  {new Date(item.event_date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                                </p>
-                                <p className="text-xs text-purple-600">
-                                  {new Date(item.event_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          {item.content && <p className="text-sm text-gray-500 mt-2 whitespace-pre-wrap">{item.content}</p>}
-                          {isSeminar && (
-                            <button type="button" className="mt-3 w-full py-2 rounded-xl text-sm font-semibold bg-purple-600 text-white hover:bg-purple-700 transition">
-                              📝 לפרטים והרשמה
-                            </button>
-                          )}
+                      <li key={cls.id} className="px-4 py-3 flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-gray-800 text-sm">{cls.name || cls.title}</p>
+                          {cls.coach && <p className="text-xs text-gray-400">{cls.coach}</p>}
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-semibold text-emerald-700">{String(h).padStart(2,'0')}:{String(m).padStart(2,'0')}</p>
+                          <p className="text-xs text-gray-400">עד {String(Math.floor(endMins/60)).padStart(2,'0')}:{String(endMins%60).padStart(2,'0')}</p>
                         </div>
                       </li>
                     )
                   })}
                 </ul>
-              )}
-            </div>
-
-            {/* ── SHOP TAB — products only ── */}
-            <div className={activeTab === 'shop' ? '' : 'hidden'}>
-              <h2 className="font-bold text-gray-800 mb-3">חנות</h2>
-              {announcements.filter(i => i.type === 'product').length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">אין מוצרים זמינים כרגע</p>
-              ) : (
-                <ul className="space-y-3">
-                  {announcements.filter(i => i.type === 'product').map(item => (
-                    <li key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                      {item.image_url && (
-                        <img src={item.image_url} alt="" className="w-full h-44 object-cover" />
-                      )}
-                      <div className="px-4 py-3">
-                        <div className="flex flex-wrap items-center gap-2 mb-2">
-                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">🛒 מוצר</span>
-                          {item.price != null && (
-                            <span className="text-sm font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full">
-                              ₪{item.price}
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-semibold text-gray-800">{item.title}</p>
-                        {item.content && (
-                          <p className="text-sm text-gray-500 mt-2 whitespace-pre-wrap">{item.content}</p>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setProductModal(item)}
-                          className="mt-3 w-full py-2 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700 transition"
-                        >
-                          🛒 לפרטים ורכישה
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* ── PROFILE TAB ── */}
-            {activeTab === 'profile' && (
-              <div className="space-y-4">
-                <div className="bg-white rounded-xl border shadow-sm p-5">
-                  <div className="flex items-center gap-3 mb-4">
-                    <span className="text-3xl">💪</span>
-                    <div>
-                      <p className="font-bold text-gray-800 text-lg leading-tight">{profile?.full_name}</p>
-                      <p className="text-sm text-gray-500">{SUBSCRIPTION_LABELS[subType] || 'מנוי לא ידוע'}</p>
-                    </div>
-                  </div>
-                  {membershipEnd && (
-                    <p className="text-sm text-gray-500 mb-3">
-                      תוקף מנוי: {new Date(membershipEnd).toLocaleDateString('he-IL')}
-                    </p>
-                  )}
-                  {limit !== Infinity && (
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-600">שיעורים שנבחרו השבוע</span>
-                        <span className="text-gray-500">{registeredIds.size}/{limit}</span>
-                      </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${registeredIds.size >= limit ? 'bg-emerald-500' : 'bg-emerald-400'}`}
-                          style={{ width: `${Math.min((registeredIds.size / limit) * 100, 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => supabase.auth.signOut()}
-                  className="w-full py-3 border border-red-200 text-red-500 rounded-xl font-medium hover:bg-red-50 transition"
-                >
-                  יציאה מהמערכת
-                </button>
               </div>
-            )}
-          </>
-        )}
-      </main>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
-      {/* Product modal */}
-      {productModal && (
-        <div
-          className="fixed inset-0 flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4 sm:pb-0"
-          style={{ zIndex: 10000 }}
-          onClick={closeProductModal}
-        >
-          <div
-            className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            {productModal.image_url && (
-              <img src={productModal.image_url} alt="" className="w-full h-52 object-cover" />
-            )}
-            <div className="p-5 space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="font-bold text-gray-800 text-lg leading-tight">{productModal.title}</h3>
-                {productModal.price != null && (
-                  <span className="text-lg font-bold text-green-700 bg-green-50 border border-green-200 px-3 py-1 rounded-full shrink-0">
-                    ₪{productModal.price}
-                  </span>
-                )}
-              </div>
-              {productModal.content && (
-                <p className="text-sm text-gray-600 whitespace-pre-wrap">{productModal.content}</p>
-              )}
-              {requestSent ? (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-                  <p className="text-green-700 font-semibold">הבקשה נשלחה למאמן ✓</p>
+function ShopTab({ announcements }) {
+  const products = announcements.filter(a => a.type === 'product')
+  const seminars = announcements.filter(a => a.type === 'seminar')
+  return (
+    <div className="space-y-6">
+      {seminars.length > 0 && (
+        <div>
+          <h3 className="font-bold text-gray-700 text-sm mb-3">🎓 סמינרים ואירועים</h3>
+          <div className="space-y-3">
+            {seminars.map(item => (
+              <div key={item.id} className="bg-white rounded-xl border shadow-sm p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">🎓 סמינר</span>
+                  {item.event_date && <span className="text-xs text-blue-600 font-medium">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</span>}
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => sendProductRequest(productModal)}
-                  disabled={requestLoading}
-                  className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition disabled:opacity-50"
-                >
-                  {requestLoading ? '...' : '🙋 אני מעוניין'}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={closeProductModal}
-                className="w-full py-2 border rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition"
-              >
-                סגור
-              </button>
-            </div>
+                <p className="font-semibold text-gray-800">{item.title}</p>
+                {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
+                {item.price != null && <p className="text-sm font-bold text-emerald-600 mt-2">₪{item.price}</p>}
+              </div>
+            ))}
           </div>
         </div>
       )}
+      {products.length > 0 && (
+        <div>
+          <h3 className="font-bold text-gray-700 text-sm mb-3">🛒 ציוד ומוצרים</h3>
+          <div className="space-y-3">
+            {products.map(item => (
+              <div key={item.id} className="bg-white rounded-xl border shadow-sm p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-800">{item.title}</p>
+                    {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
+                  </div>
+                  {item.price != null && <span className="text-lg font-bold text-emerald-600 mr-3">₪{item.price}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {products.length === 0 && seminars.length === 0 && (
+        <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">🛍️</div><p>אין פריטים בחנות כרגע</p></div>
+      )}
+    </div>
+  )
+}
 
-      <BottomNav
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
-        isTrainer={false}
-      />
+function ProfileTab({ profile }) {
+  const [memberInfo, setMemberInfo] = useState(null)
+  useEffect(() => {
+    if (profile?.id) {
+      supabase.from('members').select('belt, grade, subscription_type').eq('id', profile.id).maybeSingle()
+        .then(({ data }) => setMemberInfo(data))
+    }
+  }, [profile])
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border shadow-sm p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-3xl mx-auto mb-3">💪</div>
+        <h2 className="text-lg font-bold text-gray-800">{profile?.full_name}</h2>
+        <p className="text-sm text-gray-500 mt-0.5">{profile?.email}</p>
+      </div>
+      {memberInfo && (
+        <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
+          {memberInfo.belt && <div className="flex justify-between items-center"><span className="text-sm text-gray-500">חגורה</span><span className="text-sm font-semibold text-gray-800">{memberInfo.belt}</span></div>}
+          {memberInfo.subscription_type && <div className="flex justify-between items-center"><span className="text-sm text-gray-500">מנוי</span><span className="text-sm font-semibold text-gray-800">{SUBSCRIPTION_LABELS[memberInfo.subscription_type] || memberInfo.subscription_type}</span></div>}
+        </div>
+      )}
+      <button onClick={() => supabase.auth.signOut()} className="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-medium text-sm hover:bg-red-100 transition">
+        יציאה מהמערכת
+      </button>
+    </div>
+  )
+}
+
+export default function AthleteDashboard({ profile }) {
+  const [activeTab, setActiveTab]           = useState('home')
+  const [nextClass, setNextClass]           = useState(null)
+  const [isCheckedIn, setIsCheckedIn]       = useState(false)
+  const [weeklyCheckins, setWeeklyCheckins] = useState(0)
+  const [announcements, setAnnouncements]   = useState([])
+  const [loading, setLoading]               = useState(true)
+  const [checkinLoading, setCheckinLoading] = useState(false)
+
+  const limit = SUBSCRIPTION_LIMITS[profile?.subscription_type] ?? 2
+  const generalAnnouncements = announcements.filter(a => a.type === 'general' || a.type === 'announcement')
+
+  useEffect(() => {
+    if (profile?.id) { fetchNextClass(); fetchAnnouncements(); fetchWeeklyCheckins() }
+  }, [profile])
+
+  async function fetchNextClass() {
+    setLoading(true)
+    const { data: member } = await supabase.from('members').select('group_ids, group_id').eq('id', profile.id).maybeSingle()
+    const groupIds = member?.group_ids || (member?.group_id ? [member.group_id] : [])
+    if (groupIds.length === 0) { setNextClass(null); setLoading(false); return }
+    const { data: classes } = await supabase.from('classes').select('*').in('id', groupIds)
+    if (!classes || classes.length === 0) { setNextClass(null); setLoading(false); return }
+    const withNext = classes.map(cls => ({ cls, ...resolveNextOccurrence(cls) }))
+    withNext.sort((a, b) => a.daysUntil - b.daysUntil || a.nextDate - b.nextDate)
+    const soonest = withNext[0]
+    setNextClass({ ...soonest.cls, displayDay: soonest.displayDay, displayTime: soonest.displayTime })
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0)
+    const todayEnd = new Date(); todayEnd.setHours(23,59,59,999)
+    const { data: chk } = await supabase.from('checkins').select('id')
+      .eq('class_id', soonest.cls.id).eq('athlete_id', profile.id)
+      .gte('checked_in_at', todayStart.toISOString()).lte('checked_in_at', todayEnd.toISOString()).maybeSingle()
+    setIsCheckedIn(!!chk)
+    setLoading(false)
+  }
+
+  async function fetchWeeklyCheckins() {
+    const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay()); weekStart.setHours(0,0,0,0)
+    const { count } = await supabase.from('checkins').select('id', { count: 'exact', head: true })
+      .eq('athlete_id', profile.id).gte('checked_in_at', weekStart.toISOString())
+    setWeeklyCheckins(count || 0)
+  }
+
+  async function fetchAnnouncements() {
+    const { data } = await supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(20)
+    setAnnouncements(data || [])
+  }
+
+  async function handleCheckin() {
+    if (!nextClass) return
+    if (weeklyCheckins >= limit && !isCheckedIn) { alert(`הגעת למגבלת ${limit} אימונים השבוע`); return }
+    setCheckinLoading(true)
+    if (isCheckedIn) {
+      await supabase.from('checkins').delete().eq('class_id', nextClass.id).eq('athlete_id', profile.id)
+      setIsCheckedIn(false); setWeeklyCheckins(p => p - 1)
+    } else {
+      await supabase.from('checkins').insert({ class_id: nextClass.id, athlete_id: profile.id })
+      setIsCheckedIn(true); setWeeklyCheckins(p => p + 1)
+    }
+    setCheckinLoading(false)
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50" dir="rtl">
+      <header className="bg-emerald-700 text-white px-6 py-4 flex items-center justify-between shadow">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">🥋</span>
+          <div>
+            <h1 className="font-bold text-lg leading-none">TeamPact</h1>
+            <p className="text-emerald-200 text-xs">שלום, {profile?.full_name}</p>
+          </div>
+        </div>
+      </header>
+      <main className="p-4 max-w-lg mx-auto pb-24">
+        {loading && activeTab === 'home' ? (
+          <p className="text-center text-gray-400 py-12">טוען...</p>
+        ) : (
+          <>
+            {activeTab === 'home'     && <HomeTab profile={profile} nextClass={nextClass} isCheckedIn={isCheckedIn} weeklyCheckins={weeklyCheckins} limit={limit} checkinLoading={checkinLoading} onCheckin={handleCheckin} generalAnnouncements={generalAnnouncements} />}
+            {activeTab === 'schedule' && <ScheduleTab generalAnnouncements={generalAnnouncements} />}
+            {activeTab === 'shop'     && <ShopTab announcements={announcements} />}
+            {activeTab === 'profile'  && <ProfileTab profile={profile} />}
+          </>
+        )}
+      </main>
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} isTrainer={false} />
     </div>
   )
 }

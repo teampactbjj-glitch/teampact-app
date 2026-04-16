@@ -24,23 +24,27 @@ function resolveNextOccurrence(cls) {
   return { daysUntil, displayDay, displayTime, nextDate }
 }
 
-function HomeTab({ profile, nextClass, isCheckedIn, weeklyCheckins, limit, checkinLoading, onCheckin, generalAnnouncements }) {
+function AnnouncementBanner({ items }) {
+  if (!items.length) return null
+  return (
+    <div className="space-y-2">
+      {items.map(item => (
+        <div key={item.id} className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex gap-3 items-start shadow-sm">
+          <span className="text-2xl flex-shrink-0">📢</span>
+          <div>
+            <p className="font-bold text-amber-900 text-sm leading-snug">{item.title}</p>
+            {item.content && <p className="text-xs text-amber-800 mt-1 leading-relaxed">{item.content}</p>}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function HomeTab({ profile, myClasses, checkinMap, weeklyCheckins, limit, loadingCheckin, onCheckin }) {
   const usagePercent = limit === Infinity ? 0 : Math.min((weeklyCheckins / limit) * 100, 100)
   return (
     <div className="space-y-4">
-      {generalAnnouncements.length > 0 && (
-        <div className="space-y-2">
-          {generalAnnouncements.map(item => (
-            <div key={item.id} className="bg-yellow-50 border-r-4 border-yellow-400 rounded-xl px-4 py-3 flex items-start gap-3">
-              <span className="text-xl mt-0.5">📢</span>
-              <div>
-                <p className="font-semibold text-yellow-900 text-sm">{item.title}</p>
-                {item.content && <p className="text-xs text-yellow-700 mt-0.5">{item.content}</p>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
       <div className="bg-white rounded-xl border shadow-sm p-4">
         <div className="flex justify-between items-center mb-2">
           <span className="text-sm font-medium text-gray-700">מנוי: {SUBSCRIPTION_LABELS[profile?.subscription_type] || '—'}</span>
@@ -52,23 +56,37 @@ function HomeTab({ profile, nextClass, isCheckedIn, weeklyCheckins, limit, check
           </div>
         )}
       </div>
+
       <div className="bg-white rounded-xl border shadow-sm p-5">
-        <h2 className="font-bold text-gray-800 mb-3">האימון הבא שלך</h2>
-        {!nextClass ? (
-          <div className="text-center py-6 text-gray-400"><div className="text-3xl mb-2">📅</div><p className="text-sm">אין אימונים קרובים</p></div>
+        <h2 className="font-bold text-gray-800 mb-3">האימונים שלך</h2>
+        {myClasses.length === 0 ? (
+          <div className="text-center py-6 text-gray-400"><div className="text-3xl mb-2">📅</div><p className="text-sm">לא שויכת לאימונים עדיין</p></div>
         ) : (
-          <div>
-            <p className="text-lg font-semibold text-gray-800">{nextClass.name || nextClass.title}</p>
-            <p className="text-sm text-gray-500 mt-1">{nextClass.displayDay} · {nextClass.displayTime}</p>
-            {nextClass.duration_minutes && <p className="text-xs text-gray-400">{nextClass.duration_minutes} דקות</p>}
-            <button onClick={onCheckin} disabled={checkinLoading || (weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity)}
-              className={`mt-4 w-full py-3 rounded-xl font-semibold text-white transition disabled:opacity-50 ${isCheckedIn ? 'bg-green-500 hover:bg-green-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
-              {checkinLoading ? '...' : isCheckedIn ? "✓ בוצע צ'ק-אין — ביטול?" : "צ'ק-אין לאימון"}
-            </button>
-            {weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity && (
-              <p className="text-xs text-red-500 text-center mt-2">הגעת למגבלת האימונים השבועית</p>
-            )}
-          </div>
+          <ul className="space-y-3">
+            {myClasses.map(cls => {
+              const { displayDay, displayTime } = resolveNextOccurrence(cls)
+              const isCheckedIn = !!checkinMap[cls.id]
+              const atLimit = weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity
+              return (
+                <li key={cls.id} className="border rounded-xl p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-gray-800 text-sm">{cls.name || cls.title}</p>
+                      <p className="text-xs text-gray-400">{displayDay} · {displayTime}</p>
+                    </div>
+                    <button
+                      onClick={() => onCheckin(cls)}
+                      disabled={loadingCheckin === cls.id || atLimit}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition disabled:opacity-40 flex-shrink-0 ${isCheckedIn ? 'bg-green-500' : 'bg-emerald-600'}`}
+                    >
+                      {loadingCheckin === cls.id ? '...' : isCheckedIn ? '✓ נרשמת' : "צ'ק-אין"}
+                    </button>
+                  </div>
+                  {atLimit && <p className="text-xs text-red-400 mt-1">הגעת למגבלת האימונים השבועית</p>}
+                </li>
+              )
+            })}
+          </ul>
         )}
       </div>
     </div>
@@ -85,19 +103,7 @@ function ScheduleTab({ generalAnnouncements }) {
   const byDay = DAYS_HE.reduce((acc, _, idx) => { acc[idx] = classes.filter(c => c.day_of_week === idx); return acc }, {})
   return (
     <div className="space-y-4">
-      {generalAnnouncements.length > 0 && (
-        <div className="space-y-2">
-          {generalAnnouncements.map(item => (
-            <div key={item.id} className="bg-yellow-50 border-r-4 border-yellow-400 rounded-xl px-4 py-3 flex items-start gap-3">
-              <span className="text-xl mt-0.5">⚠️</span>
-              <div>
-                <p className="font-semibold text-yellow-900 text-sm">{item.title}</p>
-                {item.content && <p className="text-xs text-yellow-700 mt-0.5">{item.content}</p>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <AnnouncementBanner items={generalAnnouncements} />
       {loading ? <p className="text-center text-gray-400 py-8">טוען...</p> : (
         <div className="space-y-4">
           {DAYS_HE.map((dayName, idx) => {
@@ -143,14 +149,21 @@ function ShopTab({ announcements }) {
           <h3 className="font-bold text-gray-700 text-sm mb-3">🎓 סמינרים ואירועים</h3>
           <div className="space-y-3">
             {seminars.map(item => (
-              <div key={item.id} className="bg-white rounded-xl border shadow-sm p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">🎓 סמינר</span>
-                  {item.event_date && <span className="text-xs text-blue-600 font-medium">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</span>}
+              <div key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-44 object-cover" />}
+                <div className="p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">🎓 סמינר</span>
+                    {item.event_date && <span className="text-xs text-blue-600 font-medium">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</span>}
+                  </div>
+                  <p className="font-semibold text-gray-800">{item.title}</p>
+                  {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
+                  {item.price != null && <p className="text-sm font-bold text-emerald-600 mt-2">₪{item.price}</p>}
+                  <a href="https://wa.me/972542250993" target="_blank" rel="noreferrer"
+                    className="mt-3 w-full flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white py-2 rounded-xl text-sm font-semibold transition">
+                    💬 להרשמה — WhatsApp
+                  </a>
                 </div>
-                <p className="font-semibold text-gray-800">{item.title}</p>
-                {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
-                {item.price != null && <p className="text-sm font-bold text-emerald-600 mt-2">₪{item.price}</p>}
               </div>
             ))}
           </div>
@@ -161,13 +174,20 @@ function ShopTab({ announcements }) {
           <h3 className="font-bold text-gray-700 text-sm mb-3">🛒 ציוד ומוצרים</h3>
           <div className="space-y-3">
             {products.map(item => (
-              <div key={item.id} className="bg-white rounded-xl border shadow-sm p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="font-semibold text-gray-800">{item.title}</p>
-                    {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
+              <div key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-44 object-cover" />}
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-800">{item.title}</p>
+                      {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
+                    </div>
+                    {item.price != null && <span className="text-lg font-bold text-emerald-600 flex-shrink-0">₪{item.price}</span>}
                   </div>
-                  {item.price != null && <span className="text-lg font-bold text-emerald-600 mr-3">₪{item.price}</span>}
+                  <a href="https://wa.me/972542250993" target="_blank" rel="noreferrer"
+                    className="mt-3 w-full flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white py-2 rounded-xl text-sm font-semibold transition">
+                    💬 להזמנה — WhatsApp
+                  </a>
                 </div>
               </div>
             ))}
@@ -211,38 +231,45 @@ function ProfileTab({ profile }) {
 
 export default function AthleteDashboard({ profile }) {
   const [activeTab, setActiveTab]           = useState('home')
-  const [nextClass, setNextClass]           = useState(null)
-  const [isCheckedIn, setIsCheckedIn]       = useState(false)
+  const [myClasses, setMyClasses]           = useState([])
+  const [checkinMap, setCheckinMap]         = useState({})
   const [weeklyCheckins, setWeeklyCheckins] = useState(0)
   const [announcements, setAnnouncements]   = useState([])
   const [loading, setLoading]               = useState(true)
-  const [checkinLoading, setCheckinLoading] = useState(false)
+  const [loadingCheckin, setLoadingCheckin] = useState(null)
 
   const limit = SUBSCRIPTION_LIMITS[profile?.subscription_type] ?? 2
   const generalAnnouncements = announcements.filter(a => a.type === 'general' || a.type === 'announcement')
 
   useEffect(() => {
-    if (profile?.id) { fetchNextClass(); fetchAnnouncements(); fetchWeeklyCheckins() }
+    if (profile?.id) { fetchMyClasses(); fetchAnnouncements(); fetchWeeklyCheckins() }
   }, [profile])
 
-  async function fetchNextClass() {
+  async function fetchMyClasses() {
     setLoading(true)
     const { data: member } = await supabase.from('members').select('group_ids, group_id').eq('id', profile.id).maybeSingle()
     const groupIds = member?.group_ids || (member?.group_id ? [member.group_id] : [])
-    if (groupIds.length === 0) { setNextClass(null); setLoading(false); return }
+    if (groupIds.length === 0) { setMyClasses([]); setLoading(false); return }
     const { data: classes } = await supabase.from('classes').select('*').in('id', groupIds)
-    if (!classes || classes.length === 0) { setNextClass(null); setLoading(false); return }
-    const withNext = classes.map(cls => ({ cls, ...resolveNextOccurrence(cls) }))
-    withNext.sort((a, b) => a.daysUntil - b.daysUntil || a.nextDate - b.nextDate)
-    const soonest = withNext[0]
-    setNextClass({ ...soonest.cls, displayDay: soonest.displayDay, displayTime: soonest.displayTime })
+    if (!classes || classes.length === 0) { setMyClasses([]); setLoading(false); return }
+    const sorted = classes.map(cls => ({ ...cls, ...resolveNextOccurrence(cls) }))
+    sorted.sort((a, b) => a.daysUntil - b.daysUntil)
+    setMyClasses(sorted)
+    await fetchCheckins(classes.map(c => c.id))
+    setLoading(false)
+  }
+
+  async function fetchCheckins(classIds) {
     const todayStart = new Date(); todayStart.setHours(0,0,0,0)
     const todayEnd = new Date(); todayEnd.setHours(23,59,59,999)
-    const { data: chk } = await supabase.from('checkins').select('id')
-      .eq('class_id', soonest.cls.id).eq('athlete_id', profile.id)
-      .gte('checked_in_at', todayStart.toISOString()).lte('checked_in_at', todayEnd.toISOString()).maybeSingle()
-    setIsCheckedIn(!!chk)
-    setLoading(false)
+    const { data } = await supabase.from('checkins').select('class_id')
+      .eq('athlete_id', profile.id)
+      .in('class_id', classIds)
+      .gte('checked_in_at', todayStart.toISOString())
+      .lte('checked_in_at', todayEnd.toISOString())
+    const map = {}
+    ;(data || []).forEach(c => { map[c.class_id] = true })
+    setCheckinMap(map)
   }
 
   async function fetchWeeklyCheckins() {
@@ -257,18 +284,21 @@ export default function AthleteDashboard({ profile }) {
     setAnnouncements(data || [])
   }
 
-  async function handleCheckin() {
-    if (!nextClass) return
-    if (weeklyCheckins >= limit && !isCheckedIn) { alert(`הגעת למגבלת ${limit} אימונים השבוע`); return }
-    setCheckinLoading(true)
-    if (isCheckedIn) {
-      await supabase.from('checkins').delete().eq('class_id', nextClass.id).eq('athlete_id', profile.id)
-      setIsCheckedIn(false); setWeeklyCheckins(p => p - 1)
-    } else {
-      await supabase.from('checkins').insert({ class_id: nextClass.id, athlete_id: profile.id })
-      setIsCheckedIn(true); setWeeklyCheckins(p => p + 1)
+  async function handleCheckin(cls) {
+    if (weeklyCheckins >= limit && !checkinMap[cls.id] && limit !== Infinity) {
+      alert(`הגעת למגבלת ${limit} אימונים השבוע`); return
     }
-    setCheckinLoading(false)
+    setLoadingCheckin(cls.id)
+    if (checkinMap[cls.id]) {
+      await supabase.from('checkins').delete().eq('class_id', cls.id).eq('athlete_id', profile.id)
+      setCheckinMap(p => { const n = { ...p }; delete n[cls.id]; return n })
+      setWeeklyCheckins(p => p - 1)
+    } else {
+      await supabase.from('checkins').insert({ class_id: cls.id, athlete_id: profile.id })
+      setCheckinMap(p => ({ ...p, [cls.id]: true }))
+      setWeeklyCheckins(p => p + 1)
+    }
+    setLoadingCheckin(null)
   }
 
   return (
@@ -287,7 +317,14 @@ export default function AthleteDashboard({ profile }) {
           <p className="text-center text-gray-400 py-12">טוען...</p>
         ) : (
           <>
-            {activeTab === 'home'     && <HomeTab profile={profile} nextClass={nextClass} isCheckedIn={isCheckedIn} weeklyCheckins={weeklyCheckins} limit={limit} checkinLoading={checkinLoading} onCheckin={handleCheckin} generalAnnouncements={generalAnnouncements} />}
+            {activeTab === 'home' && (
+              <>
+                <AnnouncementBanner items={generalAnnouncements} />
+                <div className="mt-4">
+                  <HomeTab profile={profile} myClasses={myClasses} checkinMap={checkinMap} weeklyCheckins={weeklyCheckins} limit={limit} loadingCheckin={loadingCheckin} onCheckin={handleCheckin} />
+                </div>
+              </>
+            )}
             {activeTab === 'schedule' && <ScheduleTab generalAnnouncements={generalAnnouncements} />}
             {activeTab === 'shop'     && <ShopTab announcements={announcements} />}
             {activeTab === 'profile'  && <ProfileTab profile={profile} />}

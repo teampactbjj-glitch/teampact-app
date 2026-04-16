@@ -16,8 +16,8 @@ function getSavedTab() {
 export default function TrainerDashboard({ profile, isAdmin }) {
   const [activeTab, setActiveTab] = useState(getSavedTab)
   const [pendingCount, setPendingCount] = useState(0)
-  const [memberCounts, setMemberCounts] = useState({})
   const [branchMap, setBranchMap] = useState({})
+  const [selectedBranch, setSelectedBranch] = useState(null)
 
   useEffect(() => {
     fetchPendingCount()
@@ -25,13 +25,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   }, [])
 
   async function fetchMemberCounts() {
-    const [{ data: membersData }, { data: branchesData }] = await Promise.all([
-      supabase.from('members').select('branch_id'),
-      supabase.from('branches').select('id, name'),
-    ])
-    const counts = {}
-    membersData?.forEach(m => { counts[m.branch_id] = (counts[m.branch_id] || 0) + 1 })
-    setMemberCounts(counts)
+    const { data: branchesData } = await supabase.from('branches').select('id, name')
     const bmap = {}
     branchesData?.forEach(b => { bmap[b.id] = b.name })
     setBranchMap(bmap)
@@ -90,7 +84,33 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         </div>
 
         <div className={activeTab === 'athletes' ? '' : 'hidden'}>
-          <AthleteManagement trainerId={profile?.id} isAdmin={isAdmin} />
+          {/* Branch filter */}
+          {Object.keys(branchMap).length > 0 && (
+            <div className="flex gap-2 mb-4 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setSelectedBranch(null)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+                  selectedBranch === null ? 'bg-blue-700 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                כל הסניפים
+              </button>
+              {Object.entries(branchMap).map(([id, name]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSelectedBranch(id)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+                    selectedBranch === id ? 'bg-blue-700 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+          <AthleteManagement trainerId={profile?.id} isAdmin={isAdmin} branchFilter={selectedBranch} />
         </div>
 
         {activeTab === 'profile' && (
@@ -104,28 +124,6 @@ export default function TrainerDashboard({ profile, isAdmin }) {
                 </div>
               </div>
             </div>
-
-            {isAdmin && Object.keys(memberCounts).length > 0 && (
-              <div className="bg-white rounded-xl border shadow-sm p-4">
-                <p className="text-sm font-semibold text-gray-600 mb-3">מתאמנים לפי סניף</p>
-                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                  {Object.entries(memberCounts).map(([branchId, count]) => (
-                    <div key={branchId} style={{
-                      background: '#f0fdf4',
-                      border: '1px solid #86efac',
-                      borderRadius: '8px',
-                      padding: '12px 20px',
-                      textAlign: 'center',
-                      minWidth: '80px',
-                    }}>
-                      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#166534' }}>{count}</div>
-                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#166534' }}>{branchMap[branchId] || branchId}</div>
-                      <div style={{ fontSize: '11px', color: '#4ade80' }}>מתאמנים</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <button
               onClick={() => supabase.auth.signOut()}

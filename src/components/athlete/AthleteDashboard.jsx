@@ -24,6 +24,7 @@ export default function AthleteDashboard({ profile }) {
   const [classes, setClasses] = useState([])
   const [registeredIds, setRegisteredIds] = useState(new Set())
   const [announcements, setAnnouncements] = useState([])
+  const [noBranch, setNoBranch] = useState(false)
   const [loading, setLoading] = useState(true)
   const [regLoading, setRegLoading] = useState({})
   const [productModal, setProductModal] = useState(null)
@@ -40,11 +41,17 @@ export default function AthleteDashboard({ profile }) {
     // Fetch member record by email → get branch_ids array + subscription info
     const { data: memberRow } = await supabase
       .from('members')
-      .select('branch_ids, subscription_type, membership_type, membership_end')
+      .select('branch_id, branch_ids, subscription_type, membership_type, membership_end')
       .eq('email', profile.email)
       .maybeSingle()
 
-    const branchIds = memberRow?.branch_ids || []
+    // Support both branch_ids (array) and branch_id (singular) formats
+    const branchIds = memberRow?.branch_ids?.length
+      ? memberRow.branch_ids
+      : memberRow?.branch_id
+        ? [memberRow.branch_id]
+        : []
+    setNoBranch(branchIds.length === 0)
     setSubType(memberRow?.subscription_type || memberRow?.membership_type || null)
     setMembershipEnd(memberRow?.membership_end || null)
 
@@ -157,9 +164,65 @@ export default function AthleteDashboard({ profile }) {
           <>
             {/* ── SCHEDULE TAB ── */}
             <div className={activeTab === 'schedule' ? '' : 'hidden'}>
-              <h2 className="font-bold text-gray-800 mb-3">לוח שיעורים שבועי מלא</h2>
-              {grouped.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">אין שיעורים זמינים</p>
+              {/* Announcements & seminars at the top */}
+              {announcements.filter(i => i.type !== 'product').length > 0 && (
+                <div className="mb-5">
+                  <h2 className="font-bold text-gray-800 mb-3">הודעות וסמינרים</h2>
+                  <ul className="space-y-3">
+                    {announcements.filter(i => i.type !== 'product').map(item => {
+                      const isSeminar = item.type === 'seminar'
+                      return (
+                        <li key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                          {item.image_url && (
+                            <img src={item.image_url} alt="" className="w-full h-44 object-cover" />
+                          )}
+                          <div className="px-4 py-3">
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isSeminar ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {isSeminar ? '🎓 סמינר' : '📢 הודעה'}
+                              </span>
+                              {item.price != null && (
+                                <span className="text-sm font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full">₪{item.price}</span>
+                              )}
+                            </div>
+                            <p className="font-semibold text-gray-800">{item.title}</p>
+                            {item.event_date && (
+                              <div className="mt-2 flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
+                                <span className="text-lg">📅</span>
+                                <div>
+                                  <p className="text-sm font-semibold text-purple-800">
+                                    {new Date(item.event_date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                                  </p>
+                                  <p className="text-xs text-purple-600">
+                                    {new Date(item.event_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                            {item.content && <p className="text-sm text-gray-500 mt-2 whitespace-pre-wrap">{item.content}</p>}
+                            {isSeminar && (
+                              <button type="button" className="mt-3 w-full py-2 rounded-xl text-sm font-semibold bg-purple-600 text-white hover:bg-purple-700 transition">
+                                📝 לפרטים והרשמה
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              )}
+
+              {/* Weekly schedule */}
+              <h2 className="font-bold text-gray-800 mb-3">לוח שיעורים שבועי</h2>
+              {noBranch ? (
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-6 text-center">
+                  <div className="text-3xl mb-2">🏫</div>
+                  <p className="text-sm font-semibold text-orange-700">טרם שויכת לסניף</p>
+                  <p className="text-xs text-orange-500 mt-1">פנה להנהלה לשיוך לסניף</p>
+                </div>
+              ) : grouped.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">אין שיעורים זמינים בסניף שלך</p>
               ) : (
                 <div className="space-y-4">
                   {grouped.map(({ dow, dayName, classes: dayCls }) => (
@@ -209,68 +272,41 @@ export default function AthleteDashboard({ profile }) {
               )}
             </div>
 
-            {/* ── SHOP TAB ── */}
+            {/* ── SHOP TAB — products only ── */}
             <div className={activeTab === 'shop' ? '' : 'hidden'}>
-              <h2 className="font-bold text-gray-800 mb-3">הודעות וסמינרים</h2>
-              {announcements.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">אין הודעות</p>
+              <h2 className="font-bold text-gray-800 mb-3">חנות</h2>
+              {announcements.filter(i => i.type === 'product').length === 0 ? (
+                <p className="text-gray-400 text-sm text-center py-4">אין מוצרים זמינים כרגע</p>
               ) : (
                 <ul className="space-y-3">
-                  {announcements.map(item => {
-                    const isSeminar = item.type === 'seminar'
-                    const isProduct = item.type === 'product'
-                    return (
-                      <li key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                        {item.image_url && (
-                          <img src={item.image_url} alt="" className="w-full h-44 object-cover" />
-                        )}
-                        <div className="px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-2 mb-2">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              isSeminar ? 'bg-purple-100 text-purple-700'
-                              : isProduct ? 'bg-green-100 text-green-700'
-                              : 'bg-blue-100 text-blue-700'
-                            }`}>
-                              {isSeminar ? '🎓 סמינר' : isProduct ? '🛒 מוצר' : '📢 הודעה'}
+                  {announcements.filter(i => i.type === 'product').map(item => (
+                    <li key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                      {item.image_url && (
+                        <img src={item.image_url} alt="" className="w-full h-44 object-cover" />
+                      )}
+                      <div className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">🛒 מוצר</span>
+                          {item.price != null && (
+                            <span className="text-sm font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full">
+                              ₪{item.price}
                             </span>
-                            {item.price != null && (
-                              <span className="text-sm font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full">
-                                ₪{item.price}
-                              </span>
-                            )}
-                          </div>
-                          <p className="font-semibold text-gray-800">{item.title}</p>
-                          {item.event_date && (
-                            <div className="mt-2 flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
-                              <span className="text-lg">📅</span>
-                              <div>
-                                <p className="text-sm font-semibold text-purple-800">
-                                  {new Date(item.event_date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                                </p>
-                                <p className="text-xs text-purple-600">
-                                  {new Date(item.event_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          {item.content && (
-                            <p className="text-sm text-gray-500 mt-2 whitespace-pre-wrap">{item.content}</p>
-                          )}
-                          {(isProduct || isSeminar) && (
-                            <button
-                              type="button"
-                              onClick={() => isProduct && setProductModal(item)}
-                              className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition ${
-                                isProduct ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-purple-600 text-white hover:bg-purple-700'
-                              }`}
-                            >
-                              {isProduct ? '🛒 לפרטים ורכישה' : '📝 לפרטים והרשמה'}
-                            </button>
                           )}
                         </div>
-                      </li>
-                    )
-                  })}
+                        <p className="font-semibold text-gray-800">{item.title}</p>
+                        {item.content && (
+                          <p className="text-sm text-gray-500 mt-2 whitespace-pre-wrap">{item.content}</p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setProductModal(item)}
+                          className="mt-3 w-full py-2 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700 transition"
+                        >
+                          🛒 לפרטים ורכישה
+                        </button>
+                      </div>
+                    </li>
+                  ))}
                 </ul>
               )}
             </div>

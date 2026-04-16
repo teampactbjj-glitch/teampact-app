@@ -34,7 +34,7 @@ const EMPTY_FORM = {
   branch_id: BRANCHES[0].id,
 }
 
-export default function AthleteManagement({ trainerId, isAdmin }) {
+export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null }) {
   const [athletes, setAthletes] = useState([])
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
@@ -216,9 +216,10 @@ export default function AthleteManagement({ trainerId, isAdmin }) {
     : `בחר עד ${limit} שיעורים`
 
   const filtered = athletes.filter(a =>
-    a.full_name?.includes(search) ||
-    a.email?.includes(search) ||
-    a.group_name?.includes(search)
+    (!branchFilter || a.branch_id === branchFilter) &&
+    (a.full_name?.includes(search) ||
+     a.email?.includes(search) ||
+     a.group_name?.includes(search))
   )
 
   return (

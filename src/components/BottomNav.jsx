@@ -9,64 +9,31 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCo
   return (
     <nav
       dir="rtl"
-      style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: '64px',
-        background: 'white',
-        borderTop: '1px solid #e5e7eb',
-        display: 'flex',
-        zIndex: 100,
-        boxShadow: '0 -4px 12px rgba(0,0,0,0.08)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-      }}
+      className="fixed bottom-0 left-0 right-0 w-full z-50 bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] flex"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      {tabs.map(tab => (
-        <button
-          key={tab.id}
-          onClick={() => onTabChange(tab.id)}
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '3px',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            position: 'relative',
-            color: activeTab === tab.id ? '#1d4ed8' : '#9ca3af',
-            transition: 'color 0.15s',
-          }}
-        >
-          <span style={{ fontSize: '20px', lineHeight: 1 }}>{tab.icon}</span>
-          <span style={{ fontSize: '10px', fontWeight: activeTab === tab.id ? '700' : '500', lineHeight: 1 }}>
-            {tab.label}
-          </span>
-          {tab.id === 'shop' && isTrainer && pendingCount > 0 && (
-            <span style={{
-              position: 'absolute',
-              top: '6px',
-              right: '22%',
-              background: '#ef4444',
-              color: 'white',
-              borderRadius: '50%',
-              width: '16px',
-              height: '16px',
-              fontSize: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'bold',
-            }}>
-              {pendingCount}
+      {tabs.map(tab => {
+        const active = activeTab === tab.id
+        return (
+          <button
+            key={tab.id}
+            onClick={() => onTabChange(tab.id)}
+            className={`relative flex flex-1 flex-col items-center justify-center gap-1 py-2 border-none bg-transparent cursor-pointer transition-colors duration-150 ${
+              active ? 'text-blue-700' : 'text-gray-400'
+            }`}
+          >
+            <span className="text-xl leading-none">{tab.icon}</span>
+            <span className={`text-[10px] leading-none ${active ? 'font-bold' : 'font-medium'}`}>
+              {tab.label}
             </span>
-          )}
-        </button>
-      ))}
+            {tab.id === 'shop' && isTrainer && pendingCount > 0 && (
+              <span className="absolute top-1.5 right-[22%] w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+        )
+      })}
     </nav>
   )
 }

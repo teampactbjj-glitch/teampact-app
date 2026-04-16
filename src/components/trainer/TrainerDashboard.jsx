@@ -51,7 +51,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50" style={{ paddingBottom: '64px' }}>
+    <div className="min-h-screen bg-gray-50 pb-24">
       <header className="bg-blue-700 text-white px-6 py-4 flex items-center justify-between shadow">
         <div className="flex items-center gap-3">
           <span className="text-2xl">🥋</span>

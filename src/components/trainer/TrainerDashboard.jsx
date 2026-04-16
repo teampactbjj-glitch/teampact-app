@@ -3,23 +3,23 @@ import TodayClasses from './TodayClasses'
 import AthleteManagement from './AthleteManagement'
 import AnnouncementsManager from './AnnouncementsManager'
 import ProductRequests from './ProductRequests'
+import BottomNav from '../BottomNav'
 import { supabase } from '../../lib/supabase'
 
-const TABS = [
-  { id: 'classes', icon: '📅', label: 'היום' },
-  { id: 'athletes', icon: '👥', label: 'מתאמנים' },
-  { id: 'announcements', icon: '📢', label: 'הודעות' },
-  { id: 'products', icon: '📦', label: 'בקשות' },
-]
+const VALID_TABS = ['schedule', 'shop', 'profile', 'athletes']
+
+function getSavedTab() {
+  const saved = localStorage.getItem('trainerTab')
+  return VALID_TABS.includes(saved) ? saved : 'schedule'
+}
 
 export default function TrainerDashboard({ profile, isAdmin }) {
-  const [tab, setTab] = useState(() => localStorage.getItem('trainerTab') || 'classes')
+  const [activeTab, setActiveTab] = useState(getSavedTab)
   const [pendingCount, setPendingCount] = useState(0)
   const [memberCounts, setMemberCounts] = useState({})
   const [branchMap, setBranchMap] = useState({})
 
   useEffect(() => {
-    console.log('TrainerDashboard mounted, tab:', tab)
     fetchPendingCount()
     fetchMemberCounts()
   }, [])
@@ -38,23 +38,20 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   }
 
   async function fetchPendingCount() {
-    const { count, error } = await supabase
+    const { count } = await supabase
       .from('product_requests')
       .select('*', { count: 'exact', head: true })
       .neq('status', 'done')
-    console.log('fetchPendingCount → count:', count, 'error:', error)
     setPendingCount(count || 0)
   }
 
   function handleTabChange(id) {
-    setTab(id)
+    setActiveTab(id)
     localStorage.setItem('trainerTab', id)
   }
 
-  console.log('TABS length:', TABS.length, TABS.map(t => t.id))
-
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50" style={{ paddingBottom: '64px' }}>
       <header className="bg-blue-700 text-white px-6 py-4 flex items-center justify-between shadow">
         <div className="flex items-center gap-3">
           <span className="text-2xl">🥋</span>
@@ -80,48 +77,72 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         </button>
       </header>
 
-      {console.log('TrainerDashboard render — tab:', tab, 'pendingCount:', pendingCount)}
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gridTemplateRows:'auto auto', background:'white', borderBottom:'1px solid #e5e7eb'}}>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => handleTabChange(t.id)}
-            style={{padding:'12px', fontSize:'13px', fontWeight:'500', textAlign:'center',
-              borderBottom: tab === t.id ? '2px solid #1d4ed8' : '2px solid transparent',
-              color: tab === t.id ? '#1d4ed8' : '#6b7280', background:'none', cursor:'pointer',
-              position:'relative'}}>
-            {t.icon} {t.label}
-            {t.id === 'products' && pendingCount > 0 &&
-              <span style={{position:'absolute', top:'6px', right:'6px', background:'red', color:'white',
-                borderRadius:'50%', width:'16px', height:'16px', fontSize:'10px', display:'flex',
-                alignItems:'center', justifyContent:'center', fontWeight:'bold'}}>{pendingCount}</span>}
-          </button>
-        ))}
-      </div>
-
       <main className="p-4 max-w-3xl mx-auto">
-        {isAdmin && (
-          <div style={{display:'flex', gap:'16px', marginBottom:'16px'}}>
-            {Object.entries(memberCounts).map(([branchId, count]) => (
-              <div key={branchId} style={{background:'#f0fdf4', border:'1px solid #86efac', borderRadius:'8px', padding:'12px 20px', textAlign:'center'}}>
-                <div style={{fontSize:'24px', fontWeight:'bold', color:'#166534'}}>{count}</div>
-                <div style={{fontSize:'13px', fontWeight:'600', color:'#166534'}}>{branchMap[branchId] || branchId}</div>
-                <div style={{fontSize:'11px', color:'#4ade80'}}>מתאמנים</div>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className={tab === 'classes' ? '' : 'hidden'}>
+        <div className={activeTab === 'schedule' ? '' : 'hidden'}>
           <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />
         </div>
-        <div className={tab === 'athletes' ? '' : 'hidden'}>
+
+        <div className={activeTab === 'shop' ? '' : 'hidden'}>
+          <AnnouncementsManager trainerId={profile?.id} />
+          <div className="mt-6">
+            <ProductRequests onMarkedDone={fetchPendingCount} />
+          </div>
+        </div>
+
+        <div className={activeTab === 'athletes' ? '' : 'hidden'}>
           <AthleteManagement trainerId={profile?.id} isAdmin={isAdmin} />
         </div>
-        <div className={tab === 'announcements' ? '' : 'hidden'}>
-          <AnnouncementsManager trainerId={profile?.id} />
-        </div>
-        <div className={tab === 'products' ? '' : 'hidden'}>
-          <ProductRequests onMarkedDone={fetchPendingCount} />
-        </div>
+
+        {activeTab === 'profile' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <div className="flex items-center gap-3 mb-1">
+                <span className="text-3xl">🥋</span>
+                <div>
+                  <p className="font-bold text-gray-800 text-lg leading-tight">{profile?.full_name}</p>
+                  <p className="text-sm text-gray-500">{isAdmin ? 'מנהל מערכת' : 'מאמן'}</p>
+                </div>
+              </div>
+            </div>
+
+            {isAdmin && Object.keys(memberCounts).length > 0 && (
+              <div className="bg-white rounded-xl border shadow-sm p-4">
+                <p className="text-sm font-semibold text-gray-600 mb-3">מתאמנים לפי סניף</p>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {Object.entries(memberCounts).map(([branchId, count]) => (
+                    <div key={branchId} style={{
+                      background: '#f0fdf4',
+                      border: '1px solid #86efac',
+                      borderRadius: '8px',
+                      padding: '12px 20px',
+                      textAlign: 'center',
+                      minWidth: '80px',
+                    }}>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#166534' }}>{count}</div>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#166534' }}>{branchMap[branchId] || branchId}</div>
+                      <div style={{ fontSize: '11px', color: '#4ade80' }}>מתאמנים</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => supabase.auth.signOut()}
+              className="w-full py-3 border border-red-200 text-red-500 rounded-xl font-medium hover:bg-red-50 transition"
+            >
+              יציאה מהמערכת
+            </button>
+          </div>
+        )}
       </main>
+
+      <BottomNav
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        isTrainer={true}
+        pendingCount={pendingCount}
+      />
     </div>
   )
 }

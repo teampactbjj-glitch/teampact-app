@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import BottomNav from '../BottomNav'
 
 const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const SUBSCRIPTION_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -39,7 +40,15 @@ function computeNextClass(allClasses, regIds) {
   return { ...s.cls, displayDay: s.displayDay, displayTime: s.displayTime }
 }
 
+const VALID_TABS = ['schedule', 'shop', 'profile']
+
+function getSavedTab() {
+  const saved = localStorage.getItem('athleteTab')
+  return VALID_TABS.includes(saved) ? saved : 'schedule'
+}
+
 export default function AthleteDashboard({ profile }) {
+  const [activeTab, setActiveTab] = useState(getSavedTab)
   const [branchId, setBranchId] = useState(null)
   const [subType, setSubType] = useState(null)
   const [membershipEnd, setMembershipEnd] = useState(null)
@@ -48,8 +57,8 @@ export default function AthleteDashboard({ profile }) {
   const [nextClass, setNextClass] = useState(null)
   const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
-  const [regLoading, setRegLoading] = useState({}) // { classId: bool }
-  const [productModal, setProductModal] = useState(null) // announcement item
+  const [regLoading, setRegLoading] = useState({})
+  const [productModal, setProductModal] = useState(null)
   const [requestSent, setRequestSent] = useState(false)
   const [requestLoading, setRequestLoading] = useState(false)
 
@@ -60,7 +69,6 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAll() {
     setLoading(true)
 
-    // 1. profiles → branch_id (columns: id, full_name, role, branch_id, is_admin, created_at)
     const { data: profileRow, error: profileErr } = await supabase
       .from('profiles')
       .select('branch_id')
@@ -71,7 +79,6 @@ export default function AthleteDashboard({ profile }) {
     const bid = profileRow?.branch_id
     setBranchId(bid)
 
-    // 2. members → subscription_type, membership_end (columns include email, branch_id, subscription_type, membership_end)
     const { data: memberRow, error: memberErr } = await supabase
       .from('members')
       .select('subscription_type, membership_type, membership_end')
@@ -83,7 +90,6 @@ export default function AthleteDashboard({ profile }) {
     setSubType(memberRow?.subscription_type || memberRow?.membership_type || null)
     setMembershipEnd(memberRow?.membership_end || null)
 
-    // 3. registrations + announcements (parallel)
     const [regRes, annRes] = await Promise.all([
       supabase
         .from('class_registrations')
@@ -96,7 +102,6 @@ export default function AthleteDashboard({ profile }) {
         .limit(10),
     ])
 
-    // 4. classes via RPC (includes coach_name)
     const classRes = bid
       ? await supabase.rpc('get_classes_with_coach', { p_branch_id: bid })
       : { data: [], error: null }
@@ -161,9 +166,12 @@ export default function AthleteDashboard({ profile }) {
     setRequestSent(false)
   }
 
-  const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
+  function handleTabChange(id) {
+    setActiveTab(id)
+    localStorage.setItem('athleteTab', id)
+  }
 
-  // Group all branch classes by day_of_week
+  const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
   const grouped = DAYS_HE.map((dayName, dow) => ({
     dow,
     dayName,
@@ -171,7 +179,7 @@ export default function AthleteDashboard({ profile }) {
   })).filter(g => g.classes.length > 0)
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50" style={{ paddingBottom: '64px' }}>
       <header className="bg-emerald-700 text-white px-6 py-4 flex items-center justify-between shadow">
         <div className="flex items-center gap-3">
           <span className="text-2xl">💪</span>
@@ -185,37 +193,14 @@ export default function AthleteDashboard({ profile }) {
         </button>
       </header>
 
-      <main className="p-4 max-w-lg mx-auto space-y-5">
+      <main className="p-4 max-w-lg mx-auto">
         {loading ? (
           <p className="text-center text-gray-400 py-16">טוען...</p>
         ) : (
           <>
-            {/* 1. Subscription card */}
-            <div className="bg-white rounded-xl border shadow-sm p-4">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700">
-                  מנוי: {SUBSCRIPTION_LABELS[subType] || '—'}
-                </span>
-                <span className="text-sm text-gray-500">
-                  {limit === Infinity ? 'ללא הגבלה' : `${registeredIds.size}/${limit} שיעורים`}
-                </span>
-              </div>
-              {limit !== Infinity && (
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-2">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      registeredIds.size >= limit ? 'bg-emerald-500' : 'bg-emerald-400'
-                    }`}
-                    style={{ width: `${Math.min((registeredIds.size / limit) * 100, 100)}%` }}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* 2. Weekly schedule */}
-            <div>
+            {/* ── SCHEDULE TAB ── */}
+            <div className={activeTab === 'schedule' ? '' : 'hidden'}>
               <h2 className="font-bold text-gray-800 mb-3">לוח שיעורים שבועי</h2>
-
               {!branchId ? (
                 <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
                   <p className="text-sm font-semibold text-orange-700">לא נמצא סניף משויך לחשבון שלך</p>
@@ -271,30 +256,8 @@ export default function AthleteDashboard({ profile }) {
               )}
             </div>
 
-            {/* 3. Next class */}
-            <div className="bg-white rounded-xl border shadow-sm p-5">
-              <h2 className="font-bold text-gray-800 mb-3">האימון הבא שלך</h2>
-              {!nextClass ? (
-                <div className="text-center py-6 text-gray-400">
-                  <div className="text-3xl mb-2">📅</div>
-                  <p className="text-sm">הירשם לשיעורים בלוח למעלה</p>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-lg font-semibold text-gray-800">{nextClass.name}{nextClass.coach_name ? ` · ${nextClass.coach_name}` : ''}</p>
-                  <p className="text-sm text-gray-500 mt-1">{nextClass.displayDay} · {nextClass.displayTime}</p>
-                  {nextClass.end_time && (
-                    <p className="text-xs text-gray-400">עד {formatTime(nextClass.end_time)}</p>
-                  )}
-                  {nextClass.hall && (
-                    <p className="text-xs text-gray-400">{nextClass.hall}</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* 4. Announcements */}
-            <div>
+            {/* ── SHOP TAB ── */}
+            <div className={activeTab === 'shop' ? '' : 'hidden'}>
               <h2 className="font-bold text-gray-800 mb-3">הודעות וסמינרים</h2>
               {announcements.length === 0 ? (
                 <p className="text-gray-400 text-sm text-center py-4">אין הודעות</p>
@@ -357,6 +320,68 @@ export default function AthleteDashboard({ profile }) {
                 </ul>
               )}
             </div>
+
+            {/* ── PROFILE TAB ── */}
+            {activeTab === 'profile' && (
+              <div className="space-y-4">
+                <div className="bg-white rounded-xl border shadow-sm p-5">
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="text-3xl">💪</span>
+                    <div>
+                      <p className="font-bold text-gray-800 text-lg leading-tight">{profile?.full_name}</p>
+                      <p className="text-sm text-gray-500">{SUBSCRIPTION_LABELS[subType] || 'מנוי לא ידוע'}</p>
+                    </div>
+                  </div>
+                  {membershipEnd && (
+                    <p className="text-sm text-gray-500 mb-3">
+                      תוקף מנוי: {new Date(membershipEnd).toLocaleDateString('he-IL')}
+                    </p>
+                  )}
+                  {limit !== Infinity && (
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-600">שיעורים שנבחרו השבוע</span>
+                        <span className="text-gray-500">{registeredIds.size}/{limit}</span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${registeredIds.size >= limit ? 'bg-emerald-500' : 'bg-emerald-400'}`}
+                          style={{ width: `${Math.min((registeredIds.size / limit) * 100, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-xl border shadow-sm p-5">
+                  <h2 className="font-bold text-gray-800 mb-3">האימון הבא שלך</h2>
+                  {!nextClass ? (
+                    <div className="text-center py-6 text-gray-400">
+                      <div className="text-3xl mb-2">📅</div>
+                      <p className="text-sm">הירשם לשיעורים בלוח האימונים</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-lg font-semibold text-gray-800">{nextClass.name}{nextClass.coach_name ? ` · ${nextClass.coach_name}` : ''}</p>
+                      <p className="text-sm text-gray-500 mt-1">{nextClass.displayDay} · {nextClass.displayTime}</p>
+                      {nextClass.end_time && (
+                        <p className="text-xs text-gray-400">עד {formatTime(nextClass.end_time)}</p>
+                      )}
+                      {nextClass.hall && (
+                        <p className="text-xs text-gray-400">{nextClass.hall}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => supabase.auth.signOut()}
+                  className="w-full py-3 border border-red-200 text-red-500 rounded-xl font-medium hover:bg-red-50 transition"
+                >
+                  יציאה מהמערכת
+                </button>
+              </div>
+            )}
           </>
         )}
       </main>
@@ -411,7 +436,12 @@ export default function AthleteDashboard({ profile }) {
           </div>
         </div>
       )}
+
+      <BottomNav
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        isTrainer={false}
+      />
     </div>
   )
 }
-// יום א׳ אפר׳ 12 2026 11:59:10 IDT

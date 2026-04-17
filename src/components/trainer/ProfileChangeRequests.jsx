@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 
 const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
-export default function ProfileChangeRequests() {
+export default function ProfileChangeRequests({ onChange }) {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState(null)
@@ -28,6 +28,7 @@ export default function ProfileChangeRequests() {
     await supabase.from('profile_change_requests').update({ status: 'approved' }).eq('id', req.id)
     setProcessingId(null)
     load()
+    onChange?.()
   }
 
   async function reject(id) {
@@ -35,6 +36,7 @@ export default function ProfileChangeRequests() {
     await supabase.from('profile_change_requests').update({ status: 'rejected' }).eq('id', id)
     setProcessingId(null)
     load()
+    onChange?.()
   }
 
   if (loading) return <p className="text-center text-gray-400 py-8">טוען...</p>

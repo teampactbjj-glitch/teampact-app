@@ -4,7 +4,6 @@ import { supabase } from '../../lib/supabase'
 const TYPE_OPTIONS = [
   { value: 'general',  label: '📢 הודעה כללית (שינוי לו"ז / סגירה)' },
   { value: 'seminar',  label: '🎓 סמינר / אירוע' },
-  { value: 'product',  label: '🛒 מוצר למכירה' },
 ]
 
 const TYPE_LABELS = {
@@ -31,7 +30,9 @@ export default function AnnouncementsManager({ trainerId }) {
 
   async function fetchAnnouncements() {
     setLoading(true)
-    const { data } = await supabase.from('announcements').select('*').order('created_at', { ascending: false })
+    const { data } = await supabase.from('announcements').select('*')
+      .in('type', ['general', 'announcement', 'seminar'])
+      .order('created_at', { ascending: false })
     setItems(data || [])
     setLoading(false)
   }

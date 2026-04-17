@@ -1,12 +1,10 @@
-export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCount = 0, leadsCount = 0 }) {
+export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCount = 0, leadsCount = 0, ordersCount = 0 }) {
   const tabs = isTrainer
     ? [
-        { id: 'schedule', icon: '📅', label: 'לו״ח' },
-        { id: 'athletes', icon: '👥', label: 'מתאמנים' },
-        { id: 'shop',     icon: '🛒', label: 'חנות' },
-        { id: 'leads',          icon: '🙋', label: 'לידים' },
-        { id: 'changeRequests', icon: '⚙️', label: 'בקשות' },
-        { id: 'profile',        icon: '👤', label: 'פרופיל' },
+        { id: 'schedule',      icon: '📅', label: 'לו״ז' },
+        { id: 'athletes',      icon: '👥', label: 'מתאמנים' },
+        { id: 'shop',          icon: '🛒', label: 'חנות' },
+        { id: 'announcements', icon: '📢', label: 'הודעות' },
       ]
     : [
         { id: 'schedule',      icon: '📅', label: 'לו״ז' },
@@ -25,11 +23,11 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCo
             style={{ color: active ? '#059669' : '#9ca3af' }}>
             <span className="text-xl leading-none">{tab.icon}</span>
             <span className="text-[10px] leading-none" style={{ fontWeight: active ? 700 : 500 }}>{tab.label}</span>
-            {tab.id === 'shop' && isTrainer && pendingCount > 0 && (
+            {tab.id === 'shop' && isTrainer && (ordersCount > 0 || pendingCount > 0) && (
               <span className="absolute top-1.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold"
-                style={{ right: '22%', width: 16, height: 16 }}>{pendingCount}</span>
+                style={{ right: '22%', width: 16, height: 16 }}>{ordersCount + pendingCount}</span>
             )}
-            {tab.id === 'leads' && leadsCount > 0 && (
+            {tab.id === 'athletes' && isTrainer && leadsCount > 0 && (
               <span className="absolute top-1.5 flex items-center justify-center rounded-full bg-orange-500 text-white text-[10px] font-bold"
                 style={{ right: '22%', width: 16, height: 16 }}>{leadsCount}</span>
             )}

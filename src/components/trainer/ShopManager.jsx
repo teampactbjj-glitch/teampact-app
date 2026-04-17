@@ -16,13 +16,26 @@ export default function ShopManager({ onOrdersChange }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: prods }, { data: ords }] = await Promise.all([
-      supabase.from('announcements').select('*').in('type', ['product', 'seminar']).order('created_at', { ascending: false }),
+    const [{ data: prods }, { data: ords1 }, { data: ords2 }] = await Promise.all([
+      supabase.from('announcements').select('*').eq('type', 'product').order('created_at', { ascending: false }),
       supabase.from('product_orders').select('*, members(full_name, phone)').order('created_at', { ascending: false }),
+      supabase.from('product_requests').select('*').order('created_at', { ascending: false }),
     ])
     setProducts(prods || [])
-    setOrders(ords || [])
-    const pending = (ords || []).filter(o => o.status === 'pending').length
+    // מיזוג: orders (הישן) + requests (החדש)
+    const merged = [
+      ...(ords1 || []).map(o => ({ ...o, _source: 'order' })),
+      ...(ords2 || []).map(o => ({
+        id: o.id,
+        product_name: o.product_name,
+        status: o.status,
+        created_at: o.created_at,
+        members: { full_name: o.athlete_name, phone: null },
+        _source: 'request',
+      })),
+    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    setOrders(merged)
+    const pending = merged.filter(o => o.status === 'pending').length
     onOrdersChange?.(pending)
     setLoading(false)
   }
@@ -47,17 +60,19 @@ export default function ShopManager({ onOrdersChange }) {
     fetchAll()
   }
 
-  async function markDone(id) {
-    await supabase.from('product_orders').update({ status: 'done' }).eq('id', id)
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'done' } : o))
-    const pending = orders.filter(o => o.id !== id && o.status === 'pending').length
+  async function markDone(order) {
+    const table = order._source === 'request' ? 'product_requests' : 'product_orders'
+    await supabase.from(table).update({ status: 'done' }).eq('id', order.id)
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'done' } : o))
+    const pending = orders.filter(o => o.id !== order.id && o.status === 'pending').length
     onOrdersChange?.(pending)
   }
 
-  async function deleteOrder(id) {
-    await supabase.from('product_orders').delete().eq('id', id)
-    setOrders(prev => prev.filter(o => o.id !== id))
-    const pending = orders.filter(o => o.id !== id && o.status === 'pending').length
+  async function deleteOrder(order) {
+    const table = order._source === 'request' ? 'product_requests' : 'product_orders'
+    await supabase.from(table).delete().eq('id', order.id)
+    setOrders(prev => prev.filter(o => o.id !== order.id))
+    const pending = orders.filter(o => o.id !== order.id && o.status === 'pending').length
     onOrdersChange?.(pending)
   }
 
@@ -99,12 +114,12 @@ export default function ShopManager({ onOrdersChange }) {
                   </div>
                   <div className="flex flex-col gap-1 flex-shrink-0">
                     {order.status === 'pending' && (
-                      <button onClick={() => markDone(order.id)}
+                      <button onClick={() => markDone(order)}
                         className="text-xs bg-green-500 text-white px-3 py-1 rounded-lg">
                         סמן כטופל ✓
                       </button>
                     )}
-                    <button onClick={() => deleteOrder(order.id)}
+                    <button onClick={() => deleteOrder(order)}
                       className="text-xs text-red-400 hover:text-red-600 text-center">
                       מחק
                     </button>

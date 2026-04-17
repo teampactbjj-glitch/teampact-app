@@ -22,7 +22,7 @@ const EMPTY_FORM = {
   branch_ids: [],
 }
 
-export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null }) {
+export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false }) {
   const [athletes, setAthletes] = useState([])
   const [pendingAthletes, setPendingAthletes] = useState([])
   const [branches, setBranches] = useState([])
@@ -237,7 +237,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
             <option value="unlimited">ללא הגבלה</option>
           </select>
 
-          {form.branch_ids.length > 0 && (
+          {!hideSchedule && form.branch_ids.length > 0 && (
             <div className="border rounded-lg p-3 space-y-2 bg-gray-50">
               <p className="text-xs font-medium text-gray-600">{limitLabel} ({form.group_ids.length} נבחרו)</p>
               {classes.length === 0 ? (

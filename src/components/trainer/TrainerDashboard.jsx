@@ -1,22 +1,31 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import TodayClasses from './TodayClasses'
 import AthleteManagement from './AthleteManagement'
 import AnnouncementsManager from './AnnouncementsManager'
 import LeadsManager from './LeadsManager'
 import ProfileChangeRequests from './ProfileChangeRequests'
+import ShopManager from './ShopManager'
 import BottomNav from '../BottomNav'
 import { supabase } from '../../lib/supabase'
-import { useEffect } from 'react'
 
 export default function TrainerDashboard({ profile, isAdmin }) {
-  const [activeTab, setActiveTab] = useState('schedule')
-  const [leadsCount, setLeadsCount] = useState(0)
+  const [activeTab, setActiveTab]       = useState('schedule')
+  const [leadsCount, setLeadsCount]     = useState(0)
+  const [ordersCount, setOrdersCount]   = useState(0)
+  const [requestsCount, setRequestsCount] = useState(0)
 
-  useEffect(() => {
-    supabase.from('members').select('id', { count: 'exact', head: true })
-      .eq('status', 'pending')
-      .then(({ count }) => setLeadsCount(count || 0))
-  }, [])
+  useEffect(() => { refreshCounts() }, [])
+
+  async function refreshCounts() {
+    const [{ count: leads }, { count: orders }, { count: requests }] = await Promise.all([
+      supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('product_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+    ])
+    setLeadsCount(leads || 0)
+    setOrdersCount(orders || 0)
+    setRequestsCount(requests || 0)
+  }
 
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
@@ -37,22 +46,33 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </header>
 
       <main className="p-4 max-w-3xl mx-auto pb-24">
-        {activeTab === 'schedule'      && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />}
-        {activeTab === 'shop'          && <AnnouncementsManager trainerId={profile?.id} />}
-        {activeTab === 'athletes'      && <AthleteManagement trainerId={profile?.id} isAdmin={isAdmin} />}
-        {activeTab === 'leads'         && <LeadsManager trainerId={profile?.id} onLeadsChange={setLeadsCount} />}
-        {activeTab === 'changeRequests' && <ProfileChangeRequests />}
-        {activeTab === 'profile'       && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-xl border shadow-sm p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-3xl mx-auto mb-3">🥋</div>
-              <h2 className="text-lg font-bold text-gray-800">{profile?.full_name}</h2>
-              <p className="text-sm text-gray-500 mt-0.5">{profile?.email}</p>
-              {isAdmin && <span className="inline-block mt-2 text-xs bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full font-medium">מנהל מערכת</span>}
-            </div>
-            <button onClick={() => supabase.auth.signOut()} className="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-medium text-sm">יציאה מהמערכת</button>
+        {activeTab === 'schedule' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />}
+
+        {activeTab === 'athletes' && (
+          <div className="space-y-6">
+            {leadsCount > 0 && (
+              <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+                <h3 className="font-bold text-orange-900 text-sm mb-3">🙋 בקשות הצטרפות ממתינות ({leadsCount})</h3>
+                <LeadsManager trainerId={profile?.id} onLeadsChange={(n) => { setLeadsCount(n); refreshCounts() }} />
+              </div>
+            )}
+            <AthleteManagement trainerId={profile?.id} isAdmin={isAdmin} hideSchedule />
           </div>
         )}
+
+        {activeTab === 'shop' && (
+          <div className="space-y-6">
+            <ShopManager onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />
+            {requestsCount > 0 && (
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
+                <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי פרופיל ({requestsCount})</h3>
+                <ProfileChangeRequests onChange={refreshCounts} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} />}
       </main>
 
       <BottomNav
@@ -60,6 +80,8 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         onTabChange={setActiveTab}
         isTrainer={true}
         leadsCount={leadsCount}
+        ordersCount={ordersCount}
+        pendingCount={requestsCount}
       />
     </div>
   )

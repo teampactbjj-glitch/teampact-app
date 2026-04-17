@@ -166,29 +166,11 @@ function ScheduleTab({ member, myClasses, checkinMap, weeklyCheckins, limit, loa
   )
 }
 
-function AnnouncementsTab({ announcements }) {
-  if (announcements.length === 0) return <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">📭</div><p>אין הודעות כרגע</p></div>
-  return (
-    <div className="space-y-3">
-      <h2 className="font-bold text-gray-800 text-lg">הודעות</h2>
-      {announcements.map(item => (
-        <div key={item.id} className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex gap-3 items-start shadow-sm">
-          <span className="text-2xl flex-shrink-0">📢</span>
-          <div className="min-w-0">
-            <p className="font-bold text-amber-900 text-sm leading-snug">{item.title}</p>
-            {item.content && <p className="text-xs text-amber-800 mt-1 leading-relaxed">{item.content}</p>}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ShopTab({ profile, allAnnouncements }) {
+function AnnouncementsTab({ announcements, profile }) {
   const [ordered, setOrdered] = useState(new Set())
   const [orderingId, setOrderingId] = useState(null)
-  const seminars = allAnnouncements.filter(a => a.type === 'seminar')
-  const products = allAnnouncements.filter(a => a.type === 'product')
+  const general = announcements.filter(a => a.type === 'general' || a.type === 'announcement')
+  const seminars = announcements.filter(a => a.type === 'seminar')
 
   async function handleOrder(item) {
     if (ordered.has(item.id)) return
@@ -204,12 +186,26 @@ function ShopTab({ profile, allAnnouncements }) {
     setOrderingId(null)
   }
 
-  if (seminars.length === 0 && products.length === 0) {
-    return <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">🛍️</div><p>אין פריטים בחנות כרגע</p></div>
+  if (general.length === 0 && seminars.length === 0) {
+    return <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">📭</div><p>אין הודעות כרגע</p></div>
   }
 
   return (
     <div className="space-y-6">
+      {general.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-bold text-gray-800 text-lg">הודעות</h2>
+          {general.map(item => (
+            <div key={item.id} className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex gap-3 items-start shadow-sm">
+              <span className="text-2xl flex-shrink-0">📢</span>
+              <div className="min-w-0">
+                <p className="font-bold text-amber-900 text-sm leading-snug">{item.title}</p>
+                {item.content && <p className="text-xs text-amber-800 mt-1 leading-relaxed">{item.content}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {seminars.length > 0 && (
         <div>
           <h3 className="font-bold text-gray-700 text-sm mb-3">🎓 סמינרים ואירועים</h3>
@@ -235,6 +231,35 @@ function ShopTab({ profile, allAnnouncements }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function ShopTab({ profile, allAnnouncements }) {
+  const [ordered, setOrdered] = useState(new Set())
+  const [orderingId, setOrderingId] = useState(null)
+  const products = allAnnouncements.filter(a => a.type === 'product')
+
+  async function handleOrder(item) {
+    if (ordered.has(item.id)) return
+    setOrderingId(item.id)
+    const { error } = await supabase.from('product_requests').insert({
+      product_name: item.title,
+      athlete_id: profile?.id || null,
+      athlete_name: profile?.full_name || 'לא ידוע',
+      status: 'pending',
+    })
+    if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
+    else { setOrdered(prev => new Set([...prev, item.id])) }
+    setOrderingId(null)
+  }
+
+  if (products.length === 0) {
+    return <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">🛍️</div><p>אין מוצרים בחנות כרגע</p></div>
+  }
+
+  return (
+    <div className="space-y-6">
       {products.length > 0 && (
         <div>
           <h3 className="font-bold text-gray-700 text-sm mb-3">🛒 מוצרים</h3>
@@ -439,7 +464,7 @@ export default function AthleteDashboard({ profile }) {
 
   const subscriptionType = member?.subscription_type || profile?.subscription_type
   const limit = SUBSCRIPTION_LIMITS[subscriptionType] ?? 2
-  const generalAnnouncements = announcements.filter(a => a.type === 'general' || a.type === 'announcement')
+  const announcementsForTab = announcements.filter(a => a.type === 'general' || a.type === 'announcement' || a.type === 'seminar')
 
   useEffect(() => {
     if (profile?.id) { fetchMyClasses(); fetchAnnouncements(); fetchWeeklyCheckins(); fetchRegistrations() }
@@ -567,7 +592,7 @@ export default function AthleteDashboard({ profile }) {
       <main className="p-4 max-w-lg mx-auto pb-24">
         {activeTab === 'schedule' && <ScheduleTab member={member} myClasses={myClasses} checkinMap={checkinMap} weeklyCheckins={weeklyCheckins} limit={limit} loadingCheckin={loadingCheckin} onCheckin={handleCheckin} registrations={registrations} onRegister={handleRegister} />}
         {activeTab === 'shop' && <ShopTab profile={profile} allAnnouncements={announcements} />}
-        {activeTab === 'announcements' && <AnnouncementsTab announcements={generalAnnouncements} />}
+        {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} />}
         {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}
       </main>
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} isTrainer={false} />

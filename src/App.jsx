@@ -23,19 +23,21 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (session?.user) fetchProfile(session.user.id)
+    if (session?.user) fetchProfile(session.user)
     else setProfile(null)
   }, [session])
 
-  async function fetchProfile(userId) {
+  async function fetchProfile(user) {
     setLoadingProfile(true)
     const { data, error } = await supabase
       .from('profiles')
       .select('*, is_admin')
-      .eq('id', userId)
+      .eq('id', user.id)
       .maybeSingle()
     if (error) console.error('fetchProfile error:', error)
-    setProfile(data)
+    // ודא שיש email — לעיתים הוא לא שמור בטבלת profiles, אז ניקח מה-auth
+    const merged = { ...(data || { id: user.id }), email: data?.email || user.email }
+    setProfile(merged)
     setLoadingProfile(false)
   }
 

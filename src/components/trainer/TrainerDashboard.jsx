@@ -3,6 +3,7 @@ import TodayClasses from './TodayClasses'
 import AthleteManagement from './AthleteManagement'
 import AnnouncementsManager from './AnnouncementsManager'
 import LeadsManager from './LeadsManager'
+import ProfileChangeRequests from './ProfileChangeRequests'
 import BottomNav from '../BottomNav'
 import { supabase } from '../../lib/supabase'
 import { useEffect } from 'react'
@@ -40,6 +41,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         {activeTab === 'shop'          && <AnnouncementsManager trainerId={profile?.id} />}
         {activeTab === 'athletes'      && <AthleteManagement trainerId={profile?.id} isAdmin={isAdmin} />}
         {activeTab === 'leads'         && <LeadsManager trainerId={profile?.id} onLeadsChange={setLeadsCount} />}
+        {activeTab === 'changeRequests' && <ProfileChangeRequests />}
         {activeTab === 'profile'       && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl border shadow-sm p-6 text-center">

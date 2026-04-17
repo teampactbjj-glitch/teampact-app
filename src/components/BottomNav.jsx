@@ -4,8 +4,9 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCo
         { id: 'schedule', icon: '📅', label: 'לו״ח' },
         { id: 'athletes', icon: '👥', label: 'מתאמנים' },
         { id: 'shop',     icon: '🛒', label: 'חנות' },
-        { id: 'leads',    icon: '🙋', label: 'לידים' },
-        { id: 'profile',  icon: '👤', label: 'פרופיל' },
+        { id: 'leads',          icon: '🙋', label: 'לידים' },
+        { id: 'changeRequests', icon: '⚙️', label: 'בקשות' },
+        { id: 'profile',        icon: '👤', label: 'פרופיל' },
       ]
     : [
         { id: 'schedule',      icon: '📅', label: 'לו״ז' },

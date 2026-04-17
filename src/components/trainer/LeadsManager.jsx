@@ -39,27 +39,47 @@ export default function LeadsManager() {
     setActionLoading(p => ({ ...p, [id]: null }))
   }
 
-  if (loading) return <p className="text-center text-gray-400 py-8">טוען...</p>
-
-  if (leads.length === 0) return (
-    <div className="text-center py-12 text-gray-400">
-      <div className="text-4xl mb-2">✅</div>
-      <p className="text-sm">אין בקשות הצטרפות ממתינות</p>
-    </div>
-  )
+  const registrationLink = `${window.location.origin}/register`
 
   return (
     <div className="space-y-3">
-      {leads.map(lead => (
-        <LeadCard
-          key={lead.id}
-          lead={lead}
-          branches={branches}
-          loading={actionLoading[lead.id]}
-          onApprove={(sub) => approveLead(lead, sub)}
-          onReject={() => rejectLead(lead.id)}
-        />
-      ))}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <p className="text-sm font-semibold text-blue-900 mb-2">🔗 קישור רישום למתאמנים חדשים</p>
+        <div className="flex gap-2">
+          <input
+            readOnly
+            value={registrationLink}
+            className="flex-1 border border-blue-200 rounded-lg px-3 py-2 text-xs bg-white text-gray-700"
+          />
+          <button
+            onClick={() => { navigator.clipboard.writeText(registrationLink); alert('הקישור הועתק') }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs font-semibold"
+          >
+            העתק
+          </button>
+        </div>
+        <p className="text-xs text-blue-700 mt-2">שלח את הקישור במייל / וואטסאפ. מתאמנים שנרשמים דרכו יופיעו ברשימה למטה לאישור.</p>
+      </div>
+
+      {loading ? (
+        <p className="text-center text-gray-400 py-8">טוען...</p>
+      ) : leads.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">
+          <div className="text-4xl mb-2">✅</div>
+          <p className="text-sm">אין בקשות הצטרפות ממתינות</p>
+        </div>
+      ) : (
+        leads.map(lead => (
+          <LeadCard
+            key={lead.id}
+            lead={lead}
+            branches={branches}
+            loading={actionLoading[lead.id]}
+            onApprove={(sub) => approveLead(lead, sub)}
+            onReject={() => rejectLead(lead.id)}
+          />
+        ))
+      )}
     </div>
   )
 }

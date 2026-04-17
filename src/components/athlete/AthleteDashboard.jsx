@@ -39,7 +39,7 @@ function ScheduleTab({ member, myClasses, checkinMap, weeklyCheckins, limit, loa
       setClasses(data || [])
       setLoading(false)
     }
-    if (member !== null) load()
+    load()
   }, [member])
 
   const todayDow = new Date().getDay()

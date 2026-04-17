@@ -440,17 +440,25 @@ export default function AthleteDashboard({ profile }) {
 
   async function fetchMyClasses() {
     setLoading(true)
-    const { data: memberData } = await supabase.from('members').select('*').eq('id', profile.id).maybeSingle()
-    setMember(memberData)
-    const groupIds = memberData?.group_ids || (memberData?.group_id ? [memberData.group_id] : [])
-    if (groupIds.length === 0) { setMyClasses([]); setLoading(false); return }
-    const { data: classes } = await supabase.from('classes').select('*').in('id', groupIds)
-    if (!classes || classes.length === 0) { setMyClasses([]); setLoading(false); return }
-    const sorted = classes.map(cls => ({ ...cls, ...resolveNextOccurrence(cls) }))
-    sorted.sort((a, b) => a.daysUntil - b.daysUntil)
-    setMyClasses(sorted)
-    await fetchCheckins(classes.map(c => c.id))
-    setLoading(false)
+    try {
+      const { data: memberData, error: memberErr } = await supabase.from('members').select('*').eq('id', profile.id).maybeSingle()
+      if (memberErr) console.error('member fetch error:', memberErr)
+      setMember(memberData || null)
+      const groupIds = memberData?.group_ids || (memberData?.group_id ? [memberData.group_id] : [])
+      if (groupIds.length === 0) { setMyClasses([]); return }
+      const { data: classes, error: classesErr } = await supabase.from('classes').select('*').in('id', groupIds)
+      if (classesErr) console.error('classes fetch error:', classesErr)
+      if (!classes || classes.length === 0) { setMyClasses([]); return }
+      const sorted = classes.map(cls => ({ ...cls, ...resolveNextOccurrence(cls) }))
+      sorted.sort((a, b) => a.daysUntil - b.daysUntil)
+      setMyClasses(sorted)
+      await fetchCheckins(classes.map(c => c.id))
+    } catch (e) {
+      console.error('fetchMyClasses threw:', e)
+      setMyClasses([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function fetchCheckins(classIds) {
@@ -528,16 +536,10 @@ export default function AthleteDashboard({ profile }) {
         </div>
       </header>
       <main className="p-4 max-w-lg mx-auto pb-24">
-        {loading && activeTab === 'schedule' ? (
-          <p className="text-center text-gray-400 py-12">טוען...</p>
-        ) : (
-          <>
-            {activeTab === 'schedule' && <ScheduleTab member={member} myClasses={myClasses} checkinMap={checkinMap} weeklyCheckins={weeklyCheckins} limit={limit} loadingCheckin={loadingCheckin} onCheckin={handleCheckin} registrations={registrations} onRegister={handleRegister} />}
-            {activeTab === 'shop' && <ShopTab profile={profile} allAnnouncements={announcements} />}
-            {activeTab === 'announcements' && <AnnouncementsTab announcements={generalAnnouncements} />}
-            {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}
-          </>
-        )}
+        {activeTab === 'schedule' && <ScheduleTab member={member} myClasses={myClasses} checkinMap={checkinMap} weeklyCheckins={weeklyCheckins} limit={limit} loadingCheckin={loadingCheckin} onCheckin={handleCheckin} registrations={registrations} onRegister={handleRegister} />}
+        {activeTab === 'shop' && <ShopTab profile={profile} allAnnouncements={announcements} />}
+        {activeTab === 'announcements' && <AnnouncementsTab announcements={generalAnnouncements} />}
+        {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}
       </main>
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} isTrainer={false} />
     </div>

@@ -24,76 +24,31 @@ function resolveNextOccurrence(cls) {
   return { daysUntil, displayDay, displayTime, nextDate }
 }
 
-function HomeTab({ profile, myClasses, checkinMap, weeklyCheckins, limit, loadingCheckin, onCheckin, announcements }) {
-  const usagePercent = limit === Infinity ? 0 : Math.min((weeklyCheckins / limit) * 100, 100)
-  return (
-    <div className="space-y-4">
-      {announcements.length > 0 && (
-        <div className="space-y-2">
-          {announcements.map(item => (
-            <div key={item.id} className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex gap-3 items-start shadow-sm">
-              <span className="text-2xl flex-shrink-0">📢</span>
-              <div>
-                <p className="font-bold text-amber-900 text-sm leading-snug">{item.title}</p>
-                {item.content && <p className="text-xs text-amber-800 mt-1 leading-relaxed">{item.content}</p>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="bg-white rounded-xl border shadow-sm p-4">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-sm font-medium text-gray-700">מנוי: {SUBSCRIPTION_LABELS[profile?.subscription_type] || '—'}</span>
-          <span className="text-sm text-gray-500">{limit === Infinity ? 'ללא הגבלה' : `${weeklyCheckins}/${limit} השבוע`}</span>
-        </div>
-        {limit !== Infinity && (
-          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div className={`h-full rounded-full transition-all ${usagePercent >= 100 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${usagePercent}%` }} />
-          </div>
-        )}
-      </div>
-      <div className="bg-white rounded-xl border shadow-sm p-5">
-        <h2 className="font-bold text-gray-800 mb-3">האימונים שלך</h2>
-        {myClasses.length === 0 ? (
-          <div className="text-center py-6 text-gray-400"><div className="text-3xl mb-2">📅</div><p className="text-sm">לא שויכת לאימונים עדיין</p></div>
-        ) : (
-          <ul className="space-y-3">
-            {myClasses.map(cls => {
-              const { displayDay, displayTime } = resolveNextOccurrence(cls)
-              const isCheckedIn = !!checkinMap[cls.id]
-              const atLimit = weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity
-              return (
-                <li key={cls.id} className="border rounded-xl p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="font-semibold text-gray-800 text-sm">{cls.name || cls.title}</p>
-                      <p className="text-xs text-gray-400">{displayDay} · {displayTime}</p>
-                    </div>
-                    <button onClick={() => onCheckin(cls)} disabled={loadingCheckin === cls.id || atLimit}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition disabled:opacity-40 flex-shrink-0 ${isCheckedIn ? 'bg-green-500' : 'bg-emerald-600'}`}>
-                      {loadingCheckin === cls.id ? '...' : isCheckedIn ? '✓ נרשמת' : "צ'ק-אין"}
-                    </button>
-                  </div>
-                  {atLimit && <p className="text-xs text-red-400 mt-1">הגעת למגבלת האימונים השבועית</p>}
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ScheduleTab() {
+function ScheduleTab({ member, myClasses, checkinMap, weeklyCheckins, limit, loadingCheckin, onCheckin }) {
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
+
   useEffect(() => {
-    supabase.from('classes').select('*').order('day_of_week').order('start_time')
-      .then(({ data }) => { setClasses(data || []); setLoading(false) })
-  }, [])
+    async function load() {
+      const branchIds = member?.branch_ids?.length
+        ? member.branch_ids
+        : member?.branch_id ? [member.branch_id] : []
+      let q = supabase.from('classes').select('*, branches(name)').order('day_of_week').order('start_time')
+      if (branchIds.length > 0) q = q.in('branch_id', branchIds)
+      const { data } = await q
+      setClasses(data || [])
+      setLoading(false)
+    }
+    if (member !== null) load()
+  }, [member])
+
+  const todayDow = new Date().getDay()
+  const myClassIds = new Set(myClasses.map(c => c.id))
   const byDay = DAYS_HE.reduce((acc, _, idx) => { acc[idx] = classes.filter(c => c.day_of_week === idx); return acc }, {})
+
   if (loading) return <p className="text-center text-gray-400 py-8">טוען...</p>
+  if (classes.length === 0) return <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">📅</div><p>אין שיעורים בסניפים שלך</p></div>
+
   return (
     <div className="space-y-4">
       <h2 className="font-bold text-gray-800 text-lg">לוח שיעורים שבועי</h2>
@@ -107,16 +62,26 @@ function ScheduleTab() {
               {dayCls.map(cls => {
                 const [h, m] = (cls.start_time || '00:00').split(':').map(Number)
                 const endMins = h * 60 + m + (cls.duration_minutes || 60)
+                const isMine = myClassIds.has(cls.id)
+                const isToday = idx === todayDow
+                const isCheckedIn = !!checkinMap[cls.id]
+                const atLimit = weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity
                 return (
-                  <li key={cls.id} className="px-4 py-3 flex items-center justify-between">
-                    <div>
+                  <li key={cls.id} className={`px-4 py-3 flex items-center justify-between gap-2 ${isMine ? 'bg-emerald-50' : ''}`}>
+                    <div className="min-w-0 flex-1">
                       <p className="font-medium text-gray-800 text-sm">{cls.name || cls.title}</p>
-                      {cls.hall && <p className="text-xs text-gray-400">{cls.hall}</p>}
+                      <p className="text-xs text-gray-400">{cls.branches?.name || ''}{cls.hall ? ' · ' + cls.hall : ''}</p>
                     </div>
-                    <div className="text-left">
+                    <div className="text-left shrink-0">
                       <p className="text-sm font-semibold text-emerald-700">{String(h).padStart(2,'0')}:{String(m).padStart(2,'0')}</p>
                       <p className="text-xs text-gray-400">עד {String(Math.floor(endMins/60)).padStart(2,'0')}:{String(endMins%60).padStart(2,'0')}</p>
                     </div>
+                    {isMine && isToday && (
+                      <button onClick={() => onCheckin(cls)} disabled={loadingCheckin === cls.id || atLimit}
+                        className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition disabled:opacity-40 ${isCheckedIn ? 'bg-green-500' : 'bg-emerald-600'}`}>
+                        {loadingCheckin === cls.id ? '...' : isCheckedIn ? '✓' : "צ'ק-אין"}
+                      </button>
+                    )}
                   </li>
                 )
               })}
@@ -124,6 +89,24 @@ function ScheduleTab() {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function AnnouncementsTab({ announcements }) {
+  if (announcements.length === 0) return <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">📭</div><p>אין הודעות כרגע</p></div>
+  return (
+    <div className="space-y-3">
+      <h2 className="font-bold text-gray-800 text-lg">הודעות</h2>
+      {announcements.map(item => (
+        <div key={item.id} className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex gap-3 items-start shadow-sm">
+          <span className="text-2xl flex-shrink-0">📢</span>
+          <div className="min-w-0">
+            <p className="font-bold text-amber-900 text-sm leading-snug">{item.title}</p>
+            {item.content && <p className="text-xs text-amber-800 mt-1 leading-relaxed">{item.content}</p>}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -171,7 +154,7 @@ function ShopTab({ profile, allAnnouncements }) {
                   {item.price != null && <p className="text-sm font-bold text-emerald-600 mt-2">₪{item.price}</p>}
                   <button onClick={() => handleOrder(item)} disabled={orderingId === item.id || ordered.has(item.id)}
                     className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${ordered.has(item.id) ? 'bg-gray-100 text-gray-400' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
-                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הבקשה נשלחה' : 'הירשם / הזמן'}
+                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הבקשה נשלחה' : 'לפרטים ורכישה'}
                   </button>
                 </div>
               </div>
@@ -196,7 +179,7 @@ function ShopTab({ profile, allAnnouncements }) {
                   </div>
                   <button onClick={() => handleOrder(item)} disabled={orderingId === item.id || ordered.has(item.id)}
                     className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${ordered.has(item.id) ? 'bg-gray-100 text-gray-400' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
-                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הבקשה נשלחה' : 'הזמן'}
+                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הבקשה נשלחה' : 'לפרטים ורכישה'}
                   </button>
                 </div>
               </div>
@@ -237,13 +220,14 @@ function ProfileTab({ profile }) {
 }
 
 export default function AthleteDashboard({ profile }) {
-  const [activeTab, setActiveTab]           = useState('home')
+  const [activeTab, setActiveTab]           = useState('schedule')
   const [myClasses, setMyClasses]           = useState([])
   const [checkinMap, setCheckinMap]         = useState({})
   const [weeklyCheckins, setWeeklyCheckins] = useState(0)
   const [announcements, setAnnouncements]   = useState([])
   const [loading, setLoading]               = useState(true)
   const [loadingCheckin, setLoadingCheckin] = useState(null)
+  const [member, setMember]                 = useState(null)
 
   const limit = SUBSCRIPTION_LIMITS[profile?.subscription_type] ?? 2
   const generalAnnouncements = announcements.filter(a => a.type === 'general' || a.type === 'announcement')
@@ -254,8 +238,9 @@ export default function AthleteDashboard({ profile }) {
 
   async function fetchMyClasses() {
     setLoading(true)
-    const { data: member } = await supabase.from('members').select('group_ids, group_id').eq('id', profile.id).maybeSingle()
-    const groupIds = member?.group_ids || (member?.group_id ? [member.group_id] : [])
+    const { data: memberData } = await supabase.from('members').select('*').eq('id', profile.id).maybeSingle()
+    setMember(memberData)
+    const groupIds = memberData?.group_ids || (memberData?.group_id ? [memberData.group_id] : [])
     if (groupIds.length === 0) { setMyClasses([]); setLoading(false); return }
     const { data: classes } = await supabase.from('classes').select('*').in('id', groupIds)
     if (!classes || classes.length === 0) { setMyClasses([]); setLoading(false); return }
@@ -318,13 +303,13 @@ export default function AthleteDashboard({ profile }) {
         </div>
       </header>
       <main className="p-4 max-w-lg mx-auto pb-24">
-        {loading && activeTab === 'home' ? (
+        {loading && activeTab === 'schedule' ? (
           <p className="text-center text-gray-400 py-12">טוען...</p>
         ) : (
           <>
-            {activeTab === 'home' && <HomeTab profile={profile} myClasses={myClasses} checkinMap={checkinMap} weeklyCheckins={weeklyCheckins} limit={limit} loadingCheckin={loadingCheckin} onCheckin={handleCheckin} announcements={generalAnnouncements} />}
-            {activeTab === 'schedule' && <ScheduleTab />}
+            {activeTab === 'schedule' && <ScheduleTab member={member} myClasses={myClasses} checkinMap={checkinMap} weeklyCheckins={weeklyCheckins} limit={limit} loadingCheckin={loadingCheckin} onCheckin={handleCheckin} />}
             {activeTab === 'shop' && <ShopTab profile={profile} allAnnouncements={announcements} />}
+            {activeTab === 'announcements' && <AnnouncementsTab announcements={generalAnnouncements} />}
             {activeTab === 'profile' && <ProfileTab profile={profile} />}
           </>
         )}

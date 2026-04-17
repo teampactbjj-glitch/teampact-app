@@ -8,10 +8,10 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCo
         { id: 'profile',  icon: '👤', label: 'פרופיל' },
       ]
     : [
-        { id: 'home',     icon: '🏠', label: 'בית' },
-        { id: 'schedule', icon: '📅', label: 'לו״ח' },
-        { id: 'shop',     icon: '🛒', label: 'חנות' },
-        { id: 'profile',  icon: '👤', label: 'פרופיל' },
+        { id: 'schedule',      icon: '📅', label: 'לו״ז' },
+        { id: 'shop',          icon: '🛒', label: 'חנות' },
+        { id: 'announcements', icon: '📢', label: 'הודעות' },
+        { id: 'profile',       icon: '👤', label: 'פרופיל' },
       ]
   return (
     <nav dir="rtl" className="bg-white border-t border-gray-200 shadow-lg flex"

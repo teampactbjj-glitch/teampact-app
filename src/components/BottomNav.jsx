@@ -13,7 +13,6 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCo
         { id: 'shop',     icon: '🛒', label: 'חנות' },
         { id: 'profile',  icon: '👤', label: 'פרופיל' },
       ]
-
   return (
     <nav dir="rtl" className="bg-white border-t border-gray-200 shadow-lg flex"
       style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', zIndex: 9999, paddingBottom: 'env(safe-area-inset-bottom)', minHeight: '60px' }}>

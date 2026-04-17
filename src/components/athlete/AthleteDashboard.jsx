@@ -448,8 +448,17 @@ export default function AthleteDashboard({ profile }) {
   async function fetchMyClasses() {
     setLoading(true)
     try {
-      const { data: memberData, error: memberErr } = await supabase.from('members').select('*').eq('id', profile.id).maybeSingle()
-      if (memberErr) console.error('member fetch error:', memberErr)
+      // נסה קודם לפי id (משתמש שנוצר ישירות), ואם לא — לפי אימייל (ליד שנרשם דרך הקישור)
+      let memberData = null
+      if (profile?.id) {
+        const r = await supabase.from('members').select('*').eq('id', profile.id).maybeSingle()
+        memberData = r.data
+      }
+      if (!memberData && profile?.email) {
+        const r = await supabase.from('members').select('*').eq('email', profile.email.toLowerCase()).maybeSingle()
+        if (r.error) console.error('member fetch by email error:', r.error)
+        memberData = r.data
+      }
       setMember(memberData || null)
       const groupIds = memberData?.group_ids || (memberData?.group_id ? [memberData.group_id] : [])
       if (groupIds.length === 0) { setMyClasses([]); return }

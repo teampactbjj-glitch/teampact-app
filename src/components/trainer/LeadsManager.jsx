@@ -86,7 +86,8 @@ export default function LeadsManager() {
 
 function LeadCard({ lead, branches, loading, onApprove, onReject }) {
   const [subType, setSubType] = useState(lead.subscription_type || '2x_week')
-  const branchName = lead.branch_ids?.[0] ? branches[lead.branch_ids[0]] : branches[lead.branch_id] || '—'
+  const leadBranchIds = lead.branch_ids?.length ? lead.branch_ids : (lead.branch_id ? [lead.branch_id] : [])
+  const branchNames = leadBranchIds.map(id => branches[id]).filter(Boolean).join(', ') || '—'
 
   return (
     <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
@@ -95,7 +96,7 @@ function LeadCard({ lead, branches, loading, onApprove, onReject }) {
           <p className="font-bold text-gray-800">{lead.full_name}</p>
           <p className="text-xs text-gray-500 mt-0.5">{lead.email}</p>
           {lead.phone && <p className="text-xs text-gray-500">{lead.phone}</p>}
-          <p className="text-xs text-blue-600 mt-1">📍 {branchName}</p>
+          <p className="text-xs text-blue-600 mt-1">📍 {branchNames}</p>
         </div>
         <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium shrink-0">ממתין</span>
       </div>

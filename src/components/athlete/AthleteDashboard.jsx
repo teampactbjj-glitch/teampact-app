@@ -24,7 +24,7 @@ function resolveNextOccurrence(cls) {
   return { daysUntil, displayDay, displayTime, nextDate }
 }
 
-function ScheduleTab({ member, myClasses, checkinMap, weeklyCheckins, limit, loadingCheckin, onCheckin }) {
+function ScheduleTab({ member, myClasses, checkinMap, weeklyCheckins, limit, loadingCheckin, onCheckin, registrations, onRegister }) {
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -52,6 +52,7 @@ function ScheduleTab({ member, myClasses, checkinMap, weeklyCheckins, limit, loa
   return (
     <div className="space-y-4">
       <h2 className="font-bold text-gray-800 text-lg">לוח שיעורים שבועי</h2>
+      <p className="text-sm text-gray-500">נרשמת: {registrations.size}/{limit === Infinity ? '∞' : limit} שיעורים השבוע</p>
       {DAYS_HE.map((dayName, idx) => {
         const dayCls = byDay[idx]
         if (!dayCls || dayCls.length === 0) return null
@@ -76,6 +77,16 @@ function ScheduleTab({ member, myClasses, checkinMap, weeklyCheckins, limit, loa
                       <p className="text-sm font-semibold text-emerald-700">{String(h).padStart(2,'0')}:{String(m).padStart(2,'0')}</p>
                       <p className="text-xs text-gray-400">עד {String(Math.floor(endMins/60)).padStart(2,'0')}:{String(endMins%60).padStart(2,'0')}</p>
                     </div>
+                    {(() => {
+                      const isReg = registrations.has(cls.id)
+                      const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
+                      return (
+                        <button onClick={() => onRegister(cls)} disabled={atRegLimit}
+                          className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-40 ${isReg ? 'bg-emerald-500 text-white' : atRegLimit ? 'bg-gray-100 text-gray-400' : 'bg-white border border-emerald-600 text-emerald-600 hover:bg-emerald-50'}`}>
+                          {isReg ? '✓ רשום' : atRegLimit ? 'מלא' : 'הירשם'}
+                        </button>
+                      )
+                    })()}
                     {isMine && isToday && (
                       <button onClick={() => onCheckin(cls)} disabled={loadingCheckin === cls.id || atLimit}
                         className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition disabled:opacity-40 ${isCheckedIn ? 'bg-green-500' : 'bg-emerald-600'}`}>
@@ -126,7 +137,7 @@ function ShopTab({ profile, allAnnouncements }) {
       athlete_name: profile?.full_name || 'לא ידוע',
       status: 'pending',
     })
-    if (error) { console.error('order error:', error); alert('שגיאה בשליחת הבקשה') }
+    if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
     else { setOrdered(prev => new Set([...prev, item.id])) }
     setOrderingId(null)
   }
@@ -219,6 +230,13 @@ function ProfileTab({ profile }) {
   )
 }
 
+function getWeekStart() {
+  const d = new Date()
+  d.setDate(d.getDate() - d.getDay())
+  d.setHours(0,0,0,0)
+  return d.toISOString().split('T')[0]
+}
+
 export default function AthleteDashboard({ profile }) {
   const [activeTab, setActiveTab]           = useState('schedule')
   const [myClasses, setMyClasses]           = useState([])
@@ -228,12 +246,13 @@ export default function AthleteDashboard({ profile }) {
   const [loading, setLoading]               = useState(true)
   const [loadingCheckin, setLoadingCheckin] = useState(null)
   const [member, setMember]                 = useState(null)
+  const [registrations, setRegistrations]   = useState(new Set())
 
   const limit = SUBSCRIPTION_LIMITS[profile?.subscription_type] ?? 2
   const generalAnnouncements = announcements.filter(a => a.type === 'general' || a.type === 'announcement')
 
   useEffect(() => {
-    if (profile?.id) { fetchMyClasses(); fetchAnnouncements(); fetchWeeklyCheckins() }
+    if (profile?.id) { fetchMyClasses(); fetchAnnouncements(); fetchWeeklyCheckins(); fetchRegistrations() }
   }, [profile])
 
   async function fetchMyClasses() {
@@ -274,6 +293,12 @@ export default function AthleteDashboard({ profile }) {
     setAnnouncements(data || [])
   }
 
+  async function fetchRegistrations() {
+    const { data } = await supabase.from('class_registrations')
+      .select('class_id').eq('athlete_id', profile.id).eq('week_start', getWeekStart())
+    setRegistrations(new Set((data || []).map(r => r.class_id)))
+  }
+
   async function handleCheckin(cls) {
     if (weeklyCheckins >= limit && !checkinMap[cls.id] && limit !== Infinity) {
       alert(`הגעת למגבלת ${limit} אימונים השבוע`); return
@@ -289,6 +314,23 @@ export default function AthleteDashboard({ profile }) {
       setWeeklyCheckins(p => p + 1)
     }
     setLoadingCheckin(null)
+  }
+
+  async function handleRegister(cls) {
+    const isRegistered = registrations.has(cls.id)
+    if (!isRegistered && registrations.size >= limit && limit !== Infinity) {
+      alert('הגעת למגבלת ' + limit + ' שיעורים שבועיים לפי המנוי שלך'); return
+    }
+    if (isRegistered) {
+      await supabase.from('class_registrations').delete()
+        .eq('class_id', cls.id).eq('athlete_id', profile.id).eq('week_start', getWeekStart())
+      setRegistrations(p => { const n = new Set(p); n.delete(cls.id); return n })
+    } else {
+      await supabase.from('class_registrations').insert({
+        class_id: cls.id, athlete_id: profile.id, week_start: getWeekStart()
+      })
+      setRegistrations(p => new Set([...p, cls.id]))
+    }
   }
 
   return (
@@ -307,7 +349,7 @@ export default function AthleteDashboard({ profile }) {
           <p className="text-center text-gray-400 py-12">טוען...</p>
         ) : (
           <>
-            {activeTab === 'schedule' && <ScheduleTab member={member} myClasses={myClasses} checkinMap={checkinMap} weeklyCheckins={weeklyCheckins} limit={limit} loadingCheckin={loadingCheckin} onCheckin={handleCheckin} />}
+            {activeTab === 'schedule' && <ScheduleTab member={member} myClasses={myClasses} checkinMap={checkinMap} weeklyCheckins={weeklyCheckins} limit={limit} loadingCheckin={loadingCheckin} onCheckin={handleCheckin} registrations={registrations} onRegister={handleRegister} />}
             {activeTab === 'shop' && <ShopTab profile={profile} allAnnouncements={announcements} />}
             {activeTab === 'announcements' && <AnnouncementsTab announcements={generalAnnouncements} />}
             {activeTab === 'profile' && <ProfileTab profile={profile} />}

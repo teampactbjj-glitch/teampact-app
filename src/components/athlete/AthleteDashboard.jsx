@@ -194,15 +194,15 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-            <table className="w-full text-xs border-collapse" dir="rtl">
-              <thead className="bg-gray-50">
+            <table className="w-full text-[10px] border-collapse" dir="rtl">
+              <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  <th className="py-2 px-2 font-semibold text-gray-600 border-b">שעה</th>
+                  <th className="py-1.5 px-1 font-semibold text-gray-600 border-b w-12">שעה</th>
                   {daysOrder.map(dow => (
-                    <th key={dow} className={`py-2 px-2 font-semibold border-b min-w-[110px] ${
+                    <th key={dow} className={`py-1.5 px-1 font-semibold border-b min-w-[62px] ${
                       dow === todayDow ? 'bg-red-50 text-red-800' : 'text-gray-600'
                     }`}>
-                      {DAYS_HE[dow]}
+                      {DAYS_HE[dow].slice(0, 2)}
                     </th>
                   ))}
                 </tr>
@@ -210,26 +210,25 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
               <tbody>
                 {allHours.map(time => (
                   <tr key={time} className="border-b last:border-0">
-                    <td className="py-2 px-2 font-bold text-gray-700 bg-gray-50 border-l whitespace-nowrap">{time}</td>
+                    <td className="py-1 px-1 font-bold text-gray-700 bg-gray-50 border-l whitespace-nowrap text-center text-[10px]">{time}</td>
                     {daysOrder.map(dow => {
                       const dayClasses = getClassesAt(dow, time)
                       if (dayClasses.length === 0) return <td key={dow} className={`border-l ${dow === todayDow ? 'bg-red-50/20' : ''}`}></td>
                       return (
-                        <td key={dow} className={`p-1 border-l align-top ${dow === todayDow ? 'bg-red-50/30' : ''}`}>
+                        <td key={dow} className={`p-0.5 border-l align-top ${dow === todayDow ? 'bg-red-50/30' : ''}`}>
                           {dayClasses.map(cls => {
                             const isReg = registrations.has(cls.id)
                             const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
                             return (
                               <button key={cls.id} onClick={() => onRegister(cls)} disabled={atRegLimit}
-                                className={`w-full text-right p-2 rounded-lg mb-1 transition disabled:opacity-40 ${
+                                className={`w-full text-center px-1 py-1 rounded-md mb-0.5 transition disabled:opacity-40 leading-tight ${
                                   isReg ? 'bg-gradient-to-br from-red-600 to-red-700 text-white shadow-sm'
                                   : atRegLimit ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                   : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                                 }`}>
-                                <div className="font-bold leading-tight text-[11px]">{cls.name}</div>
-                                {cls.branches?.name && <div className={`text-[9px] mt-0.5 ${isReg ? 'text-red-100' : 'text-gray-400'}`}>{cls.branches.name}</div>}
-                                <div className={`text-[9px] mt-1 font-bold ${isReg ? 'text-white' : atRegLimit ? 'text-gray-400' : 'text-red-600'}`}>
-                                  {isReg ? '✓ רשום' : atRegLimit ? 'מלא' : '+ הירשם'}
+                                <div className="font-bold text-[10px] truncate">{cls.name}</div>
+                                <div className={`text-[8px] font-semibold ${isReg ? 'text-white' : atRegLimit ? 'text-gray-400' : 'text-red-600'}`}>
+                                  {isReg ? '✓' : atRegLimit ? '✕' : '+'}
                                 </div>
                               </button>
                             )
@@ -242,6 +241,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
               </tbody>
             </table>
           </div>
+          <p className="text-[10px] text-gray-400 text-center">לחץ על שיעור כדי להירשם · גלול אופקית לראות הכל</p>
         </>
       )}
     </div>

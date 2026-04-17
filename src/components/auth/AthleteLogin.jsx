@@ -3,68 +3,75 @@ import { supabase } from '../../lib/supabase'
 
 export default function AthleteLogin({ onSwitch }) {
   const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  async function handleMagicLink(e) {
+  async function handleLogin(e) {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    })
-    if (error) setError(error.message)
-    else setSent(true)
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
+    if (error) setError(error.message === 'Invalid login credentials' ? 'מייל או סיסמה שגויים' : error.message)
     setLoading(false)
   }
 
+  async function handleForgot() {
+    if (!email.trim()) { setError('הזן מייל קודם'); return }
+    setLoading(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: window.location.origin,
+    })
+    setLoading(false)
+    if (error) setError(error.message)
+    else alert('קישור לאיפוס סיסמה נשלח למייל שלך')
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-emerald-600 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-red-900 p-4" dir="rtl">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-3">💪</div>
-          <h1 className="text-2xl font-bold text-gray-800">TeamPact</h1>
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center shadow-lg mb-3">
+            <span className="text-3xl">🥋</span>
+          </div>
+          <h1 className="text-2xl font-black text-gray-800">TeamPact</h1>
           <p className="text-gray-500 mt-1">כניסת מתאמן</p>
         </div>
 
-        {sent ? (
-          <div className="text-center">
-            <div className="text-4xl mb-4">📧</div>
-            <p className="text-gray-700 font-medium">קישור נשלח!</p>
-            <p className="text-gray-500 text-sm mt-2">בדוק את תיבת הדואר שלך ולחץ על הקישור להתחברות.</p>
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">אימייל</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500 text-right"
+              placeholder="athlete@example.com" required />
           </div>
-        ) : (
-          <form onSubmit={handleMagicLink} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">אימייל</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-right"
-                placeholder="athlete@example.com"
-                required
-              />
-            </div>
-            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg transition disabled:opacity-50"
-            >
-              {loading ? 'שולח...' : 'שלח קישור כניסה'}
-            </button>
-          </form>
-        )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">סיסמה</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500 text-right"
+              placeholder="••••••••" required />
+          </div>
+          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+          <button type="submit" disabled={loading}
+            className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold py-2.5 rounded-lg transition disabled:opacity-50 shadow">
+            {loading ? 'מתחבר...' : 'כניסה'}
+          </button>
+          <button type="button" onClick={handleForgot}
+            className="w-full text-xs text-gray-500 hover:text-red-600 text-center">
+            שכחתי סיסמה
+          </button>
+        </form>
 
-        <button
-          onClick={onSwitch}
-          className="w-full mt-4 text-sm text-emerald-600 hover:underline text-center"
-        >
-          מאמן? לחץ כאן
-        </button>
+        <div className="mt-6 pt-6 border-t text-center space-y-2">
+          <a href="/register"
+            className="block w-full py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition">
+            עדיין לא רשום? הרשמה כאן
+          </a>
+          <button onClick={onSwitch}
+            className="w-full text-xs text-gray-400 hover:text-gray-600">
+            מאמן? לחץ כאן
+          </button>
+        </div>
       </div>
     </div>
   )

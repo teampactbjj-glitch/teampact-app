@@ -310,14 +310,14 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
   if (loading) return <p className="text-center text-gray-400 py-10">טוען שיעורים...</p>
 
-  // שבוע נוכחי לתצוגת לוח שנה
-  const weekRefStart = new Date(selectedDate)
-  weekRefStart.setDate(selectedDate.getDate() - selectedDate.getDay())
-  const weekCells = [0,1,2,3,4,5,6].map(i => {
-    const d = new Date(weekRefStart)
-    d.setDate(weekRefStart.getDate() + i)
-    return d
-  })
+  // סליידר של כל התאריכים (30 אחורה, 60 קדימה)
+  const sliderCells = []
+  const today0 = startOfDay(new Date())
+  for (let i = -30; i <= 60; i++) {
+    const d = new Date(today0)
+    d.setDate(today0.getDate() + i)
+    sliderCells.push(d)
+  }
   const isSelected = (d) => d.toDateString() === selectedDate.toDateString()
   const isToday = (d) => d.toDateString() === new Date().toDateString()
 
@@ -345,32 +345,34 @@ export default function TodayClasses({ trainerId, isAdmin }) {
         </div>
       </div>
 
-      {/* Weekly calendar strip */}
-      <div className="bg-white rounded-2xl border shadow-sm p-3">
-        <div className="flex items-center justify-between mb-2 px-1">
-          <button onClick={() => navigate(-7)} className="text-gray-400 hover:text-gray-700 text-sm">שבוע קודם ›</button>
-          <button onClick={() => navigate(7)} className="text-gray-400 hover:text-gray-700 text-sm">‹ שבוע הבא</button>
-        </div>
-        <div className="grid grid-cols-7 gap-1">
-          {weekCells.map((d, i) => {
+      {/* Horizontal date slider */}
+      <div className="bg-white rounded-2xl border shadow-sm p-3 overflow-x-auto" dir="ltr">
+        <div className="flex gap-1.5 min-w-max" dir="rtl">
+          {sliderCells.map((d, i) => {
             const today = isToday(d)
             const selected = isSelected(d)
             return (
               <button key={i} onClick={() => setSelectedDate(startOfDay(d))}
-                className={`rounded-xl py-2 transition text-center ${
-                  selected
-                    ? 'bg-gradient-to-br from-blue-600 to-blue-800 text-white shadow-md ring-2 ring-blue-400'
-                    : today
-                      ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                ref={el => { if (el && today && !selected) el.scrollIntoView?.({ inline: 'center', block: 'nearest' }) }}
+                className={`flex-shrink-0 rounded-xl py-2 px-3 transition text-center min-w-[56px] ${
+                  today
+                    ? selected
+                      ? 'bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg ring-2 ring-red-400 scale-110'
+                      : 'bg-gradient-to-br from-red-500 to-red-700 text-white shadow-md scale-105'
+                    : selected
+                      ? 'bg-gradient-to-br from-blue-600 to-blue-800 text-white shadow-md ring-2 ring-blue-400'
                       : 'bg-white border border-gray-100 text-gray-600 hover:bg-gray-50'
                 }`}>
-                <p className={`text-[10px] font-semibold ${selected ? 'text-blue-100' : today ? 'text-blue-600' : 'text-gray-400'}`}>
+                <p className={`text-[10px] font-semibold ${today || selected ? 'opacity-90' : 'text-gray-400'}`}>
                   {DAYS_HE[d.getDay()].slice(0,2)}
                 </p>
-                <p className={`text-lg font-black leading-none mt-0.5 ${selected ? 'text-white' : today ? 'text-blue-800' : 'text-gray-800'}`}>
+                <p className={`text-lg font-black leading-none mt-0.5`}>
                   {d.getDate()}
                 </p>
-                {today && !selected && <p className="text-[8px] font-bold text-blue-600 mt-0.5">היום</p>}
+                <p className={`text-[9px] mt-0.5 ${today || selected ? 'opacity-80' : 'text-gray-400'}`}>
+                  {d.toLocaleDateString('he-IL', { month: 'short' })}
+                </p>
+                {today && <p className="text-[8px] font-bold mt-0.5">היום</p>}
               </button>
             )
           })}

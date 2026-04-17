@@ -23,9 +23,29 @@ const TYPE_COLORS = {
 export default function AnnouncementsManager({ trainerId }) {
   const [items, setItems]       = useState([])
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState(null)
   const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '' })
   const [loading, setLoading]   = useState(true)
   const [uploading, setUploading] = useState(false)
+
+  function openEdit(item) {
+    setEditingId(item.id)
+    setForm({
+      title: item.title || '',
+      content: item.content || '',
+      type: item.type || 'general',
+      event_date: item.event_date ? new Date(item.event_date).toISOString().slice(0, 16) : '',
+      price: item.price != null ? String(item.price) : '',
+      image_url: item.image_url || '',
+    })
+    setShowForm(true)
+  }
+
+  function openAdd() {
+    setEditingId(null)
+    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '' })
+    setShowForm(true)
+  }
 
   async function uploadImage(file) {
     if (!file) return null
@@ -67,8 +87,13 @@ export default function AnnouncementsManager({ trainerId }) {
       ...(form.type === 'seminar' && form.price      ? { price: parseFloat(form.price) } : {}),
       ...(form.image_url ? { image_url: form.image_url } : {}),
     }
-    await supabase.from('announcements').insert(payload)
+    if (editingId) {
+      await supabase.from('announcements').update(payload).eq('id', editingId)
+    } else {
+      await supabase.from('announcements').insert(payload)
+    }
     setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '' })
+    setEditingId(null)
     setShowForm(false)
     fetchAnnouncements()
   }
@@ -82,8 +107,8 @@ export default function AnnouncementsManager({ trainerId }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-800">הודעות וסמינרים</h2>
-        <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
-          + פרסם הודעה חדשה
+        <button onClick={() => showForm ? setShowForm(false) : openAdd()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
+          {showForm ? 'ביטול' : '+ פרסם הודעה חדשה'}
         </button>
       </div>
 
@@ -141,7 +166,7 @@ export default function AnnouncementsManager({ trainerId }) {
             )}
           </div>
           <div className="flex gap-2">
-            <button onClick={handleSubmit} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium">פרסם</button>
+            <button onClick={handleSubmit} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium">{editingId ? 'עדכן' : 'פרסם'}</button>
             <button onClick={() => setShowForm(false)} className="flex-1 border py-2 rounded-lg text-sm">ביטול</button>
           </div>
         </div>
@@ -168,7 +193,10 @@ export default function AnnouncementsManager({ trainerId }) {
                   {item.content && <p className="text-sm text-gray-500 mt-1">{item.content}</p>}
                   <p className="text-xs text-gray-300 mt-2">{new Date(item.created_at).toLocaleDateString('he-IL')}</p>
                 </div>
-                <button onClick={() => deleteItem(item.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">מחק 🗑️</button>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button onClick={() => openEdit(item)} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
+                  <button onClick={() => deleteItem(item.id)} className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">🗑️ מחק</button>
+                </div>
               </div>
             </li>
           ))}

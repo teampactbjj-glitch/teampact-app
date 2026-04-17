@@ -9,9 +9,27 @@ export default function ShopManager({ onOrdersChange }) {
   const [orders, setOrders] = useState([])
   const [tab, setTab] = useState('orders')
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({ title: '', content: '', price: '', image_url: '' })
   const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  function openEdit(product) {
+    setEditingId(product.id)
+    setForm({
+      title: product.title || '',
+      content: product.content || '',
+      price: product.price != null ? String(product.price) : '',
+      image_url: product.image_url || '',
+    })
+    setShowForm(true)
+  }
+
+  function openAdd() {
+    setEditingId(null)
+    setForm({ title: '', content: '', price: '', image_url: '' })
+    setShowForm(true)
+  }
 
   useEffect(() => { fetchAll() }, [])
 
@@ -73,11 +91,16 @@ export default function ShopManager({ onOrdersChange }) {
       title: form.title,
       content: form.content,
       type: 'product',
-      ...(form.price ? { price: parseFloat(form.price) } : {}),
-      ...(form.image_url ? { image_url: form.image_url } : {}),
+      price: form.price ? parseFloat(form.price) : null,
+      image_url: form.image_url || null,
     }
-    await supabase.from('announcements').insert(payload)
+    if (editingId) {
+      await supabase.from('announcements').update(payload).eq('id', editingId)
+    } else {
+      await supabase.from('announcements').insert(payload)
+    }
     setForm({ title: '', content: '', price: '', image_url: '' })
+    setEditingId(null)
     setShowForm(false)
     fetchAll()
   }
@@ -135,15 +158,15 @@ export default function ShopManager({ onOrdersChange }) {
                       {order.members?.phone && <span className="text-gray-400"> · {order.members.phone}</span>}
                     </p>
                   </div>
-                  <div className="flex flex-col gap-1 flex-shrink-0">
+                  <div className="flex gap-2 flex-shrink-0 items-center">
                     {order.status === 'pending' && (
                       <button onClick={() => markDone(order)}
-                        className="text-xs bg-green-500 text-white px-3 py-1 rounded-lg">
+                        className="text-xs bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg">
                         סמן כטופל ✓
                       </button>
                     )}
                     <button onClick={() => deleteOrder(order)}
-                      className="text-xs text-red-400 hover:text-red-600 text-center">
+                      className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">
                       מחק
                     </button>
                   </div>
@@ -157,9 +180,9 @@ export default function ShopManager({ onOrdersChange }) {
       {tab === 'products' && (
         <div className="space-y-4">
           <div className="flex justify-end">
-            <button onClick={() => setShowForm(!showForm)}
+            <button onClick={() => showForm ? setShowForm(false) : openAdd()}
               className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
-              + הוסף מוצר
+              {showForm ? 'ביטול' : '+ הוסף מוצר'}
             </button>
           </div>
 
@@ -215,7 +238,10 @@ export default function ShopManager({ onOrdersChange }) {
                       {item.price != null && <p className="text-sm text-emerald-600 font-bold">₪{item.price}</p>}
                     </div>
                   </div>
-                  <button onClick={() => deleteProduct(item.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">מחק 🗑️</button>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button onClick={() => openEdit(item)} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
+                    <button onClick={() => deleteProduct(item.id)} className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">🗑️ מחק</button>
+                  </div>
                 </li>
               ))}
             </ul>

@@ -34,15 +34,22 @@ function ScheduleTab({ member, myClasses, checkinMap, weeklyCheckins, limit, loa
 
   useEffect(() => {
     async function load() {
-      if (branchIds.length === 0) { setClasses([]); setLoading(false); return }
-      const { data } = await supabase.from('classes')
-        .select('*, branches(name)').in('branch_id', branchIds)
-        .order('day_of_week').order('start_time')
-      setClasses(data || [])
-      setLoading(false)
+      try {
+        if (branchIds.length === 0) { setClasses([]); return }
+        const { data, error } = await supabase.from('classes')
+          .select('*, branches(name)').in('branch_id', branchIds)
+          .order('day_of_week').order('start_time')
+        if (error) console.error('ScheduleTab classes error:', error)
+        setClasses(data || [])
+      } catch (e) {
+        console.error('ScheduleTab load threw:', e)
+        setClasses([])
+      } finally {
+        setLoading(false)
+      }
     }
-    if (member !== null) load()
-  }, [member?.id, member?.branch_ids?.join(',')])
+    load()
+  }, [member?.id, member?.branch_ids?.join(','), member?.branch_id])
 
   const todayDow = new Date().getDay()
   const myClassIds = new Set(myClasses.map(c => c.id))

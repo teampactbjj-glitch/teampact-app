@@ -449,15 +449,28 @@ export default function AthleteDashboard({ profile }) {
     setLoading(true)
     try {
       // נסה קודם לפי id (משתמש שנוצר ישירות), ואם לא — לפי אימייל (ליד שנרשם דרך הקישור)
+      console.log('[athlete] profile:', { id: profile?.id, email: profile?.email, role: profile?.role })
       let memberData = null
       if (profile?.id) {
         const r = await supabase.from('members').select('*').eq('id', profile.id).maybeSingle()
+        console.log('[athlete] member by id:', { found: !!r.data, error: r.error })
         memberData = r.data
       }
       if (!memberData && profile?.email) {
-        const r = await supabase.from('members').select('*').eq('email', profile.email.toLowerCase()).maybeSingle()
+        const email = profile.email.toLowerCase()
+        const r = await supabase.from('members').select('*').eq('email', email).maybeSingle()
+        console.log('[athlete] member by email:', { email, found: !!r.data, error: r.error, data: r.data })
         if (r.error) console.error('member fetch by email error:', r.error)
         memberData = r.data
+      }
+      // אם מצאנו רשומת member אבל ה-id שלה שונה מ-auth id — נקשר אותן (מצב: ליד שאושר זה עתה)
+      if (memberData && profile?.id && memberData.id !== profile.id) {
+        console.log('[athlete] linking member.id to auth.uid', { memberId: memberData.id, authId: profile.id })
+        const { error: linkErr } = await supabase.from('members')
+          .update({ id: profile.id })
+          .eq('id', memberData.id)
+        if (linkErr) console.error('[athlete] link error:', linkErr)
+        else memberData = { ...memberData, id: profile.id }
       }
       setMember(memberData || null)
       const groupIds = memberData?.group_ids || (memberData?.group_id ? [memberData.group_id] : [])

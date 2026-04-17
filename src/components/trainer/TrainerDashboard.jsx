@@ -8,6 +8,38 @@ import ShopManager from './ShopManager'
 import BottomNav from '../BottomNav'
 import { supabase } from '../../lib/supabase'
 
+function RegisterLinkCard() {
+  const [copied, setCopied] = useState(false)
+  const url = typeof window !== 'undefined' ? `${window.location.origin}/register` : '/register'
+  async function copy() {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+    catch { prompt('העתק את הקישור:', url) }
+  }
+  async function share() {
+    if (navigator.share) {
+      try { await navigator.share({ title: 'הצטרפות ל-TeamPact', text: 'הירשם כמתאמן חדש', url }) } catch {}
+    } else { copy() }
+  }
+  return (
+    <div className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl p-4 shadow-md">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xl">🔗</span>
+        <h3 className="font-black text-sm">קישור הרשמה למתאמנים חדשים</h3>
+      </div>
+      <p className="text-xs text-blue-100 mb-3">שלח את הקישור הזה למתאמן חדש — הוא ימלא פרטים ואתה תאשר אותו תחת "בקשות הצטרפות".</p>
+      <div className="bg-white/10 backdrop-blur border border-white/20 rounded-lg px-3 py-2 text-xs font-mono break-all mb-2">{url}</div>
+      <div className="flex gap-2">
+        <button onClick={copy} className="flex-1 bg-white text-blue-700 hover:bg-blue-50 font-bold py-2 rounded-lg text-sm">
+          {copied ? '✓ הועתק' : '📋 העתק קישור'}
+        </button>
+        <button onClick={share} className="flex-1 bg-blue-900 hover:bg-blue-950 text-white font-bold py-2 rounded-lg text-sm">
+          📤 שתף
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function TrainerDashboard({ profile, isAdmin }) {
   const [activeTab, setActiveTab]       = useState('schedule')
   const [leadsCount, setLeadsCount]     = useState(0)
@@ -50,6 +82,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
 
         {activeTab === 'athletes' && (
           <div className="space-y-6">
+            <RegisterLinkCard />
             {leadsCount > 0 && (
               <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
                 <h3 className="font-bold text-orange-900 text-sm mb-3">🙋 בקשות הצטרפות ממתינות ({leadsCount})</h3>

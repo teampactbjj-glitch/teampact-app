@@ -28,6 +28,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeBranch, setActiveBranch] = useState('all')
+  const [selectedDate, setSelectedDate] = useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d })
 
   const branchIds = member?.branch_ids?.length
     ? member.branch_ids
@@ -52,8 +53,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
     load()
   }, [member?.id, member?.branch_ids?.join(','), member?.branch_id])
 
-  const today = new Date()
-  const todayDow = today.getDay()
+  const today = new Date(); today.setHours(0,0,0,0)
 
   if (loading) return <p className="text-center text-gray-400 py-8">טוען...</p>
 
@@ -67,29 +67,32 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
     )
   }
 
-  // סינון לפי סניף פעיל
   const filteredClasses = activeBranch === 'all'
     ? classes
     : classes.filter(c => c.branch_id === activeBranch)
 
-  const todayClasses = filteredClasses
-    .filter(c => c.day_of_week === todayDow)
+  const selectedDow = selectedDate.getDay()
+  const dayClasses = filteredClasses
+    .filter(c => c.day_of_week === selectedDow)
     .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
 
-  const allHours = [...new Set(filteredClasses.map(c => c.start_time?.slice(0,5)))].filter(Boolean).sort()
-  const daysOrder = [0, 1, 2, 3, 4, 5, 6]
-  function getClassesAt(dow, time) {
-    return filteredClasses.filter(c => c.day_of_week === dow && c.start_time?.slice(0,5) === time)
+  // סליידר של 90 תאריכים (30 אחורה, 60 קדימה)
+  const sliderCells = []
+  for (let i = -30; i <= 60; i++) {
+    const d = new Date(today); d.setDate(today.getDate() + i); sliderCells.push(d)
   }
+  const isSelected = (d) => d.toDateString() === selectedDate.toDateString()
+  const isTodayDate = (d) => d.toDateString() === today.toDateString()
 
-  // תאריכים לשבוע הנוכחי (לתצוגת "לוח שנה")
-  const weekStart = new Date(today)
-  weekStart.setDate(today.getDate() - today.getDay())
-  const weekDates = daysOrder.map(dow => {
-    const d = new Date(weekStart)
-    d.setDate(weekStart.getDate() + dow)
-    return d
-  })
+  const dateLabel = (() => {
+    const diff = Math.round((selectedDate - today) / 86400000)
+    const dayName = `יום ${DAYS_HE[selectedDow]}`
+    const dateStr = selectedDate.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })
+    if (diff === 0) return `היום · ${dayName} · ${dateStr}`
+    if (diff === 1) return `מחר · ${dayName} · ${dateStr}`
+    if (diff === -1) return `אתמול · ${dayName} · ${dateStr}`
+    return `${dayName} · ${dateStr}`
+  })()
 
   return (
     <div className="space-y-4">
@@ -117,132 +120,88 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
         </div>
       )}
 
-      {/* שיעורי היום למעלה */}
-      {todayClasses.length > 0 && (
-        <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-red-950 text-white rounded-2xl p-4 shadow-lg border border-red-900/30">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xl">🥋</span>
-            <h3 className="font-black text-base tracking-wide">האימונים שלי היום</h3>
-            <span className="mr-auto text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold">
-              {today.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
-            </span>
-          </div>
-          <div className="space-y-2">
-            {todayClasses.map(cls => {
-              const isReg = registrations.has(cls.id)
-              const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
-              return (
-                <button key={cls.id} onClick={() => onRegister(cls)} disabled={atRegLimit}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl transition ${
-                    isReg
-                      ? 'bg-red-600 hover:bg-red-700 text-white shadow-md'
-                      : atRegLimit
-                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                        : 'bg-white/10 backdrop-blur hover:bg-white/20 text-white border border-white/20'
-                  }`}>
-                  <div className="text-right">
-                    <p className="font-bold text-sm">{cls.name}</p>
-                    <p className="text-[11px] opacity-80 mt-0.5">
-                      🕐 {cls.start_time?.slice(0,5)}
-                      {cls.branches?.name && ` · 📍 ${cls.branches.name}`}
-                    </p>
-                  </div>
-                  <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${
-                    isReg ? 'bg-white text-red-700' : atRegLimit ? 'bg-gray-600' : 'bg-red-600 text-white'
-                  }`}>
-                    {isReg ? '✓ רשום' : atRegLimit ? 'מלא' : 'הירשם'}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
+      {/* כותרת + מונה שבועי */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="font-black text-gray-800 text-base leading-tight">{dateLabel}</p>
         </div>
-      )}
+        <span className="text-xs bg-red-100 text-red-800 px-3 py-1 rounded-full font-bold whitespace-nowrap">
+          {registrations.size}/{limit === Infinity ? '∞' : limit} השבוע
+        </span>
+      </div>
 
-      {filteredClasses.length === 0 ? (
-        <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">📅</div><p>אין שיעורים בסניף זה</p></div>
-      ) : (
-        <>
-          {/* לוח שבועי מלא */}
-          <div className="flex items-center justify-between">
-            <h2 className="font-black text-gray-800 text-lg">לוח שיעורים שבועי</h2>
-            <span className="text-xs bg-red-100 text-red-800 px-3 py-1 rounded-full font-bold">
-              {registrations.size}/{limit === Infinity ? '∞' : limit} השבוע
-            </span>
-          </div>
-
-          {/* שורת תאריכי השבוע (כמו לוח שנה) */}
-          <div className="grid grid-cols-7 gap-1">
-            {daysOrder.map(dow => {
-              const d = weekDates[dow]
-              const isToday = dow === todayDow
-              return (
-                <div key={dow} className={`rounded-xl p-2 text-center ${
-                  isToday
-                    ? 'bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg ring-2 ring-red-400'
-                    : 'bg-white border border-gray-200 text-gray-500'
+      {/* סליידר תאריכים אופקי */}
+      <div className="bg-white rounded-2xl border shadow-sm p-3 overflow-x-auto" dir="ltr">
+        <div className="flex gap-1.5 min-w-max" dir="rtl">
+          {sliderCells.map((d, i) => {
+            const todayFlag = isTodayDate(d)
+            const selected = isSelected(d)
+            return (
+              <button key={i} onClick={() => setSelectedDate(new Date(d))}
+                ref={el => { if (el && todayFlag) el.scrollIntoView?.({ inline: 'center', block: 'nearest' }) }}
+                className={`flex-shrink-0 rounded-xl transition text-center ${
+                  todayFlag
+                    ? 'bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg ring-4 ring-red-300 scale-110 py-2.5 px-3.5 min-w-[68px]'
+                    : selected
+                      ? 'bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-2 ring-gray-400 py-2 px-3 min-w-[56px]'
+                      : 'bg-white border border-gray-100 text-gray-600 hover:bg-gray-50 py-2 px-3 min-w-[56px]'
                 }`}>
-                  <p className={`text-[9px] font-semibold ${isToday ? 'text-red-100' : 'text-gray-400'}`}>
-                    {DAYS_HE[dow].slice(0, 2)}
-                  </p>
-                  <p className={`text-lg font-black leading-none mt-0.5 ${isToday ? 'text-white' : 'text-gray-800'}`}>
-                    {d.getDate()}
+                <p className={`text-[10px] font-semibold ${todayFlag || selected ? 'opacity-95' : 'text-gray-400'}`}>
+                  {DAYS_HE[d.getDay()].slice(0,2)}
+                </p>
+                <p className={`font-black leading-none mt-0.5 ${todayFlag ? 'text-2xl' : 'text-lg'}`}>
+                  {d.getDate()}
+                </p>
+                <p className={`text-[9px] mt-0.5 ${todayFlag || selected ? 'opacity-80' : 'text-gray-400'}`}>
+                  {d.toLocaleDateString('he-IL', { month: 'short' })}
+                </p>
+                {todayFlag && <p className="text-[9px] font-black mt-1 bg-white/30 rounded px-1">היום</p>}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* רשימת שיעורים ליום הנבחר */}
+      {dayClasses.length === 0 ? (
+        <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border">
+          <div className="text-4xl mb-2">📅</div>
+          <p>אין שיעורים ביום {DAYS_HE[selectedDow]}</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {dayClasses.map(cls => {
+            const isReg = registrations.has(cls.id)
+            const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
+            return (
+              <button key={cls.id} onClick={() => onRegister(cls)} disabled={atRegLimit}
+                className={`w-full flex items-center justify-between p-4 rounded-2xl transition shadow-sm ${
+                  isReg
+                    ? 'bg-gradient-to-br from-red-600 to-red-800 text-white'
+                    : atRegLimit
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-white border border-gray-200 text-gray-800 hover:border-red-400'
+                }`}>
+                <div className="text-right flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🥋</span>
+                    <p className="font-black text-base">{cls.name}</p>
+                  </div>
+                  <p className={`text-xs mt-1 ${isReg ? 'text-red-100' : 'text-gray-500'}`}>
+                    🕐 {cls.start_time?.slice(0,5)}
+                    {cls.duration_minutes && ` · ${cls.duration_minutes} דק'`}
+                    {cls.branches?.name && ` · 📍 ${cls.branches.name}`}
                   </p>
                 </div>
-              )
-            })}
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-            <table className="w-full text-[10px] border-collapse" dir="rtl">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr>
-                  <th className="py-1.5 px-1 font-semibold text-gray-600 border-b w-12">שעה</th>
-                  {daysOrder.map(dow => (
-                    <th key={dow} className={`py-1.5 px-1 font-semibold border-b min-w-[62px] ${
-                      dow === todayDow ? 'bg-red-50 text-red-800' : 'text-gray-600'
-                    }`}>
-                      {DAYS_HE[dow].slice(0, 2)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {allHours.map(time => (
-                  <tr key={time} className="border-b last:border-0">
-                    <td className="py-1 px-1 font-bold text-gray-700 bg-gray-50 border-l whitespace-nowrap text-center text-[10px]">{time}</td>
-                    {daysOrder.map(dow => {
-                      const dayClasses = getClassesAt(dow, time)
-                      if (dayClasses.length === 0) return <td key={dow} className={`border-l ${dow === todayDow ? 'bg-red-50/20' : ''}`}></td>
-                      return (
-                        <td key={dow} className={`p-0.5 border-l align-top ${dow === todayDow ? 'bg-red-50/30' : ''}`}>
-                          {dayClasses.map(cls => {
-                            const isReg = registrations.has(cls.id)
-                            const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
-                            return (
-                              <button key={cls.id} onClick={() => onRegister(cls)} disabled={atRegLimit}
-                                className={`w-full text-center px-1 py-1 rounded-md mb-0.5 transition disabled:opacity-40 leading-tight ${
-                                  isReg ? 'bg-gradient-to-br from-red-600 to-red-700 text-white shadow-sm'
-                                  : atRegLimit ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                  : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-                                }`}>
-                                <div className="font-bold text-[10px] truncate">{cls.name}</div>
-                                <div className={`text-[8px] font-semibold ${isReg ? 'text-white' : atRegLimit ? 'text-gray-400' : 'text-red-600'}`}>
-                                  {isReg ? '✓' : atRegLimit ? '✕' : '+'}
-                                </div>
-                              </button>
-                            )
-                          })}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-[10px] text-gray-400 text-center">לחץ על שיעור כדי להירשם · גלול אופקית לראות הכל</p>
-        </>
+                <span className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap ${
+                  isReg ? 'bg-white text-red-700' : atRegLimit ? 'bg-gray-200' : 'bg-red-600 text-white'
+                }`}>
+                  {isReg ? '✓ רשום' : atRegLimit ? 'מלא' : '+ הירשם'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       )}
     </div>
   )
@@ -373,10 +332,26 @@ function ShopTab({ profile, allAnnouncements }) {
 
 function ProfileTab({ profile, member }) {
   const [newEmail, setNewEmail] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [pwSaving, setPwSaving] = useState(false)
+  const [pwMsg, setPwMsg] = useState(null)
   const [requestedSub, setRequestedSub] = useState(member?.subscription_type || '2x_week')
   const [subNote, setSubNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [pendingRequests, setPendingRequests] = useState([])
+
+  async function updatePassword() {
+    setPwMsg(null)
+    if (!newPassword || newPassword.length < 6) { setPwMsg({ type: 'err', text: 'סיסמה חייבת להכיל לפחות 6 תווים' }); return }
+    if (newPassword !== confirmPassword) { setPwMsg({ type: 'err', text: 'הסיסמאות לא תואמות' }); return }
+    setPwSaving(true)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setPwSaving(false)
+    if (error) { setPwMsg({ type: 'err', text: error.message }); return }
+    setPwMsg({ type: 'ok', text: 'הסיסמה עודכנה בהצלחה' })
+    setNewPassword(''); setConfirmPassword('')
+  }
 
   const currentSub = member?.subscription_type || profile?.subscription_type || '—'
 
@@ -492,6 +467,22 @@ function ProfileTab({ profile, member }) {
             </button>
           </>
         )}
+      </div>
+
+      {/* שינוי סיסמה */}
+      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
+        <h3 className="font-bold text-gray-800 text-sm">שינוי סיסמה</h3>
+        <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+          placeholder="סיסמה חדשה (לפחות 6 תווים)"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+        <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+          placeholder="אימות סיסמה"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+        {pwMsg && <p className={`text-xs ${pwMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>{pwMsg.text}</p>}
+        <button onClick={updatePassword} disabled={pwSaving}
+          className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+          {pwSaving ? 'מעדכן...' : 'עדכן סיסמה'}
+        </button>
       </div>
 
       {/* שינוי מנוי */}

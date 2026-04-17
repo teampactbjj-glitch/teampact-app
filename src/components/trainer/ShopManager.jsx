@@ -9,7 +9,8 @@ export default function ShopManager({ onOrdersChange }) {
   const [orders, setOrders] = useState([])
   const [tab, setTab] = useState('orders')
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ title: '', content: '', price: '', image_url: '', type: 'product' })
+  const [form, setForm] = useState({ title: '', content: '', price: '', image_url: '' })
+  const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { fetchAll() }, [])
@@ -45,17 +46,38 @@ export default function ShopManager({ onOrdersChange }) {
     setProducts(prev => prev.filter(p => p.id !== id))
   }
 
+  async function uploadImage(file) {
+    if (!file) return null
+    setUploading(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: upErr } = await supabase.storage.from('product-images').upload(path, file)
+      if (upErr) {
+        // fallback to announcements bucket
+        const { error: upErr2 } = await supabase.storage.from('announcements').upload(path, file)
+        if (upErr2) { alert('שגיאת העלאה: ' + upErr2.message); return null }
+        const { data: pub } = supabase.storage.from('announcements').getPublicUrl(path)
+        return pub.publicUrl
+      }
+      const { data: pub } = supabase.storage.from('product-images').getPublicUrl(path)
+      return pub.publicUrl
+    } finally {
+      setUploading(false)
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     const payload = {
       title: form.title,
       content: form.content,
-      type: form.type,
+      type: 'product',
       ...(form.price ? { price: parseFloat(form.price) } : {}),
       ...(form.image_url ? { image_url: form.image_url } : {}),
     }
     await supabase.from('announcements').insert(payload)
-    setForm({ title: '', content: '', price: '', image_url: '', type: 'product' })
+    setForm({ title: '', content: '', price: '', image_url: '' })
     setShowForm(false)
     fetchAll()
   }
@@ -87,7 +109,7 @@ export default function ShopManager({ onOrdersChange }) {
         </button>
         <button onClick={() => setTab('products')}
           className={`px-4 py-1.5 rounded-lg text-sm font-medium ${tab === 'products' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
-          מוצרים וסמינרים
+          מוצרים
         </button>
       </div>
 
@@ -106,9 +128,10 @@ export default function ShopManager({ onOrdersChange }) {
                       </span>
                       <span className="text-xs text-gray-400">{new Date(order.created_at).toLocaleDateString('he-IL')}</span>
                     </div>
-                    <p className="font-semibold text-gray-800">{order.product_title}</p>
+                    <p className="font-semibold text-gray-800">🛒 {order.product_name || order.product_title || 'מוצר'}</p>
                     <p className="text-sm text-gray-600 mt-0.5">
-                      {order.members?.full_name || order.member_name}
+                      <span className="text-gray-500">מבקש: </span>
+                      <span className="font-medium">{order.members?.full_name || order.member_name || 'לא ידוע'}</span>
                       {order.members?.phone && <span className="text-gray-400"> · {order.members.phone}</span>}
                     </p>
                   </div>
@@ -136,33 +159,44 @@ export default function ShopManager({ onOrdersChange }) {
           <div className="flex justify-end">
             <button onClick={() => setShowForm(!showForm)}
               className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
-              + הוסף מוצר / סמינר
+              + הוסף מוצר
             </button>
           </div>
 
           {showForm && (
             <div className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
-              <div className="flex gap-2">
-                <label className={`flex-1 flex items-center justify-center gap-1 p-2 rounded-lg border cursor-pointer text-sm ${form.type === 'product' ? 'border-blue-500 bg-blue-50 font-medium' : 'border-gray-200'}`}>
-                  <input type="radio" name="type" value="product" checked={form.type === 'product'} onChange={e => setForm(p => ({ ...p, type: e.target.value }))} className="hidden" />
-                  🛒 מוצר
-                </label>
-                <label className={`flex-1 flex items-center justify-center gap-1 p-2 rounded-lg border cursor-pointer text-sm ${form.type === 'seminar' ? 'border-blue-500 bg-blue-50 font-medium' : 'border-gray-200'}`}>
-                  <input type="radio" name="type" value="seminar" checked={form.type === 'seminar'} onChange={e => setForm(p => ({ ...p, type: e.target.value }))} className="hidden" />
-                  🎓 סמינר
-                </label>
-              </div>
-              <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="שם המוצר / סמינר"
+              <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="שם המוצר"
                 value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required />
               <textarea className="w-full border rounded-lg px-3 py-2 text-sm resize-none" rows={2}
                 placeholder="תיאור..." value={form.content}
                 onChange={e => setForm(p => ({ ...p, content: e.target.value }))} />
               <input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="מחיר ₪"
                 value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
-              <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="קישור לתמונה (URL)"
-                value={form.image_url} onChange={e => setForm(p => ({ ...p, image_url: e.target.value }))} />
+              <div className="space-y-2">
+                <label className="text-xs text-gray-500">תמונה</label>
+                <div className="flex gap-2 items-center">
+                  <input type="file" accept="image/*"
+                    onChange={async e => {
+                      const f = e.target.files?.[0]
+                      if (!f) return
+                      const url = await uploadImage(f)
+                      if (url) setForm(p => ({ ...p, image_url: url }))
+                    }}
+                    className="flex-1 text-xs" />
+                  {uploading && <span className="text-xs text-blue-500">מעלה...</span>}
+                </div>
+                {form.image_url && (
+                  <div className="flex items-center gap-2">
+                    <img src={form.image_url} alt="preview" className="w-16 h-16 rounded-lg object-cover border" />
+                    <button type="button" onClick={() => setForm(p => ({ ...p, image_url: '' }))}
+                      className="text-xs text-red-500">הסר</button>
+                  </div>
+                )}
+                <input className="w-full border rounded-lg px-3 py-2 text-xs text-gray-500" placeholder="או קישור חיצוני (אופציונלי)"
+                  value={form.image_url} onChange={e => setForm(p => ({ ...p, image_url: e.target.value }))} />
+              </div>
               <div className="flex gap-2">
-                <button onClick={handleSubmit} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm">שמור</button>
+                <button onClick={handleSubmit} disabled={uploading} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm disabled:opacity-50">שמור</button>
                 <button onClick={() => setShowForm(false)} className="flex-1 border py-2 rounded-lg text-sm">ביטול</button>
               </div>
             </div>

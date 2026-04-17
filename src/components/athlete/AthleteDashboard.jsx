@@ -24,9 +24,10 @@ function resolveNextOccurrence(cls) {
   return { daysUntil, displayDay, displayTime, nextDate }
 }
 
-function ScheduleTab({ member, myClasses, checkinMap, weeklyCheckins, limit, loadingCheckin, onCheckin, registrations, onRegister }) {
+function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) {
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
+  const [activeBranch, setActiveBranch] = useState('all')
 
   const branchIds = member?.branch_ids?.length
     ? member.branch_ids
@@ -51,116 +52,197 @@ function ScheduleTab({ member, myClasses, checkinMap, weeklyCheckins, limit, loa
     load()
   }, [member?.id, member?.branch_ids?.join(','), member?.branch_id])
 
-  const todayDow = new Date().getDay()
-  const myClassIds = new Set(myClasses.map(c => c.id))
+  const today = new Date()
+  const todayDow = today.getDay()
 
   if (loading) return <p className="text-center text-gray-400 py-8">טוען...</p>
 
   if (branchIds.length === 0) {
     return (
       <div className="text-center py-16 text-gray-400">
-        <div className="text-4xl mb-2">🏢</div>
+        <div className="text-4xl mb-2">🥋</div>
         <p className="font-semibold text-gray-600">לא משויכת לסניף עדיין</p>
         <p className="text-xs mt-2">פנה למאמן לשיוך סניף</p>
       </div>
     )
   }
 
-  if (classes.length === 0) {
-    return <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">📅</div><p>אין שיעורים בסניפים שלך</p></div>
-  }
+  // סינון לפי סניף פעיל
+  const filteredClasses = activeBranch === 'all'
+    ? classes
+    : classes.filter(c => c.branch_id === activeBranch)
 
-  const allHours = [...new Set(classes.map(c => c.start_time?.slice(0,5)))].filter(Boolean).sort()
+  const todayClasses = filteredClasses
+    .filter(c => c.day_of_week === todayDow)
+    .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
+
+  const allHours = [...new Set(filteredClasses.map(c => c.start_time?.slice(0,5)))].filter(Boolean).sort()
   const daysOrder = [0, 1, 2, 3, 4, 5, 6]
   function getClassesAt(dow, time) {
-    return classes.filter(c => c.day_of_week === dow && c.start_time?.slice(0,5) === time)
+    return filteredClasses.filter(c => c.day_of_week === dow && c.start_time?.slice(0,5) === time)
   }
+
+  // תאריכים לשבוע הנוכחי (לתצוגת "לוח שנה")
+  const weekStart = new Date(today)
+  weekStart.setDate(today.getDate() - today.getDay())
+  const weekDates = daysOrder.map(dow => {
+    const d = new Date(weekStart)
+    d.setDate(weekStart.getDate() + dow)
+    return d
+  })
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-bold text-gray-800 text-lg">לוח שיעורים</h2>
-        <span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full font-semibold">
-          {registrations.size}/{limit === Infinity ? '∞' : limit} השבוע
-        </span>
-      </div>
+      {/* Branch switcher */}
+      {branchIds.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <button onClick={() => setActiveBranch('all')}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
+              activeBranch === 'all'
+                ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
+                : 'bg-white text-gray-600 border border-gray-200'
+            }`}>
+            כל הסניפים
+          </button>
+          {branchIds.map(bid => (
+            <button key={bid} onClick={() => setActiveBranch(bid)}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
+                activeBranch === bid
+                  ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
+                  : 'bg-white text-gray-600 border border-gray-200'
+              }`}>
+              📍 {branchesMap?.[bid] || 'סניף'}
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div className="bg-white rounded-xl border shadow-sm overflow-x-auto">
-        <table className="w-full text-xs border-collapse" dir="rtl">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="py-2 px-2 font-semibold text-gray-600 border-b">שעה</th>
-              {daysOrder.map(dow => (
-                <th key={dow} className={`py-2 px-2 font-semibold border-b min-w-[120px] ${dow === todayDow ? 'bg-emerald-50 text-emerald-800' : 'text-gray-600'}`}>
-                  {DAYS_HE[dow]}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {allHours.map(time => (
-              <tr key={time} className="border-b last:border-0">
-                <td className="py-2 px-2 font-semibold text-gray-700 bg-gray-50 border-l whitespace-nowrap">{time}</td>
-                {daysOrder.map(dow => {
-                  const dayClasses = getClassesAt(dow, time)
-                  if (dayClasses.length === 0) return <td key={dow} className="border-l"></td>
-                  return (
-                    <td key={dow} className={`p-1 border-l align-top ${dow === todayDow ? 'bg-emerald-50/30' : ''}`}>
-                      {dayClasses.map(cls => {
-                        const isReg = registrations.has(cls.id)
-                        const isMine = myClassIds.has(cls.id)
-                        const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
-                        return (
-                          <button
-                            key={cls.id}
-                            onClick={() => onRegister(cls)}
-                            disabled={atRegLimit}
-                            className={`w-full text-right p-2 rounded-lg mb-1 transition disabled:opacity-40 ${
-                              isReg ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                              : atRegLimit ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                              : isMine ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
-                              : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-                            }`}
-                          >
-                            <div className="font-medium leading-tight text-[11px]">{cls.name}</div>
-                            {cls.branches?.name && <div className={`text-[9px] mt-0.5 ${isReg ? 'text-emerald-100' : 'text-gray-400'}`}>{cls.branches.name}</div>}
-                            <div className={`text-[9px] mt-1 font-semibold ${isReg ? 'text-white' : atRegLimit ? 'text-gray-400' : 'text-emerald-600'}`}>
-                              {isReg ? '✓ רשום' : atRegLimit ? 'מלא' : '+ הירשם'}
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {myClasses.filter(c => c.day_of_week === todayDow).length > 0 && (
-        <div className="bg-white rounded-xl border shadow-sm p-4">
-          <h3 className="font-bold text-gray-800 text-sm mb-3">📍 האימונים שלי להיום — צ׳ק־אין</h3>
-          <ul className="space-y-2">
-            {myClasses.filter(c => c.day_of_week === todayDow).map(cls => {
-              const isCheckedIn = !!checkinMap[cls.id]
-              const atLimit = weeklyCheckins >= limit && !isCheckedIn && limit !== Infinity
+      {/* שיעורי היום למעלה */}
+      {todayClasses.length > 0 && (
+        <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-red-950 text-white rounded-2xl p-4 shadow-lg border border-red-900/30">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">🥋</span>
+            <h3 className="font-black text-base tracking-wide">האימונים שלי היום</h3>
+            <span className="mr-auto text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold">
+              {today.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {todayClasses.map(cls => {
+              const isReg = registrations.has(cls.id)
+              const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
               return (
-                <li key={cls.id} className="flex items-center justify-between border rounded-lg p-2">
-                  <div>
-                    <p className="font-medium text-gray-800 text-sm">{cls.name}</p>
-                    <p className="text-xs text-gray-400">{cls.start_time?.slice(0,5)}</p>
+                <button key={cls.id} onClick={() => onRegister(cls)} disabled={atRegLimit}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl transition ${
+                    isReg
+                      ? 'bg-red-600 hover:bg-red-700 text-white shadow-md'
+                      : atRegLimit
+                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                        : 'bg-white/10 backdrop-blur hover:bg-white/20 text-white border border-white/20'
+                  }`}>
+                  <div className="text-right">
+                    <p className="font-bold text-sm">{cls.name}</p>
+                    <p className="text-[11px] opacity-80 mt-0.5">
+                      🕐 {cls.start_time?.slice(0,5)}
+                      {cls.branches?.name && ` · 📍 ${cls.branches.name}`}
+                    </p>
                   </div>
-                  <button onClick={() => onCheckin(cls)} disabled={loadingCheckin === cls.id || atLimit}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition disabled:opacity-40 ${isCheckedIn ? 'bg-green-500' : 'bg-emerald-600'}`}>
-                    {loadingCheckin === cls.id ? '...' : isCheckedIn ? "✓ בוצע" : "צ'ק-אין"}
-                  </button>
-                </li>
+                  <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${
+                    isReg ? 'bg-white text-red-700' : atRegLimit ? 'bg-gray-600' : 'bg-red-600 text-white'
+                  }`}>
+                    {isReg ? '✓ רשום' : atRegLimit ? 'מלא' : 'הירשם'}
+                  </span>
+                </button>
               )
             })}
-          </ul>
+          </div>
         </div>
+      )}
+
+      {filteredClasses.length === 0 ? (
+        <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">📅</div><p>אין שיעורים בסניף זה</p></div>
+      ) : (
+        <>
+          {/* לוח שבועי מלא */}
+          <div className="flex items-center justify-between">
+            <h2 className="font-black text-gray-800 text-lg">לוח שיעורים שבועי</h2>
+            <span className="text-xs bg-red-100 text-red-800 px-3 py-1 rounded-full font-bold">
+              {registrations.size}/{limit === Infinity ? '∞' : limit} השבוע
+            </span>
+          </div>
+
+          {/* שורת תאריכי השבוע (כמו לוח שנה) */}
+          <div className="grid grid-cols-7 gap-1">
+            {daysOrder.map(dow => {
+              const d = weekDates[dow]
+              const isToday = dow === todayDow
+              return (
+                <div key={dow} className={`rounded-xl p-2 text-center ${
+                  isToday
+                    ? 'bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg ring-2 ring-red-400'
+                    : 'bg-white border border-gray-200 text-gray-500'
+                }`}>
+                  <p className={`text-[9px] font-semibold ${isToday ? 'text-red-100' : 'text-gray-400'}`}>
+                    {DAYS_HE[dow].slice(0, 2)}
+                  </p>
+                  <p className={`text-lg font-black leading-none mt-0.5 ${isToday ? 'text-white' : 'text-gray-800'}`}>
+                    {d.getDate()}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+            <table className="w-full text-xs border-collapse" dir="rtl">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="py-2 px-2 font-semibold text-gray-600 border-b">שעה</th>
+                  {daysOrder.map(dow => (
+                    <th key={dow} className={`py-2 px-2 font-semibold border-b min-w-[110px] ${
+                      dow === todayDow ? 'bg-red-50 text-red-800' : 'text-gray-600'
+                    }`}>
+                      {DAYS_HE[dow]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {allHours.map(time => (
+                  <tr key={time} className="border-b last:border-0">
+                    <td className="py-2 px-2 font-bold text-gray-700 bg-gray-50 border-l whitespace-nowrap">{time}</td>
+                    {daysOrder.map(dow => {
+                      const dayClasses = getClassesAt(dow, time)
+                      if (dayClasses.length === 0) return <td key={dow} className={`border-l ${dow === todayDow ? 'bg-red-50/20' : ''}`}></td>
+                      return (
+                        <td key={dow} className={`p-1 border-l align-top ${dow === todayDow ? 'bg-red-50/30' : ''}`}>
+                          {dayClasses.map(cls => {
+                            const isReg = registrations.has(cls.id)
+                            const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
+                            return (
+                              <button key={cls.id} onClick={() => onRegister(cls)} disabled={atRegLimit}
+                                className={`w-full text-right p-2 rounded-lg mb-1 transition disabled:opacity-40 ${
+                                  isReg ? 'bg-gradient-to-br from-red-600 to-red-700 text-white shadow-sm'
+                                  : atRegLimit ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                  : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                                }`}>
+                                <div className="font-bold leading-tight text-[11px]">{cls.name}</div>
+                                {cls.branches?.name && <div className={`text-[9px] mt-0.5 ${isReg ? 'text-red-100' : 'text-gray-400'}`}>{cls.branches.name}</div>}
+                                <div className={`text-[9px] mt-1 font-bold ${isReg ? 'text-white' : atRegLimit ? 'text-gray-400' : 'text-red-600'}`}>
+                                  {isReg ? '✓ רשום' : atRegLimit ? 'מלא' : '+ הירשם'}
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )
@@ -453,13 +535,10 @@ function getWeekStart() {
 
 export default function AthleteDashboard({ profile }) {
   const [activeTab, setActiveTab]           = useState('schedule')
-  const [myClasses, setMyClasses]           = useState([])
-  const [checkinMap, setCheckinMap]         = useState({})
-  const [weeklyCheckins, setWeeklyCheckins] = useState(0)
   const [announcements, setAnnouncements]   = useState([])
   const [loading, setLoading]               = useState(true)
-  const [loadingCheckin, setLoadingCheckin] = useState(null)
   const [member, setMember]                 = useState(null)
+  const [branchesMap, setBranchesMap]       = useState({})
   const [registrations, setRegistrations]   = useState(new Set())
 
   const subscriptionType = member?.subscription_type || profile?.subscription_type
@@ -467,13 +546,19 @@ export default function AthleteDashboard({ profile }) {
   const announcementsForTab = announcements.filter(a => a.type === 'general' || a.type === 'announcement' || a.type === 'seminar')
 
   useEffect(() => {
-    if (profile?.id) { fetchMyClasses(); fetchAnnouncements(); fetchWeeklyCheckins(); fetchRegistrations() }
+    if (profile?.id) { fetchMyClasses(); fetchAnnouncements(); fetchRegistrations(); fetchBranches() }
   }, [profile])
+
+  async function fetchBranches() {
+    const { data } = await supabase.from('branches').select('id, name')
+    const map = {}
+    ;(data || []).forEach(b => { map[b.id] = b.name })
+    setBranchesMap(map)
+  }
 
   async function fetchMyClasses() {
     setLoading(true)
     try {
-      // נסה קודם לפי id (משתמש שנוצר ישירות), ואם לא — לפי אימייל (ליד שנרשם דרך הקישור)
       console.log('[athlete] profile:', { id: profile?.id, email: profile?.email, role: profile?.role })
       let memberData = null
       if (profile?.id) {
@@ -488,7 +573,6 @@ export default function AthleteDashboard({ profile }) {
         if (r.error) console.error('member fetch by email error:', r.error)
         memberData = r.data
       }
-      // אם מצאנו רשומת member אבל ה-id שלה שונה מ-auth id — נקשר אותן (מצב: ליד שאושר זה עתה)
       if (memberData && profile?.id && memberData.id !== profile.id) {
         console.log('[athlete] linking member.id to auth.uid', { memberId: memberData.id, authId: profile.id })
         const { error: linkErr } = await supabase.from('members')
@@ -498,39 +582,11 @@ export default function AthleteDashboard({ profile }) {
         else memberData = { ...memberData, id: profile.id }
       }
       setMember(memberData || null)
-      const groupIds = memberData?.group_ids || (memberData?.group_id ? [memberData.group_id] : [])
-      if (groupIds.length === 0) { setMyClasses([]); return }
-      const { data: classes, error: classesErr } = await supabase.from('classes').select('*').in('id', groupIds)
-      if (classesErr) console.error('classes fetch error:', classesErr)
-      if (!classes || classes.length === 0) { setMyClasses([]); return }
-      const sorted = classes.map(cls => ({ ...cls, ...resolveNextOccurrence(cls) }))
-      sorted.sort((a, b) => a.daysUntil - b.daysUntil)
-      setMyClasses(sorted)
-      await fetchCheckins(classes.map(c => c.id))
     } catch (e) {
       console.error('fetchMyClasses threw:', e)
-      setMyClasses([])
     } finally {
       setLoading(false)
     }
-  }
-
-  async function fetchCheckins(classIds) {
-    const todayStart = new Date(); todayStart.setHours(0,0,0,0)
-    const todayEnd = new Date(); todayEnd.setHours(23,59,59,999)
-    const { data } = await supabase.from('checkins').select('class_id')
-      .eq('athlete_id', profile.id).in('class_id', classIds)
-      .gte('checked_in_at', todayStart.toISOString()).lte('checked_in_at', todayEnd.toISOString())
-    const map = {}
-    ;(data || []).forEach(c => { map[c.class_id] = true })
-    setCheckinMap(map)
-  }
-
-  async function fetchWeeklyCheckins() {
-    const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay()); weekStart.setHours(0,0,0,0)
-    const { count } = await supabase.from('checkins').select('id', { count: 'exact', head: true })
-      .eq('athlete_id', profile.id).gte('checked_in_at', weekStart.toISOString())
-    setWeeklyCheckins(count || 0)
   }
 
   async function fetchAnnouncements() {
@@ -542,23 +598,6 @@ export default function AthleteDashboard({ profile }) {
     const { data } = await supabase.from('class_registrations')
       .select('class_id').eq('athlete_id', profile.id).eq('week_start', getWeekStart())
     setRegistrations(new Set((data || []).map(r => r.class_id)))
-  }
-
-  async function handleCheckin(cls) {
-    if (weeklyCheckins >= limit && !checkinMap[cls.id] && limit !== Infinity) {
-      alert(`הגעת למגבלת ${limit} אימונים השבוע`); return
-    }
-    setLoadingCheckin(cls.id)
-    if (checkinMap[cls.id]) {
-      await supabase.from('checkins').delete().eq('class_id', cls.id).eq('athlete_id', profile.id)
-      setCheckinMap(p => { const n = { ...p }; delete n[cls.id]; return n })
-      setWeeklyCheckins(p => p - 1)
-    } else {
-      await supabase.from('checkins').insert({ class_id: cls.id, athlete_id: profile.id })
-      setCheckinMap(p => ({ ...p, [cls.id]: true }))
-      setWeeklyCheckins(p => p + 1)
-    }
-    setLoadingCheckin(null)
   }
 
   async function handleRegister(cls) {
@@ -578,19 +617,42 @@ export default function AthleteDashboard({ profile }) {
     }
   }
 
+  const memberBranchIds = member?.branch_ids?.length
+    ? member.branch_ids
+    : member?.branch_id ? [member.branch_id] : []
+  const memberBranchNames = memberBranchIds.map(id => branchesMap[id]).filter(Boolean)
+
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
-      <header className="bg-emerald-700 text-white px-6 py-4 flex items-center justify-between shadow">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">💪</span>
-          <div>
-            <h1 className="font-bold text-lg leading-none">TeamPact</h1>
-            <p className="text-emerald-200 text-xs">שלום, {profile?.full_name}</p>
+      <header className="bg-gradient-to-br from-gray-900 via-gray-800 to-red-900 text-white px-5 py-4 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center shadow-md">
+              <span className="text-xl">🥋</span>
+            </div>
+            <div>
+              <h1 className="font-black text-lg leading-none tracking-wide">TeamPact</h1>
+              <p className="text-gray-300 text-xs mt-0.5">שלום, <span className="font-bold text-white">{profile?.full_name}</span></p>
+            </div>
           </div>
+          {SUBSCRIPTION_LABELS[subscriptionType] && (
+            <span className="text-[10px] bg-red-600 text-white px-2 py-1 rounded-full font-bold shadow">
+              {SUBSCRIPTION_LABELS[subscriptionType]}
+            </span>
+          )}
         </div>
+        {memberBranchNames.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {memberBranchNames.map((name, i) => (
+              <span key={i} className="text-[10px] bg-white/10 backdrop-blur border border-white/20 text-white px-2.5 py-1 rounded-full font-semibold">
+                📍 {name}
+              </span>
+            ))}
+          </div>
+        )}
       </header>
       <main className="p-4 max-w-lg mx-auto pb-24">
-        {activeTab === 'schedule' && <ScheduleTab member={member} myClasses={myClasses} checkinMap={checkinMap} weeklyCheckins={weeklyCheckins} limit={limit} loadingCheckin={loadingCheckin} onCheckin={handleCheckin} registrations={registrations} onRegister={handleRegister} />}
+        {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} onRegister={handleRegister} branchesMap={branchesMap} />}
         {activeTab === 'shop' && <ShopTab profile={profile} allAnnouncements={announcements} />}
         {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} />}
         {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}

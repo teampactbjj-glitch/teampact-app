@@ -310,47 +310,71 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
   if (loading) return <p className="text-center text-gray-400 py-10">טוען שיעורים...</p>
 
+  // שבוע נוכחי לתצוגת לוח שנה
+  const weekRefStart = new Date(selectedDate)
+  weekRefStart.setDate(selectedDate.getDate() - selectedDate.getDay())
+  const weekCells = [0,1,2,3,4,5,6].map(i => {
+    const d = new Date(weekRefStart)
+    d.setDate(weekRefStart.getDate() + i)
+    return d
+  })
+  const isSelected = (d) => d.toDateString() === selectedDate.toDateString()
+  const isToday = (d) => d.toDateString() === new Date().toDateString()
+
   return (
     <div className="space-y-4">
-      {/* Date navigation */}
+      {/* Header with date label + add button */}
       <div className="flex items-center justify-between gap-2">
-        <button
-          onClick={() => navigate(-1)}
-          className="w-9 h-9 flex items-center justify-center rounded-lg border hover:bg-gray-50 text-gray-600 text-lg"
-          title="יום קודם"
-        >
-          ›
-        </button>
-
-        <div className="flex-1 text-center">
-          <p className="font-bold text-gray-800 text-sm leading-tight">{formatDateLabel(selectedDate)}</p>
+        <div>
+          <p className="font-black text-gray-800 text-base leading-tight">{formatDateLabel(selectedDate)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{selectedDate.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
+        <div className="flex gap-2">
+          <button onClick={() => setSelectedDate(startOfDay(new Date()))}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
+              isToday(selectedDate)
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'text-blue-600 border-blue-300 hover:bg-blue-50'
+            }`}>
+            היום
+          </button>
+          <button onClick={() => setShowAdd(!showAdd)}
+            className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap">
+            + הוסף שיעור
+          </button>
+        </div>
+      </div>
 
-        <button
-          onClick={() => navigate(1)}
-          className="w-9 h-9 flex items-center justify-center rounded-lg border hover:bg-gray-50 text-gray-600 text-lg"
-          title="יום הבא"
-        >
-          ‹
-        </button>
-
-        <button
-          onClick={() => setSelectedDate(startOfDay(new Date()))}
-          className={`px-2.5 py-1 rounded-lg text-xs border transition ${
-            selectedDate.toDateString() === new Date().toDateString()
-              ? 'bg-blue-600 text-white border-blue-600'
-              : 'text-blue-600 border-blue-300 hover:bg-blue-50'
-          }`}
-        >
-          היום
-        </button>
-
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap"
-        >
-          + הוסף שיעור
-        </button>
+      {/* Weekly calendar strip */}
+      <div className="bg-white rounded-2xl border shadow-sm p-3">
+        <div className="flex items-center justify-between mb-2 px-1">
+          <button onClick={() => navigate(-7)} className="text-gray-400 hover:text-gray-700 text-sm">שבוע קודם ›</button>
+          <button onClick={() => navigate(7)} className="text-gray-400 hover:text-gray-700 text-sm">‹ שבוע הבא</button>
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {weekCells.map((d, i) => {
+            const today = isToday(d)
+            const selected = isSelected(d)
+            return (
+              <button key={i} onClick={() => setSelectedDate(startOfDay(d))}
+                className={`rounded-xl py-2 transition text-center ${
+                  selected
+                    ? 'bg-gradient-to-br from-blue-600 to-blue-800 text-white shadow-md ring-2 ring-blue-400'
+                    : today
+                      ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                      : 'bg-white border border-gray-100 text-gray-600 hover:bg-gray-50'
+                }`}>
+                <p className={`text-[10px] font-semibold ${selected ? 'text-blue-100' : today ? 'text-blue-600' : 'text-gray-400'}`}>
+                  {DAYS_HE[d.getDay()].slice(0,2)}
+                </p>
+                <p className={`text-lg font-black leading-none mt-0.5 ${selected ? 'text-white' : today ? 'text-blue-800' : 'text-gray-800'}`}>
+                  {d.getDate()}
+                </p>
+                {today && !selected && <p className="text-[8px] font-bold text-blue-600 mt-0.5">היום</p>}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {showAdd && (

@@ -23,8 +23,30 @@ const TYPE_COLORS = {
 export default function AnnouncementsManager({ trainerId }) {
   const [items, setItems]       = useState([])
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', price: '' })
+  const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '' })
   const [loading, setLoading]   = useState(true)
+  const [uploading, setUploading] = useState(false)
+
+  async function uploadImage(file) {
+    if (!file) return null
+    setUploading(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `seminars/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const buckets = ['product-images', 'announcements']
+      for (const b of buckets) {
+        const { error } = await supabase.storage.from(b).upload(path, file)
+        if (!error) {
+          const { data: pub } = supabase.storage.from(b).getPublicUrl(path)
+          return pub.publicUrl
+        }
+      }
+      alert('שגיאה בהעלאת תמונה — ודא שקיים bucket בשם product-images או announcements ב-Supabase Storage')
+      return null
+    } finally {
+      setUploading(false)
+    }
+  }
 
   useEffect(() => { fetchAnnouncements() }, [])
 
@@ -42,10 +64,11 @@ export default function AnnouncementsManager({ trainerId }) {
     const payload = {
       title: form.title, content: form.content, type: form.type, trainer_id: trainerId,
       ...(form.type === 'seminar' && form.event_date ? { event_date: form.event_date } : {}),
-      ...(form.type === 'product' && form.price      ? { price: parseFloat(form.price) } : {}),
+      ...(form.type === 'seminar' && form.price      ? { price: parseFloat(form.price) } : {}),
+      ...(form.image_url ? { image_url: form.image_url } : {}),
     }
     await supabase.from('announcements').insert(payload)
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '' })
+    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '' })
     setShowForm(false)
     fetchAnnouncements()
   }
@@ -84,19 +107,39 @@ export default function AnnouncementsManager({ trainerId }) {
             placeholder="תוכן / תיאור..." value={form.content}
             onChange={e => setForm(p => ({ ...p, content: e.target.value }))} />
           {form.type === 'seminar' && (
-            <div>
-              <label className="text-xs text-gray-500 mb-1 block">תאריך ושעה</label>
-              <input type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm"
-                value={form.event_date} onChange={e => setForm(p => ({ ...p, event_date: e.target.value }))} />
-            </div>
+            <>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">תאריך ושעה</label>
+                <input type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={form.event_date} onChange={e => setForm(p => ({ ...p, event_date: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">מחיר (₪)</label>
+                <input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0"
+                  value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
+              </div>
+            </>
           )}
-          {form.type === 'product' && (
-            <div>
-              <label className="text-xs text-gray-500 mb-1 block">מחיר (₪)</label>
-              <input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0"
-                value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
+          <div className="space-y-2">
+            <label className="text-xs text-gray-500">תמונה (אופציונלי)</label>
+            <div className="flex gap-2 items-center">
+              <input type="file" accept="image/*"
+                onChange={async e => {
+                  const f = e.target.files?.[0]; if (!f) return
+                  const url = await uploadImage(f)
+                  if (url) setForm(p => ({ ...p, image_url: url }))
+                }}
+                className="flex-1 text-xs" />
+              {uploading && <span className="text-xs text-blue-500">מעלה...</span>}
             </div>
-          )}
+            {form.image_url && (
+              <div className="flex items-center gap-2">
+                <img src={form.image_url} alt="preview" className="w-16 h-16 rounded-lg object-cover border" />
+                <button type="button" onClick={() => setForm(p => ({ ...p, image_url: '' }))}
+                  className="text-xs text-red-500">הסר</button>
+              </div>
+            )}
+          </div>
           <div className="flex gap-2">
             <button onClick={handleSubmit} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium">פרסם</button>
             <button onClick={() => setShowForm(false)} className="flex-1 border py-2 rounded-lg text-sm">ביטול</button>

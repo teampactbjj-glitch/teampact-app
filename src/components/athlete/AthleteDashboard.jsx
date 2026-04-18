@@ -40,8 +40,10 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
       const btn = selectedBtnRef.current
       const container = sliderContainerRef.current
       if (!btn || !container) return
-      const target = btn.offsetLeft - (container.clientWidth - btn.offsetWidth) / 2
-      container.scrollTo({ left: target, behavior: didInitialScroll.current ? 'smooth' : 'auto' })
+      const btnRect = btn.getBoundingClientRect()
+      const contRect = container.getBoundingClientRect()
+      const delta = (btnRect.left + btnRect.width / 2) - (contRect.left + contRect.width / 2)
+      container.scrollTo({ left: container.scrollLeft + delta, behavior: didInitialScroll.current ? 'smooth' : 'auto' })
       didInitialScroll.current = true
     }, 50)
     return () => clearTimeout(t)

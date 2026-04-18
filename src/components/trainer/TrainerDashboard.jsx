@@ -83,17 +83,20 @@ export default function TrainerDashboard({ profile, isAdmin }) {
 
         {activeTab === 'athletes' && (
           <div className="space-y-6">
-            {requestsCount > 0 && (
-              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
-                <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי מנוי ({requestsCount})</h3>
-                <ProfileChangeRequests onChange={refreshCounts} />
-              </div>
-            )}
             <AthleteManagement
               trainerId={profile?.id}
               isAdmin={isAdmin}
               hideSchedule
+              stackedLayout
               registerLinkCard={<RegisterLinkCard />}
+              extraTop={
+                requestsCount > 0 ? (
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
+                    <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי מנוי ({requestsCount})</h3>
+                    <ProfileChangeRequests onChange={refreshCounts} />
+                  </div>
+                ) : null
+              }
               onPendingChange={refreshCounts}
             />
           </div>

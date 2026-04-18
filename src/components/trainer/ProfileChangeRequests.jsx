@@ -5,6 +5,8 @@ const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlim
 
 export default function ProfileChangeRequests({ onChange }) {
   const [requests, setRequests] = useState([])
+  const [branchesMap, setBranchesMap] = useState({})
+  const [membersMap, setMembersMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState(null)
 
@@ -12,8 +14,25 @@ export default function ProfileChangeRequests({ onChange }) {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('profile_change_requests').select('*')
-      .eq('status', 'pending').order('created_at', { ascending: false })
+    const [{ data }, { data: branches }] = await Promise.all([
+      supabase.from('profile_change_requests').select('*')
+        .eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('branches').select('id, name'),
+    ])
+    const bMap = {}
+    ;(branches || []).forEach(b => { bMap[b.id] = b.name })
+    setBranchesMap(bMap)
+
+    // שליפת פרטי המתאמנים כדי להציג שם + סניפים נוכחיים גם לבקשות ישנות
+    const athleteIds = [...new Set((data || []).map(r => r.athlete_id).filter(Boolean))]
+    let mMap = {}
+    if (athleteIds.length > 0) {
+      const { data: members } = await supabase.from('members')
+        .select('id, full_name, branch_ids, branch_id, subscription_type')
+        .in('id', athleteIds)
+      ;(members || []).forEach(m => { mMap[m.id] = m })
+    }
+    setMembersMap(mMap)
     setRequests(data || [])
     setLoading(false)
   }
@@ -23,7 +42,11 @@ export default function ProfileChangeRequests({ onChange }) {
     if (req.change_type === 'email') {
       await supabase.from('members').update({ email: req.requested_value }).eq('id', req.athlete_id)
     } else if (req.change_type === 'subscription') {
-      await supabase.from('members').update({ subscription_type: req.requested_value }).eq('id', req.athlete_id)
+      const update = { subscription_type: req.requested_value }
+      if (Array.isArray(req.requested_branch_ids) && req.requested_branch_ids.length > 0) {
+        update.branch_ids = req.requested_branch_ids
+      }
+      await supabase.from('members').update(update).eq('id', req.athlete_id)
     }
     await supabase.from('profile_change_requests').update({ status: 'approved' }).eq('id', req.id)
     setProcessingId(null)
@@ -51,11 +74,19 @@ export default function ProfileChangeRequests({ onChange }) {
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-bold text-gray-800">בקשות לאישור</h2>
-      {requests.map(req => (
+      {requests.map(req => {
+        const m = membersMap[req.athlete_id]
+        const displayName = req.athlete_name || m?.full_name || '— ללא שם —'
+        const currentBranchIds = Array.isArray(m?.branch_ids) && m.branch_ids.length > 0
+          ? m.branch_ids
+          : (m?.branch_id ? [m.branch_id] : [])
+        const currentBranchNames = currentBranchIds.map(id => branchesMap[id] || '—').join(', ') || '—'
+        const sessions = req.requested_branch_sessions // jsonb {branchId: count}
+        return (
         <div key={req.id} className="bg-white rounded-xl border shadow-sm p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1">
-              <p className="font-semibold text-gray-800">{req.athlete_name}</p>
+              <p className="font-semibold text-gray-800">{displayName}</p>
               <p className="text-sm text-gray-600 mt-1">
                 {req.change_type === 'email' ? '📧 שינוי מייל' : '🎫 שינוי מנוי'}
               </p>
@@ -67,6 +98,26 @@ export default function ProfileChangeRequests({ onChange }) {
                   {req.change_type === 'subscription' ? (SUB_LABELS[req.requested_value] || req.requested_value) : req.requested_value}
                 </span></p>
               </div>
+              {req.change_type === 'subscription' && (
+                <div className="mt-2 text-xs bg-gray-50 rounded p-2 space-y-1">
+                  <p>📍 סניפים נוכחיים: <span className="font-semibold text-gray-700">{currentBranchNames}</span></p>
+                  {Array.isArray(req.requested_branch_ids) && req.requested_branch_ids.length > 0 && (
+                    <p>📍 סניפים מבוקשים: <span className="font-semibold text-blue-700">
+                      {req.requested_branch_ids.map(id => branchesMap[id] || '—').join(', ')}
+                    </span></p>
+                  )}
+                  {sessions && typeof sessions === 'object' && Object.keys(sessions).length > 0 && (
+                    <div>
+                      <p className="font-semibold text-gray-700">חלוקת אימונים לפי סניף:</p>
+                      <ul className="pr-4 list-disc">
+                        {Object.entries(sessions).map(([bid, count]) => (
+                          <li key={bid}>{branchesMap[bid] || '—'}: <span className="font-bold">{count}</span> אימונים בשבוע</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
               {req.note && <p className="text-xs text-gray-500 mt-2 bg-gray-50 p-2 rounded">💬 {req.note}</p>}
             </div>
           </div>
@@ -81,7 +132,8 @@ export default function ProfileChangeRequests({ onChange }) {
             </button>
           </div>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

@@ -22,13 +22,13 @@ const EMPTY_FORM = {
   branch_ids: [],
 }
 
-export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null }) {
+export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null, stackedLayout = false, extraTop = null }) {
   const [athletes, setAthletes] = useState([])
   const [pendingAthletes, setPendingAthletes] = useState([])
   const [branches, setBranches] = useState([])
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
-  const [subTab, setSubTab] = useState('active')
+  const [subTab, setSubTab] = useState(stackedLayout ? 'active' : 'active')
   const [selectedBranch, setSelectedBranch] = useState('all')
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -225,29 +225,34 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
         </div>
       </div>
 
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-        <button type="button" onClick={() => setSubTab('pending')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition relative ${subTab === 'pending' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
-          ממתינים לאישור
-          {pendingAthletes.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
-              {pendingAthletes.length}
-            </span>
-          )}
-        </button>
-        <button type="button" onClick={() => setSubTab('active')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${subTab === 'active' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
-          מתאמנים ({athletes.length})
-        </button>
-        {registerLinkCard && (
-          <button type="button" onClick={() => setSubTab('link')}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${subTab === 'link' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
-            קישור הרשמה
-          </button>
-        )}
-      </div>
+      {stackedLayout && registerLinkCard && <div>{registerLinkCard}</div>}
+      {stackedLayout && extraTop && <div>{extraTop}</div>}
 
-      {subTab === 'active' && (
+      {!stackedLayout && (
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+          <button type="button" onClick={() => setSubTab('pending')}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition relative ${subTab === 'pending' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
+            ממתינים לאישור
+            {pendingAthletes.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                {pendingAthletes.length}
+              </span>
+            )}
+          </button>
+          <button type="button" onClick={() => setSubTab('active')}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${subTab === 'active' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
+            מתאמנים ({athletes.length})
+          </button>
+          {registerLinkCard && (
+            <button type="button" onClick={() => setSubTab('link')}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${subTab === 'link' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
+              קישור הרשמה
+            </button>
+          )}
+        </div>
+      )}
+
+      {!stackedLayout && subTab === 'active' && (
         <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="חיפוש לפי שם, אימייל..."
           value={search} onChange={e => setSearch(e.target.value)} />
       )}
@@ -326,9 +331,13 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
         </form>
       )}
 
-      {subTab === 'link' && registerLinkCard}
+      {!stackedLayout && subTab === 'link' && registerLinkCard}
 
-      {subTab === 'pending' && (
+      {stackedLayout && pendingAthletes.length > 0 && (
+        <h3 className="font-bold text-blue-900 text-sm">📝 בקשות הצטרפות ({pendingAthletes.length})</h3>
+      )}
+
+      {(stackedLayout ? pendingAthletes.length > 0 : subTab === 'pending') && (
         pendingAthletes.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
             <div className="text-4xl mb-2">✅</div>
@@ -366,7 +375,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
         )
       )}
 
-      {subTab === 'active' && (() => {
+      {(stackedLayout || subTab === 'active') && (() => {
         // ספירה לכל סניף (לפני פילטר הסניף אבל אחרי חיפוש)
         const bySearch = athletes.filter(a =>
           !search.trim() ||
@@ -393,6 +402,13 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
 
         return (
           <div className="space-y-3">
+            {stackedLayout && (
+              <h3 className="font-bold text-gray-800 text-sm pt-2 border-t">👥 רשימת מתאמנים ({athletes.length})</h3>
+            )}
+            {stackedLayout && (
+              <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="חיפוש לפי שם, אימייל..."
+                value={search} onChange={e => setSearch(e.target.value)} />
+            )}
             {/* שורת chips לסינון לפי סניף */}
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
               <style>{`.branch-chips::-webkit-scrollbar { display: none }`}</style>

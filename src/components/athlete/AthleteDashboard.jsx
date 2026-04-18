@@ -481,6 +481,38 @@ function ProfileTab({ profile, member }) {
   const [subNote, setSubNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [pendingRequests, setPendingRequests] = useState([])
+  const [allBranches, setAllBranches] = useState([])
+  const [requestedBranchIds, setRequestedBranchIds] = useState(
+    Array.isArray(member?.branch_ids) ? member.branch_ids : (member?.branch_id ? [member.branch_id] : [])
+  )
+  const [branchSessions, setBranchSessions] = useState({}) // {branchId: count}
+
+  useEffect(() => {
+    supabase.from('branches').select('id, name').order('name').then(({ data }) => {
+      setAllBranches(data || [])
+    })
+  }, [])
+
+  function toggleRequestedBranch(id) {
+    setRequestedBranchIds(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+      // אם מסירים סניף — נקה את הספירה שלו
+      if (prev.includes(id)) {
+        setBranchSessions(s => { const c = { ...s }; delete c[id]; return c })
+      }
+      return next
+    })
+  }
+
+  function setBranchSessionCount(id, count) {
+    const n = Math.max(0, parseInt(count) || 0)
+    setBranchSessions(s => ({ ...s, [id]: n }))
+  }
+
+  const totalSessionsAllowed = requestedSub === '2x_week' ? 2 : requestedSub === '4x_week' ? 4 : null
+  const totalSelectedSessions = Object.values(branchSessions).reduce((a, b) => a + b, 0)
+
+  const athleteName = member?.full_name || profile?.full_name || profile?.email || '—'
 
   async function updatePassword() {
     setPwMsg(null)
@@ -512,7 +544,7 @@ function ProfileTab({ profile, member }) {
     setSaving(true)
     const { error } = await supabase.from('profile_change_requests').insert({
       athlete_id: profile.id,
-      athlete_name: profile.full_name,
+      athlete_name: athleteName,
       change_type: 'email',
       current_value: profile.email,
       requested_value: newEmail,
@@ -525,14 +557,34 @@ function ProfileTab({ profile, member }) {
   }
 
   async function submitSubChange() {
-    if (requestedSub === currentSub) { alert('בחר מנוי אחר'); return }
+    const currentBranches = Array.isArray(member?.branch_ids) ? member.branch_ids : (member?.branch_id ? [member.branch_id] : [])
+    const branchesChanged =
+      requestedBranchIds.length !== currentBranches.length ||
+      requestedBranchIds.some(id => !currentBranches.includes(id))
+    if (requestedSub === currentSub && !branchesChanged) { alert('בחר מנוי אחר או סניפים אחרים'); return }
+    if (requestedBranchIds.length === 0) { alert('יש לבחור לפחות סניף אחד'); return }
+    // ולידציה — סכום האימונים חייב להתאים למנוי (רק ל-2x/4x)
+    if (totalSessionsAllowed !== null) {
+      if (totalSelectedSessions !== totalSessionsAllowed) {
+        alert(`סכום האימונים בסניפים חייב להיות בדיוק ${totalSessionsAllowed} (כרגע ${totalSelectedSessions})`)
+        return
+      }
+      for (const id of requestedBranchIds) {
+        if (!branchSessions[id] || branchSessions[id] < 1) {
+          alert('יש להזין מספר אימונים לכל סניף שנבחר')
+          return
+        }
+      }
+    }
     setSaving(true)
     const { error } = await supabase.from('profile_change_requests').insert({
       athlete_id: profile.id,
-      athlete_name: profile.full_name,
+      athlete_name: athleteName,
       change_type: 'subscription',
       current_value: currentSub,
       requested_value: requestedSub,
+      requested_branch_ids: requestedBranchIds,
+      requested_branch_sessions: totalSessionsAllowed !== null ? branchSessions : null,
       note: subNote,
     })
     setSaving(false)
@@ -639,6 +691,46 @@ function ProfileTab({ profile, member }) {
               <option value="4x_week">4× שבוע</option>
               <option value="unlimited">ללא הגבלה</option>
             </select>
+            <div>
+              <p className="text-xs text-gray-500 mb-1.5">סניפים (ניתן לבחור יותר מאחד)</p>
+              <div className="flex gap-2 flex-wrap">
+                {allBranches.map(b => (
+                  <button key={b.id} type="button" onClick={() => toggleRequestedBranch(b.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                      requestedBranchIds.includes(b.id)
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                    }`}>
+                    {requestedBranchIds.includes(b.id) ? '✓ ' : ''}📍 {b.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {totalSessionsAllowed !== null && requestedBranchIds.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+                <p className="text-xs font-semibold text-blue-900">
+                  כמה אימונים בשבוע בכל סניף? (סה"כ חייב להיות {totalSessionsAllowed})
+                </p>
+                {requestedBranchIds.map(id => {
+                  const b = allBranches.find(x => x.id === id)
+                  if (!b) return null
+                  return (
+                    <div key={id} className="flex items-center gap-2">
+                      <span className="text-sm text-gray-700 flex-1">📍 {b.name}</span>
+                      <input type="number" min="0" max={totalSessionsAllowed}
+                        value={branchSessions[id] ?? ''}
+                        onChange={e => setBranchSessionCount(id, e.target.value)}
+                        className="w-16 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center" />
+                      <span className="text-xs text-gray-500">אימונים</span>
+                    </div>
+                  )
+                })}
+                <p className={`text-xs font-semibold ${totalSelectedSessions === totalSessionsAllowed ? 'text-emerald-700' : 'text-red-600'}`}>
+                  סה"כ: {totalSelectedSessions} / {totalSessionsAllowed}
+                </p>
+              </div>
+            )}
             <textarea value={subNote} onChange={e => setSubNote(e.target.value)}
               placeholder="הערה (אופציונלי)" rows="2"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none" />

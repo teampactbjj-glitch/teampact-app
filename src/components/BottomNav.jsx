@@ -24,13 +24,13 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCo
             style={{ color: active ? '#059669' : '#9ca3af' }}>
             <span className="text-xl leading-none">{tab.icon}</span>
             <span className="text-[10px] leading-none" style={{ fontWeight: active ? 700 : 500 }}>{tab.label}</span>
-            {tab.id === 'shop' && isTrainer && (ordersCount > 0 || pendingCount > 0) && (
+            {tab.id === 'shop' && isTrainer && ordersCount > 0 && (
               <span className="absolute top-1.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold"
-                style={{ right: '22%', width: 16, height: 16 }}>{ordersCount + pendingCount}</span>
+                style={{ right: '22%', width: 16, height: 16 }}>{ordersCount}</span>
             )}
-            {tab.id === 'athletes' && isTrainer && leadsCount > 0 && (
+            {tab.id === 'athletes' && isTrainer && (leadsCount + pendingCount) > 0 && (
               <span className="absolute top-1.5 flex items-center justify-center rounded-full bg-orange-500 text-white text-[10px] font-bold"
-                style={{ right: '22%', width: 16, height: 16 }}>{leadsCount}</span>
+                style={{ right: '22%', width: 16, height: 16 }}>{leadsCount + pendingCount}</span>
             )}
           </button>
         )

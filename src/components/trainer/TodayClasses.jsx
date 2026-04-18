@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
 const WEEKLY_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
@@ -39,6 +39,8 @@ function formatDateLabel(date) {
 
 export default function TodayClasses({ trainerId, isAdmin }) {
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
+  const todayBtnRef = useRef(null)
+  const didInitialScroll = useRef(false)
   const [classes, setClasses] = useState([])
   const [expanded, setExpanded] = useState(null)
   // classData[classId] = { members: [...], checkedIds: Set, absentIds: Set, weeklyCount: {memberId: n}, loading: bool }
@@ -197,7 +199,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       })
     }
 
-    // 4. מי רשום שבועית (class_registrations) לשיעור הזה
+    // 4. מי רשום שבועית (class_registrations) לשיעור הזה — שליפה דו-שלבית
     const weekStartStr = (() => {
       const d = startOfDay(selectedDate)
       d.setDate(d.getDate() - d.getDay())
@@ -205,11 +207,18 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     })()
     const { data: regRows, error: regErr } = await supabase
       .from('class_registrations')
-      .select('athlete_id, members(id, full_name)')
+      .select('athlete_id')
       .eq('class_id', classId)
       .eq('week_start', weekStartStr)
     if (regErr) console.error('class_registrations error:', regErr)
-    const weeklyRegistrants = (regRows || []).map(r => r.members).filter(Boolean)
+    const regMemberIds = (regRows || []).map(r => r.athlete_id).filter(Boolean)
+    let weeklyRegistrants = []
+    if (regMemberIds.length > 0) {
+      const { data: regMembers, error: rmErr } = await supabase
+        .from('members').select('id, full_name').in('id', regMemberIds)
+      if (rmErr) console.error('weekly reg members error:', rmErr)
+      weeklyRegistrants = regMembers || regMemberIds.map(id => ({ id, full_name: '(לא ידוע)' }))
+    }
 
     setClassData(prev => ({
       ...prev,
@@ -383,7 +392,13 @@ export default function TodayClasses({ trainerId, isAdmin }) {
             const selected = isSelected(d)
             return (
               <button key={i} onClick={() => setSelectedDate(startOfDay(d))}
-                ref={el => { if (el && today) el.scrollIntoView?.({ inline: 'center', block: 'nearest' }) }}
+                ref={el => {
+                  if (el && today && !didInitialScroll.current) {
+                    todayBtnRef.current = el
+                    didInitialScroll.current = true
+                    el.scrollIntoView?.({ inline: 'center', block: 'nearest' })
+                  }
+                }}
                 className={`flex-shrink-0 rounded-xl transition text-center ${
                   today
                     ? 'bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg ring-4 ring-red-300 scale-110 py-2.5 px-3.5 min-w-[68px] font-black'

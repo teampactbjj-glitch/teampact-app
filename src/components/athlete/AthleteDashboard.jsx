@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import BottomNav from '../BottomNav'
 
@@ -30,6 +30,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
   const [loading, setLoading] = useState(true)
   const [activeBranch, setActiveBranch] = useState('all')
   const [selectedDate, setSelectedDate] = useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d })
+  const didInitialScroll = useRef(false)
 
   const branchIds = member?.branch_ids?.length
     ? member.branch_ids
@@ -139,7 +140,12 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
             const selected = isSelected(d)
             return (
               <button key={i} onClick={() => setSelectedDate(new Date(d))}
-                ref={el => { if (el && todayFlag) el.scrollIntoView?.({ inline: 'center', block: 'nearest' }) }}
+                ref={el => {
+                  if (el && todayFlag && !didInitialScroll.current) {
+                    didInitialScroll.current = true
+                    el.scrollIntoView?.({ inline: 'center', block: 'nearest' })
+                  }
+                }}
                 className={`flex-shrink-0 rounded-xl transition text-center ${
                   todayFlag
                     ? 'bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg ring-4 ring-red-300 scale-110 py-2.5 px-3.5 min-w-[68px]'

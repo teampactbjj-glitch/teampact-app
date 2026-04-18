@@ -29,6 +29,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
   const [subTab, setSubTab] = useState('active')
+  const [selectedBranch, setSelectedBranch] = useState('all')
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [search, setSearch] = useState('')
@@ -326,77 +327,108 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
         )
       )}
 
-      {subTab === 'active' && (
-        loading ? (
-          <p className="text-center text-gray-400 py-8">טוען מתאמנים...</p>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <div className="text-4xl mb-2">👥</div>
-            <p>לא נמצאו מתאמנים</p>
-          </div>
-        ) : (
-          (() => {
-            // קיבוץ לפי סניפים
-            const byBranch = {}
-            const unassigned = []
-            filtered.forEach(a => {
-              const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
-              if (bids.length === 0) { unassigned.push(a); return }
-              bids.forEach(bid => { (byBranch[bid] ||= []).push(a) })
-            })
-            const orderedBranches = branches.filter(b => byBranch[b.id]?.length)
-            return (
-              <div className="space-y-4">
-                {orderedBranches.map(b => (
-                  <div key={b.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                    <div className="bg-gradient-to-l from-blue-50 to-white px-4 py-2.5 border-b flex items-center justify-between">
-                      <h3 className="font-bold text-gray-800 text-sm">📍 {b.name}</h3>
-                      <span className="text-xs bg-blue-600 text-white font-bold px-2.5 py-0.5 rounded-full">
-                        {byBranch[b.id].length} רשומים
-                      </span>
-                    </div>
-                    <ul className="divide-y">
-                      {byBranch[b.id].map(a => (
-                        <li key={a.id} className="px-4 py-3 flex items-center justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
-                              {!a.active && <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 rounded">לא פעיל</span>}
-                            </div>
-                            <p className="text-xs text-gray-400">
-                              {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
-                              {a.phone && <span> · {a.phone}</span>}
-                            </p>
-                          </div>
-                          <div className="flex gap-3 shrink-0">
-                            <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>
-                            <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">מחק</button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-                {unassigned.length > 0 && (
-                  <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                    <div className="bg-orange-50 px-4 py-2.5 border-b">
-                      <h3 className="font-bold text-orange-800 text-sm">⚠️ ללא סניף ({unassigned.length})</h3>
-                    </div>
-                    <ul className="divide-y">
-                      {unassigned.map(a => (
-                        <li key={a.id} className="px-4 py-3 flex items-center justify-between">
-                          <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
-                          <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )
-          })()
+      {subTab === 'active' && (() => {
+        // ספירה לכל סניף (לפני פילטר הסניף אבל אחרי חיפוש)
+        const bySearch = athletes.filter(a =>
+          !search.trim() ||
+          a.full_name?.includes(search) || a.email?.includes(search) || a.group_name?.includes(search) || a.phone?.includes(search)
         )
-      )}
+        const branchCount = {}
+        let noBranchCount = 0
+        bySearch.forEach(a => {
+          const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+          if (bids.length === 0) noBranchCount++
+          else bids.forEach(bid => { branchCount[bid] = (branchCount[bid] || 0) + 1 })
+        })
+
+        // סינון סופי לפי סניף נבחר
+        const finalList = bySearch.filter(a => {
+          if (selectedBranch === 'all') return true
+          if (selectedBranch === 'none') {
+            const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+            return bids.length === 0
+          }
+          const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+          return bids.includes(selectedBranch)
+        })
+
+        return (
+          <div className="space-y-3">
+            {/* שורת chips לסינון לפי סניף */}
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+              <style>{`.branch-chips::-webkit-scrollbar { display: none }`}</style>
+              <button type="button" onClick={() => setSelectedBranch('all')}
+                className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
+                  selectedBranch === 'all'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                }`}>
+                הכל ({bySearch.length})
+              </button>
+              {branches.map(b => {
+                const count = branchCount[b.id] || 0
+                const active = selectedBranch === b.id
+                return (
+                  <button key={b.id} type="button" onClick={() => setSelectedBranch(b.id)}
+                    className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
+                      active
+                        ? 'bg-blue-600 text-white border-blue-600 shadow'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                    }`}>
+                    📍 {b.name} ({count})
+                  </button>
+                )
+              })}
+              {noBranchCount > 0 && (
+                <button type="button" onClick={() => setSelectedBranch('none')}
+                  className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
+                    selectedBranch === 'none'
+                      ? 'bg-orange-500 text-white border-orange-500 shadow'
+                      : 'bg-white text-orange-600 border-orange-300 hover:bg-orange-50'
+                  }`}>
+                  ⚠️ ללא סניף ({noBranchCount})
+                </button>
+              )}
+            </div>
+
+            {/* הרשימה */}
+            {loading ? (
+              <p className="text-center text-gray-400 py-8">טוען מתאמנים...</p>
+            ) : finalList.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <div className="text-4xl mb-2">👥</div>
+                <p>לא נמצאו מתאמנים</p>
+              </div>
+            ) : (
+              <ul className="bg-white rounded-xl border shadow-sm divide-y overflow-hidden">
+                {finalList.map(a => {
+                  const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+                  const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
+                  return (
+                    <li key={a.id} className="px-4 py-3 flex items-center justify-between">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
+                          {!a.active && <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 rounded">לא פעיל</span>}
+                        </div>
+                        <p className="text-xs text-gray-400">
+                          {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
+                          {a.phone && <span> · {a.phone}</span>}
+                          {bnames && <span> · 📍 {bnames}</span>}
+                        </p>
+                      </div>
+                      <div className="flex gap-3 shrink-0">
+                        <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>
+                        <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">מחק</button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }

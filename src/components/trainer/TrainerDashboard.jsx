@@ -82,25 +82,25 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         {activeTab === 'schedule' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />}
 
         {activeTab === 'athletes' && (
-          <AthleteManagement
-            trainerId={profile?.id}
-            isAdmin={isAdmin}
-            hideSchedule
-            registerLinkCard={<RegisterLinkCard />}
-            onPendingChange={refreshCounts}
-          />
-        )}
-
-        {activeTab === 'shop' && (
           <div className="space-y-6">
-            <ShopManager isAdmin={isAdmin} trainerId={profile?.id} onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />
             {requestsCount > 0 && (
               <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
-                <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי פרופיל ({requestsCount})</h3>
+                <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי מנוי ({requestsCount})</h3>
                 <ProfileChangeRequests onChange={refreshCounts} />
               </div>
             )}
+            <AthleteManagement
+              trainerId={profile?.id}
+              isAdmin={isAdmin}
+              hideSchedule
+              registerLinkCard={<RegisterLinkCard />}
+              onPendingChange={refreshCounts}
+            />
           </div>
+        )}
+
+        {activeTab === 'shop' && (
+          <ShopManager isAdmin={isAdmin} trainerId={profile?.id} onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />
         )}
 
         {activeTab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} isAdmin={isAdmin} />}

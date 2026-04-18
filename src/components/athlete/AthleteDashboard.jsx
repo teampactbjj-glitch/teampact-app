@@ -29,24 +29,46 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeBranch, setActiveBranch] = useState('all')
-  const [selectedDate, setSelectedDate] = useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d })
+  // selectedDate=null במצב התחלתי — מציגים רק "השיעורים שנרשמתי אליהם"
+  // רק כשהמתאמן לוחץ על תאריך בסלייד — מוצג פירוט השיעורים של אותו יום
+  const [selectedDate, setSelectedDate] = useState(null)
+  const todayBtnRef = useRef(null)
   const selectedBtnRef = useRef(null)
   const sliderContainerRef = useRef(null)
   const didInitialScroll = useRef(false)
 
-  // גלול תמיד אל התאריך הנבחר (כולל "היום")
+  // סליידר — לולאת ניסיונות שעומדת בעין מול re-renders (כמו בתצוגת המאמן)
+  // מרכז את "היום" בהתחלה; מרכז את התאריך הנבחר כשהמשתמש לוחץ
   useEffect(() => {
-    const t = setTimeout(() => {
-      const btn = selectedBtnRef.current
+    let cancelled = false
+    let attempts = 0
+    const MAX_ATTEMPTS = 20
+    const tick = () => {
+      if (cancelled) return
+      attempts++
+      const target = selectedDate ? selectedBtnRef.current : todayBtnRef.current
       const container = sliderContainerRef.current
-      if (!btn || !container) return
-      const btnRect = btn.getBoundingClientRect()
-      const contRect = container.getBoundingClientRect()
-      const delta = (btnRect.left + btnRect.width / 2) - (contRect.left + contRect.width / 2)
-      container.scrollTo({ left: container.scrollLeft + delta, behavior: didInitialScroll.current ? 'smooth' : 'auto' })
-      didInitialScroll.current = true
-    }, 50)
-    return () => clearTimeout(t)
+      if (target && container) {
+        try {
+          target.scrollIntoView({
+            block: 'nearest',
+            inline: 'center',
+            behavior: didInitialScroll.current && attempts > 1 ? 'smooth' : 'auto',
+          })
+          didInitialScroll.current = true
+        } catch {
+          const btnRect = target.getBoundingClientRect()
+          const contRect = container.getBoundingClientRect()
+          if (btnRect.width > 0) {
+            const delta = (btnRect.left + btnRect.width / 2) - (contRect.left + contRect.width / 2)
+            container.scrollTo({ left: container.scrollLeft + delta })
+          }
+        }
+      }
+      if (attempts < MAX_ATTEMPTS) setTimeout(tick, 100)
+    }
+    tick()
+    return () => { cancelled = true }
   }, [selectedDate])
 
   const branchIds = member?.branch_ids?.length
@@ -90,20 +112,50 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
     ? classes
     : classes.filter(c => c.branch_id === activeBranch)
 
-  const selectedDow = selectedDate.getDay()
-  const dayClasses = filteredClasses
-    .filter(c => c.day_of_week === selectedDow)
-    .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
+  const selectedDow = selectedDate ? selectedDate.getDay() : null
+  const dayClasses = selectedDate
+    ? filteredClasses
+        .filter(c => c.day_of_week === selectedDow)
+        .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
+    : []
+
+  // בדיקה אם תאריך/שעת שיעור בעבר (חוסם הרשמה לעבר)
+  const isPastDate = (d) => d < today
+  const isPastClass = (cls, d) => {
+    if (isPastDate(d)) return true
+    if (d.toDateString() === today.toDateString()) {
+      const [h, m] = (cls.start_time || '00:00').split(':').map(Number)
+      const classTime = new Date(d); classTime.setHours(h, m, 0, 0)
+      return classTime <= new Date()
+    }
+    return false
+  }
+
+  // "השיעורים שלי" — השיעורים שהמתאמן נרשם אליהם השבוע, ממוינים לפי יום ושעה
+  const myClasses = [...registrations]
+    .map(cid => filteredClasses.find(c => c.id === cid))
+    .filter(Boolean)
+    .sort((a, b) => (a.day_of_week - b.day_of_week) || (a.start_time || '').localeCompare(b.start_time || ''))
+
+  // חישוב תאריך ההופעה הבא של שיעור השבוע (ליום השבוע שלו)
+  const nextOccurrenceThisWeek = (cls) => {
+    const d = new Date(today)
+    const dow = cls.day_of_week
+    const todayDow = today.getDay()
+    const diff = dow - todayDow
+    d.setDate(today.getDate() + diff)
+    return d
+  }
 
   // סליידר של 90 תאריכים (30 אחורה, 60 קדימה)
   const sliderCells = []
   for (let i = -30; i <= 60; i++) {
     const d = new Date(today); d.setDate(today.getDate() + i); sliderCells.push(d)
   }
-  const isSelected = (d) => d.toDateString() === selectedDate.toDateString()
+  const isSelected = (d) => selectedDate && d.toDateString() === selectedDate.toDateString()
   const isTodayDate = (d) => d.toDateString() === today.toDateString()
 
-  const dateLabel = (() => {
+  const dateLabel = selectedDate ? (() => {
     const diff = Math.round((selectedDate - today) / 86400000)
     const dayName = `יום ${DAYS_HE[selectedDow]}`
     const dateStr = selectedDate.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })
@@ -111,7 +163,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
     if (diff === 1) return `מחר · ${dayName} · ${dateStr}`
     if (diff === -1) return `אתמול · ${dayName} · ${dateStr}`
     return `${dayName} · ${dateStr}`
-  })()
+  })() : null
 
   return (
     <div className="space-y-4">
@@ -141,8 +193,11 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
 
       {/* כותרת + מונה שבועי */}
       <div className="flex items-center justify-between">
-        <div>
-          <p className="font-black text-gray-800 text-base leading-tight">{dateLabel}</p>
+        <div className="min-w-0">
+          <p className="font-black text-gray-800 text-base leading-tight">
+            {dateLabel || 'השיעורים שלי השבוע'}
+          </p>
+          {!selectedDate && <p className="text-xs text-gray-400 mt-0.5">לחץ על תאריך בסלייד כדי לראות את השיעורים של אותו יום</p>}
         </div>
         <span className="text-xs bg-red-100 text-red-800 px-3 py-1 rounded-full font-bold whitespace-nowrap">
           {registrations.size}/{limit === Infinity ? '∞' : limit} השבוע
@@ -158,72 +213,137 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
             return (
               <button key={i} onClick={() => setSelectedDate(new Date(d))}
                 ref={el => {
-                  if (el && selected) selectedBtnRef.current = el
+                  if (!el) return
+                  if (selected) selectedBtnRef.current = el
+                  if (todayFlag) todayBtnRef.current = el
                 }}
                 className={`flex-shrink-0 rounded-xl transition text-center ${
-                  todayFlag
-                    ? 'bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg ring-4 ring-red-300 scale-110 py-2.5 px-3.5 min-w-[68px]'
-                    : selected
-                      ? 'bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-2 ring-gray-400 py-2 px-3 min-w-[56px]'
+                  selected
+                    ? 'bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-2 ring-gray-400 py-2 px-3 min-w-[56px]'
+                    : todayFlag
+                      ? 'bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg ring-4 ring-red-300 scale-110 py-2.5 px-3.5 min-w-[68px]'
                       : 'bg-white border border-gray-100 text-gray-600 hover:bg-gray-50 py-2 px-3 min-w-[56px]'
                 }`}>
                 <p className={`text-[10px] font-semibold ${todayFlag || selected ? 'opacity-95' : 'text-gray-400'}`}>
                   {DAYS_HE_SHORT[d.getDay()]}
                 </p>
-                <p className={`font-black leading-none mt-0.5 ${todayFlag ? 'text-2xl' : 'text-lg'}`}>
+                <p className={`font-black leading-none mt-0.5 ${todayFlag && !selected ? 'text-2xl' : 'text-lg'}`}>
                   {d.getDate()}
                 </p>
                 <p className={`text-[9px] mt-0.5 ${todayFlag || selected ? 'opacity-80' : 'text-gray-400'}`}>
                   {d.toLocaleDateString('he-IL', { month: 'short' })}
                 </p>
-                {todayFlag && <p className="text-[9px] font-black mt-1 bg-white/30 rounded px-1">היום</p>}
+                {todayFlag && !selected && <p className="text-[9px] font-black mt-1 bg-white/30 rounded px-1">היום</p>}
               </button>
             )
           })}
         </div>
       </div>
 
-      {/* רשימת שיעורים ליום הנבחר */}
-      {dayClasses.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border">
-          <div className="text-4xl mb-2">📅</div>
-          <p>אין שיעורים ביום {DAYS_HE[selectedDow]}</p>
-        </div>
-      ) : (
+      {/* פירוט שיעורים ליום הנבחר — מופיע רק אחרי לחיצה על תאריך */}
+      {selectedDate && (
         <div className="space-y-2">
-          {dayClasses.map(cls => {
-            const isReg = registrations.has(cls.id)
-            const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-700">שיעורים ביום הנבחר</h3>
+            <button
+              type="button"
+              onClick={() => setSelectedDate(null)}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              ✕ סגור
+            </button>
+          </div>
+          {dayClasses.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 bg-white rounded-2xl border">
+              <div className="text-3xl mb-2">📅</div>
+              <p className="text-sm">אין שיעורים ביום {DAYS_HE[selectedDow]}</p>
+            </div>
+          ) : (
+            dayClasses.map(cls => {
+              const isReg = registrations.has(cls.id)
+              const past = isPastClass(cls, selectedDate)
+              const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
+              const disabled = past || (atRegLimit && !isReg)
+              return (
+                <button key={cls.id} onClick={() => !past && onRegister(cls)} disabled={disabled}
+                  className={`w-full flex items-center justify-between p-4 rounded-2xl transition shadow-sm ${
+                    past
+                      ? 'bg-gray-50 text-gray-400 cursor-not-allowed opacity-60'
+                      : isReg
+                        ? 'bg-gradient-to-br from-red-600 to-red-800 text-white'
+                        : atRegLimit
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-white border border-gray-200 text-gray-800 hover:border-red-400'
+                  }`}>
+                  <div className="text-right flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🥋</span>
+                      <p className="font-black text-base">{cls.name}</p>
+                    </div>
+                    <p className={`text-xs mt-1 ${isReg && !past ? 'text-red-100' : 'text-gray-500'}`}>
+                      🕐 {cls.start_time?.slice(0,5)}
+                      {cls.duration_minutes && ` · ${cls.duration_minutes} דק'`}
+                      {cls.branches?.name && ` · 📍 ${cls.branches.name}`}
+                    </p>
+                  </div>
+                  <span className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap ${
+                    past ? 'bg-gray-200 text-gray-500'
+                    : isReg ? 'bg-white text-red-700'
+                    : atRegLimit ? 'bg-gray-200'
+                    : 'bg-red-600 text-white'
+                  }`}>
+                    {past ? 'הסתיים' : isReg ? '✓ רשום' : atRegLimit ? 'מלא' : '+ הירשם'}
+                  </span>
+                </button>
+              )
+            })
+          )}
+        </div>
+      )}
+
+      {/* השיעורים שלי השבוע — מופיע תמיד */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-bold text-gray-700">📌 השיעורים שנרשמתי אליהם</h3>
+        {myClasses.length === 0 ? (
+          <div className="text-center py-8 text-gray-400 bg-white rounded-2xl border">
+            <div className="text-3xl mb-2">📭</div>
+            <p className="text-sm">עדיין לא נרשמת לשיעורים השבוע</p>
+            <p className="text-xs mt-1">לחץ על תאריך בסלייד כדי להירשם</p>
+          </div>
+        ) : (
+          myClasses.map(cls => {
+            const occurrence = nextOccurrenceThisWeek(cls)
+            const past = isPastClass(cls, occurrence)
+            const dateStr = occurrence.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })
             return (
-              <button key={cls.id} onClick={() => onRegister(cls)} disabled={atRegLimit}
-                className={`w-full flex items-center justify-between p-4 rounded-2xl transition shadow-sm ${
-                  isReg
-                    ? 'bg-gradient-to-br from-red-600 to-red-800 text-white'
-                    : atRegLimit
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-white border border-gray-200 text-gray-800 hover:border-red-400'
+              <button key={cls.id}
+                onClick={() => !past && onRegister(cls)}
+                disabled={past}
+                className={`w-full flex items-center justify-between p-4 rounded-2xl shadow-sm transition ${
+                  past
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-gradient-to-br from-red-600 to-red-800 text-white hover:from-red-700 hover:to-red-900'
                 }`}>
                 <div className="text-right flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xl">🥋</span>
                     <p className="font-black text-base">{cls.name}</p>
                   </div>
-                  <p className={`text-xs mt-1 ${isReg ? 'text-red-100' : 'text-gray-500'}`}>
-                    🕐 {cls.start_time?.slice(0,5)}
-                    {cls.duration_minutes && ` · ${cls.duration_minutes} דק'`}
+                  <p className={`text-xs mt-1 ${past ? 'text-gray-500' : 'text-red-100'}`}>
+                    📅 יום {DAYS_HE[cls.day_of_week]} · {dateStr} · 🕐 {cls.start_time?.slice(0,5)}
                     {cls.branches?.name && ` · 📍 ${cls.branches.name}`}
                   </p>
                 </div>
                 <span className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap ${
-                  isReg ? 'bg-white text-red-700' : atRegLimit ? 'bg-gray-200' : 'bg-red-600 text-white'
+                  past ? 'bg-gray-200 text-gray-500' : 'bg-white text-red-700'
                 }`}>
-                  {isReg ? '✓ רשום' : atRegLimit ? 'מלא' : '+ הירשם'}
+                  {past ? 'הסתיים' : '✓ רשום'}
                 </span>
               </button>
             )
-          })}
-        </div>
-      )}
+          })
+        )}
+      </div>
     </div>
   )
 }

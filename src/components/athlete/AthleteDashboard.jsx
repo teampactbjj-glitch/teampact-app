@@ -35,13 +35,15 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
 
   // גלול תמיד אל התאריך הנבחר (כולל "היום")
   useEffect(() => {
-    if (!selectedBtnRef.current) return
-    selectedBtnRef.current.scrollIntoView?.({
-      inline: 'center',
-      block: 'nearest',
-      behavior: didInitialScroll.current ? 'smooth' : 'auto',
-    })
-    didInitialScroll.current = true
+    const t = setTimeout(() => {
+      selectedBtnRef.current?.scrollIntoView?.({
+        inline: 'center',
+        block: 'nearest',
+        behavior: didInitialScroll.current ? 'smooth' : 'auto',
+      })
+      didInitialScroll.current = true
+    }, 30)
+    return () => clearTimeout(t)
   }, [selectedDate])
 
   const branchIds = member?.branch_ids?.length

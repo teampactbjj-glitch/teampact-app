@@ -82,13 +82,15 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
   // גלול תמיד אל התאריך הנבחר בסלייד (כולל "היום" כשלוחצים עליו)
   useEffect(() => {
-    if (!selectedBtnRef.current) return
-    selectedBtnRef.current.scrollIntoView?.({
-      inline: 'center',
-      block: 'nearest',
-      behavior: didInitialScroll.current ? 'smooth' : 'auto',
-    })
-    didInitialScroll.current = true
+    const t = setTimeout(() => {
+      selectedBtnRef.current?.scrollIntoView?.({
+        inline: 'center',
+        block: 'nearest',
+        behavior: didInitialScroll.current ? 'smooth' : 'auto',
+      })
+      didInitialScroll.current = true
+    }, 30)
+    return () => clearTimeout(t)
   }, [selectedDate])
 
   function navigate(delta) {

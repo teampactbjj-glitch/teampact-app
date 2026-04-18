@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 const STATUS_LABELS = { pending: 'ממתין', done: 'טופל' }
 const STATUS_COLORS = { pending: 'bg-orange-100 text-orange-700', done: 'bg-green-100 text-green-700' }
 
-export default function ShopManager({ onOrdersChange }) {
+export default function ShopManager({ onOrdersChange, isAdmin = false }) {
   const [products, setProducts] = useState([])
   const [orders, setOrders] = useState([])
   const [tab, setTab] = useState('orders')
@@ -157,18 +157,20 @@ export default function ShopManager({ onOrdersChange }) {
                       {order.members?.phone && <span className="text-gray-400"> · {order.members.phone}</span>}
                     </p>
                   </div>
-                  <div className="flex gap-2 flex-shrink-0 items-center">
-                    {order.status === 'pending' && (
-                      <button onClick={() => markDone(order)}
-                        className="text-xs bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg">
-                        סמן כטופל ✓
+                  {isAdmin && (
+                    <div className="flex gap-2 flex-shrink-0 items-center">
+                      {order.status === 'pending' && (
+                        <button onClick={() => markDone(order)}
+                          className="text-xs bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg">
+                          סמן כטופל ✓
+                        </button>
+                      )}
+                      <button onClick={() => deleteOrder(order)}
+                        className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">
+                        מחק
                       </button>
-                    )}
-                    <button onClick={() => deleteOrder(order)}
-                      className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">
-                      מחק
-                    </button>
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -178,12 +180,14 @@ export default function ShopManager({ onOrdersChange }) {
 
       {tab === 'products' && (
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <button onClick={() => showForm ? setShowForm(false) : openAdd()}
-              className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
-              {showForm ? 'ביטול' : '+ הוסף מוצר'}
-            </button>
-          </div>
+          {isAdmin && (
+            <div className="flex justify-end">
+              <button onClick={() => showForm ? setShowForm(false) : openAdd()}
+                className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
+                {showForm ? 'ביטול' : '+ הוסף מוצר'}
+              </button>
+            </div>
+          )}
 
           {showForm && (
             <div className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
@@ -237,10 +241,12 @@ export default function ShopManager({ onOrdersChange }) {
                       {item.price != null && <p className="text-sm text-emerald-600 font-bold">₪{item.price}</p>}
                     </div>
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button onClick={() => openEdit(item)} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
-                    <button onClick={() => deleteProduct(item.id)} className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">🗑️ מחק</button>
-                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button onClick={() => openEdit(item)} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
+                      <button onClick={() => deleteProduct(item.id)} className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">🗑️ מחק</button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

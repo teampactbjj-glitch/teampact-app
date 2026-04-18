@@ -55,12 +55,31 @@ export default function TodayClasses({ trainerId, isAdmin }) {
   const [visitorSearch, setVisitorSearch] = useState({}) // { classId: query }
   const [visitorResults, setVisitorResults] = useState({}) // { classId: [member] }
   const [visitorLoading, setVisitorLoading] = useState({}) // { classId: bool }
+  const [branches, setBranches] = useState([])
+  const [selectedBranch, setSelectedBranch] = useState('all')
+
+  useEffect(() => {
+    supabase.from('branches').select('id, name').order('name').then(({ data }) => setBranches(data || []))
+  }, [])
 
   useEffect(() => {
     setExpanded(null)
     setClassData({})
     fetchDayClasses(selectedDate)
   }, [trainerId, selectedDate])
+
+  // רענון ספירת רישומים כל 15 שניות (כדי שמאמן יראה רישום שנרשם בזמן אמת)
+  useEffect(() => {
+    if (classes.length === 0) return
+    const i = setInterval(() => fetchMemberCounts(classes.map(c => c.id)), 15000)
+    return () => clearInterval(i)
+  }, [classes, selectedDate])
+
+  function jumpToToday() {
+    setSelectedDate(startOfDay(new Date()))
+    // גלול את הסלייד אל "היום" במרכז
+    setTimeout(() => todayBtnRef.current?.scrollIntoView?.({ inline: 'center', block: 'nearest', behavior: 'smooth' }), 50)
+  }
 
   function navigate(delta) {
     setSelectedDate(prev => {
@@ -139,11 +158,13 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       d.setDate(d.getDate() - d.getDay())
       return d.toISOString().split('T')[0]
     })()
-    const { data: regs } = await supabase
+    const { data: regs, error: regsErr } = await supabase
       .from('class_registrations')
       .select('class_id')
       .in('class_id', classIds)
       .eq('week_start', weekStartStr)
+    if (regsErr) console.error('[trainer] class_registrations count error (check RLS!):', regsErr)
+    console.log('[trainer] weekly regs fetched:', { weekStart: weekStartStr, classIds: classIds.length, regsFound: regs?.length || 0 })
     ;(regs || []).forEach(r => { regCounts[r.class_id] = (regCounts[r.class_id] || 0) + 1 })
     setMemberCounts(counts)
     setRegCountsByClass(regCounts)
@@ -369,7 +390,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
           <p className="text-xs text-gray-400 mt-0.5">{selectedDate.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setSelectedDate(startOfDay(new Date()))}
+          <button onClick={jumpToToday}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
               isToday(selectedDate)
                 ? 'bg-blue-600 text-white border-blue-600'
@@ -393,10 +414,12 @@ export default function TodayClasses({ trainerId, isAdmin }) {
             return (
               <button key={i} onClick={() => setSelectedDate(startOfDay(d))}
                 ref={el => {
-                  if (el && today && !didInitialScroll.current) {
+                  if (el && today) {
                     todayBtnRef.current = el
-                    didInitialScroll.current = true
-                    el.scrollIntoView?.({ inline: 'center', block: 'nearest' })
+                    if (!didInitialScroll.current) {
+                      didInitialScroll.current = true
+                      el.scrollIntoView?.({ inline: 'center', block: 'nearest' })
+                    }
                   }
                 }}
                 className={`flex-shrink-0 rounded-xl transition text-center ${
@@ -421,6 +444,39 @@ export default function TodayClasses({ trainerId, isAdmin }) {
           })}
         </div>
       </div>
+
+      {/* Branch filter chips */}
+      {branches.length > 1 && (() => {
+        const branchCount = {}
+        classes.forEach(c => { if (c.branch_id) branchCount[c.branch_id] = (branchCount[c.branch_id] || 0) + 1 })
+        return (
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+            <style>{`.no-scrollbar::-webkit-scrollbar { display: none }`}</style>
+            <button type="button" onClick={() => setSelectedBranch('all')}
+              className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
+                selectedBranch === 'all'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+              }`}>
+              הכל ({classes.length})
+            </button>
+            {branches.map(b => {
+              const count = branchCount[b.id] || 0
+              const active = selectedBranch === b.id
+              return (
+                <button key={b.id} type="button" onClick={() => setSelectedBranch(b.id)}
+                  className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
+                    active
+                      ? 'bg-blue-600 text-white border-blue-600 shadow'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                  }`}>
+                  📍 {b.name} ({count})
+                </button>
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {showAdd && (
         <form onSubmit={addClass} className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
@@ -452,14 +508,17 @@ export default function TodayClasses({ trainerId, isAdmin }) {
         </form>
       )}
 
-      {!loading && classes.length === 0 && (
-        <div className="text-center py-12 text-gray-400">
-          <div className="text-4xl mb-2">📭</div>
-          <p>אין שיעורים ביום {DAYS_HE[selectedDate.getDay()]}</p>
-        </div>
-      )}
-
-      {classes.map(cls => {
+      {(() => {
+        const visibleClasses = selectedBranch === 'all' ? classes : classes.filter(c => c.branch_id === selectedBranch)
+        if (!loading && visibleClasses.length === 0) {
+          return (
+            <div className="text-center py-12 text-gray-400">
+              <div className="text-4xl mb-2">📭</div>
+              <p>אין שיעורים ביום {DAYS_HE[selectedDate.getDay()]}{selectedBranch !== 'all' ? ' בסניף זה' : ''}</p>
+            </div>
+          )
+        }
+        return visibleClasses.map(cls => {
         const data = classData[cls.id]
         const isOpen = expanded === cls.id
         const presentCount = data?.checkedIds?.size ?? 0
@@ -656,7 +715,8 @@ export default function TodayClasses({ trainerId, isAdmin }) {
             )}
           </div>
         )
-      })}
+        })
+      })()}
     </div>
   )
 }

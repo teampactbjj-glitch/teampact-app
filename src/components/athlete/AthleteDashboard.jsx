@@ -31,18 +31,19 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
   const [activeBranch, setActiveBranch] = useState('all')
   const [selectedDate, setSelectedDate] = useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d })
   const selectedBtnRef = useRef(null)
+  const sliderContainerRef = useRef(null)
   const didInitialScroll = useRef(false)
 
   // גלול תמיד אל התאריך הנבחר (כולל "היום")
   useEffect(() => {
     const t = setTimeout(() => {
-      selectedBtnRef.current?.scrollIntoView?.({
-        inline: 'center',
-        block: 'nearest',
-        behavior: didInitialScroll.current ? 'smooth' : 'auto',
-      })
+      const btn = selectedBtnRef.current
+      const container = sliderContainerRef.current
+      if (!btn || !container) return
+      const target = btn.offsetLeft - (container.clientWidth - btn.offsetWidth) / 2
+      container.scrollTo({ left: target, behavior: didInitialScroll.current ? 'smooth' : 'auto' })
       didInitialScroll.current = true
-    }, 30)
+    }, 50)
     return () => clearTimeout(t)
   }, [selectedDate])
 
@@ -147,7 +148,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
       </div>
 
       {/* סליידר תאריכים אופקי */}
-      <div className="bg-white rounded-2xl border shadow-sm p-3 overflow-x-auto" dir="ltr">
+      <div ref={sliderContainerRef} className="bg-white rounded-2xl border shadow-sm p-3 overflow-x-auto" dir="ltr">
         <div className="flex gap-1.5 min-w-max" dir="rtl">
           {sliderCells.map((d, i) => {
             const todayFlag = isTodayDate(d)

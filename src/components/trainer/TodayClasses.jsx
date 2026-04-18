@@ -41,6 +41,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
   const todayBtnRef = useRef(null)
   const selectedBtnRef = useRef(null)
+  const sliderContainerRef = useRef(null)
   const didInitialScroll = useRef(false)
   const [classes, setClasses] = useState([])
   const [expanded, setExpanded] = useState(null)
@@ -83,13 +84,13 @@ export default function TodayClasses({ trainerId, isAdmin }) {
   // גלול תמיד אל התאריך הנבחר בסלייד (כולל "היום" כשלוחצים עליו)
   useEffect(() => {
     const t = setTimeout(() => {
-      selectedBtnRef.current?.scrollIntoView?.({
-        inline: 'center',
-        block: 'nearest',
-        behavior: didInitialScroll.current ? 'smooth' : 'auto',
-      })
+      const btn = selectedBtnRef.current
+      const container = sliderContainerRef.current
+      if (!btn || !container) return
+      const target = btn.offsetLeft - (container.clientWidth - btn.offsetWidth) / 2
+      container.scrollTo({ left: target, behavior: didInitialScroll.current ? 'smooth' : 'auto' })
       didInitialScroll.current = true
-    }, 30)
+    }, 50)
     return () => clearTimeout(t)
   }, [selectedDate])
 
@@ -418,7 +419,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       </div>
 
       {/* Horizontal date slider */}
-      <div className="bg-white rounded-2xl border shadow-sm p-3 overflow-x-auto" dir="ltr">
+      <div ref={sliderContainerRef} className="bg-white rounded-2xl border shadow-sm p-3 overflow-x-auto" dir="ltr">
         <div className="flex gap-1.5 min-w-max" dir="rtl">
           {sliderCells.map((d, i) => {
             const today = isToday(d)

@@ -385,8 +385,6 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     if (!classData[id]) fetchClassDetails(id)
   }
 
-  if (loading) return <p className="text-center text-gray-400 py-10">טוען שיעורים...</p>
-
   // סליידר של כל התאריכים (30 אחורה, 60 קדימה)
   const sliderCells = []
   const today0 = startOfDay(new Date())
@@ -524,8 +522,9 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       )}
 
       {(() => {
+        if (loading) return <p className="text-center text-gray-400 py-10">טוען שיעורים...</p>
         const visibleClasses = selectedBranch === 'all' ? classes : classes.filter(c => c.branch_id === selectedBranch)
-        if (!loading && visibleClasses.length === 0) {
+        if (visibleClasses.length === 0) {
           return (
             <div className="text-center py-12 text-gray-400">
               <div className="text-4xl mb-2">📭</div>

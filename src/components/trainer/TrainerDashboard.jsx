@@ -93,7 +93,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
 
         {activeTab === 'shop' && (
           <div className="space-y-6">
-            <ShopManager isAdmin={isAdmin} onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />
+            <ShopManager isAdmin={isAdmin} trainerId={profile?.id} onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />
             {requestsCount > 0 && (
               <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
                 <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי פרופיל ({requestsCount})</h3>

@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 
 const WEEKLY_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
+const DAYS_HE_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
 function formatTime(timeStr) {
   return timeStr ? timeStr.slice(0, 5) : ''
@@ -43,6 +44,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
   // classData[classId] = { members: [...], checkedIds: Set, absentIds: Set, weeklyCount: {memberId: n}, loading: bool }
   const [classData, setClassData] = useState({})
   const [memberCounts, setMemberCounts] = useState({}) // { classId: number }
+  const [regCountsByClass, setRegCountsByClass] = useState({}) // { classId: number } רישומים לשבוע
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [newClass, setNewClass] = useState({ name: '', start_time: '', duration_minutes: 60 })
@@ -121,15 +123,28 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
   async function fetchMemberCounts(classIds) {
     if (!classIds.length) return
-    // Pre-fill all with 0 so classes with no members still show a badge
     const counts = Object.fromEntries(classIds.map(id => [id, 0]))
+    const regCounts = Object.fromEntries(classIds.map(id => [id, 0]))
     const { data, error } = await supabase
       .from('member_classes')
       .select('class_id')
       .in('class_id', classIds)
-    if (error) { console.error('fetchMemberCounts error:', error); return }
+    if (error) console.error('fetchMemberCounts error:', error)
     ;(data || []).forEach(r => { counts[r.class_id] = (counts[r.class_id] || 0) + 1 })
+    // רישומים שבועיים של המתאמנים (class_registrations) לשבוע של היום הנבחר
+    const weekStartStr = (() => {
+      const d = startOfDay(selectedDate)
+      d.setDate(d.getDate() - d.getDay())
+      return d.toISOString().split('T')[0]
+    })()
+    const { data: regs } = await supabase
+      .from('class_registrations')
+      .select('class_id')
+      .in('class_id', classIds)
+      .eq('week_start', weekStartStr)
+    ;(regs || []).forEach(r => { regCounts[r.class_id] = (regCounts[r.class_id] || 0) + 1 })
     setMemberCounts(counts)
+    setRegCountsByClass(regCounts)
   }
 
   async function fetchClassDetails(classId) {
@@ -182,11 +197,26 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       })
     }
 
+    // 4. מי רשום שבועית (class_registrations) לשיעור הזה
+    const weekStartStr = (() => {
+      const d = startOfDay(selectedDate)
+      d.setDate(d.getDate() - d.getDay())
+      return d.toISOString().split('T')[0]
+    })()
+    const { data: regRows, error: regErr } = await supabase
+      .from('class_registrations')
+      .select('athlete_id, members(id, full_name)')
+      .eq('class_id', classId)
+      .eq('week_start', weekStartStr)
+    if (regErr) console.error('class_registrations error:', regErr)
+    const weeklyRegistrants = (regRows || []).map(r => r.members).filter(Boolean)
+
     setClassData(prev => ({
       ...prev,
-      [classId]: { members, checkedIds, absentIds, weeklyCount, loading: false },
+      [classId]: { members, checkedIds, absentIds, weeklyCount, weeklyRegistrants, loading: false },
     }))
     setMemberCounts(prev => ({ ...prev, [classId]: members.length }))
+    setRegCountsByClass(prev => ({ ...prev, [classId]: weeklyRegistrants.length }))
   }
 
   async function markPresent(classId, memberId, membershipType) {
@@ -362,7 +392,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
                       : 'bg-white border border-gray-100 text-gray-600 hover:bg-gray-50 py-2 px-3 min-w-[56px]'
                 }`}>
                 <p className={`text-[10px] font-semibold ${today || selected ? 'opacity-95' : 'text-gray-400'}`}>
-                  {DAYS_HE[d.getDay()].slice(0,2)}
+                  {DAYS_HE_SHORT[d.getDay()]}
                 </p>
                 <p className={`font-black leading-none mt-0.5 ${today ? 'text-2xl' : 'text-lg'}`}>
                   {d.getDate()}
@@ -440,7 +470,12 @@ export default function TodayClasses({ trainerId, isAdmin }) {
                 </div>
                 <p className="text-sm text-gray-500">{formatTime(cls.start_time)} · {cls.duration_minutes} דקות</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 flex-wrap justify-end">
+                {(regCountsByClass[cls.id] || 0) > 0 && (
+                  <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">
+                    🙋 {regCountsByClass[cls.id]} נרשמו
+                  </span>
+                )}
                 {data && !data.loading ? (
                   <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
                     {presentCount}/{totalCount} נוכחים
@@ -460,6 +495,20 @@ export default function TodayClasses({ trainerId, isAdmin }) {
                   <p className="text-sm text-gray-400 text-center py-2">טוען...</p>
                 ) : (
                   <>
+                    {/* נרשמו לשבוע זה (class_registrations) */}
+                    {(data.weeklyRegistrants?.length || 0) > 0 && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                        <p className="text-xs font-bold text-red-900 mb-2">🙋 נרשמו לשיעור זה השבוע ({data.weeklyRegistrants.length})</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {data.weeklyRegistrants.map(r => (
+                            <span key={r.id} className="text-xs bg-white border border-red-200 text-red-800 px-2 py-1 rounded-full font-medium">
+                              {r.full_name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Registered members list */}
                     {data.members.length === 0 ? (
                       <p className="text-sm text-gray-400 text-center py-4">אין מתאמנים רשומים לשיעור זה</p>

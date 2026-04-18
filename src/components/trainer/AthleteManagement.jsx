@@ -22,7 +22,7 @@ const EMPTY_FORM = {
   branch_ids: [],
 }
 
-export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false }) {
+export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null }) {
   const [athletes, setAthletes] = useState([])
   const [pendingAthletes, setPendingAthletes] = useState([])
   const [branches, setBranches] = useState([])
@@ -86,13 +86,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
     }
     let error
     if (editing === 'new') {
-      ;({ error } = await supabase.from('members').insert(payload))
+      // מאמן מוסיף מתאמן = מאושר אוטומטית (לא pending)
+      ;({ error } = await supabase.from('members').insert({ ...payload, status: 'approved' }))
     } else {
       ;({ error } = await supabase.from('members').update(payload).eq('id', editing))
     }
     if (error) { setSaveError(error.message); return }
     setEditing(null)
     fetchAthletes()
+    onPendingChange?.()
   }
 
   async function deleteAthlete(id) {
@@ -104,11 +106,13 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   async function approvePending(id) {
     await supabase.from('members').update({ status: 'approved', active: true }).eq('id', id)
     fetchAthletes()
+    onPendingChange?.()
   }
 
   async function rejectPending(id) {
     await supabase.from('members').delete().eq('id', id)
     fetchAthletes()
+    onPendingChange?.()
   }
 
   function toggleBranch(id) {
@@ -182,12 +186,8 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       </div>
 
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-        <button type="button" onClick={() => setSubTab('active')}
-          className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition ${subTab === 'active' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
-          מתאמנים פעילים
-        </button>
         <button type="button" onClick={() => setSubTab('pending')}
-          className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition relative ${subTab === 'pending' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
+          className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition relative ${subTab === 'pending' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
           ממתינים לאישור
           {pendingAthletes.length > 0 && (
             <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
@@ -195,6 +195,16 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
             </span>
           )}
         </button>
+        <button type="button" onClick={() => setSubTab('active')}
+          className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${subTab === 'active' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
+          מתאמנים ({athletes.length})
+        </button>
+        {registerLinkCard && (
+          <button type="button" onClick={() => setSubTab('link')}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${subTab === 'link' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}>
+            קישור הרשמה
+          </button>
+        )}
       </div>
 
       {subTab === 'active' && (
@@ -276,7 +286,9 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
         </form>
       )}
 
-      {subTab === 'pending' ? (
+      {subTab === 'link' && registerLinkCard}
+
+      {subTab === 'pending' && (
         pendingAthletes.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
             <div className="text-4xl mb-2">✅</div>
@@ -284,62 +296,106 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
           </div>
         ) : (
           <ul className="space-y-3">
-            {pendingAthletes.map(a => (
-              <li key={a.id} className="bg-white rounded-xl border px-4 py-3 shadow-sm space-y-2">
-                <div>
-                  <p className="font-semibold text-gray-800">{a.full_name}</p>
-                  <p className="text-xs text-gray-500">
-                    {a.email && <span>{a.email} · </span>}
-                    {a.phone && <span>{a.phone} · </span>}
-                    {branches.find(b => b.id === a.branch_id)?.name || ''}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => approvePending(a.id)}
-                    className="flex-1 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700">
-                    ✓ אשר
-                  </button>
-                  <button type="button" onClick={() => rejectPending(a.id)}
-                    className="flex-1 py-1.5 border border-red-300 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50">
-                    ✕ דחה
-                  </button>
-                </div>
-              </li>
-            ))}
+            {pendingAthletes.map(a => {
+              const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+              const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
+              return (
+                <li key={a.id} className="bg-white rounded-xl border px-4 py-3 shadow-sm space-y-2">
+                  <div>
+                    <p className="font-semibold text-gray-800">{a.full_name}</p>
+                    <p className="text-xs text-gray-500">
+                      {a.email && <span>{a.email} · </span>}
+                      {a.phone && <span>{a.phone} · </span>}
+                      {bnames && <span>📍 {bnames}</span>}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => approvePending(a.id)}
+                      className="flex-1 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700">
+                      ✓ אשר
+                    </button>
+                    <button type="button" onClick={() => rejectPending(a.id)}
+                      className="flex-1 py-1.5 border border-red-300 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50">
+                      ✕ דחה
+                    </button>
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         )
-      ) : loading ? (
-        <p className="text-center text-gray-400 py-8">טוען מתאמנים...</p>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <div className="text-4xl mb-2">👥</div>
-          <p>לא נמצאו מתאמנים</p>
-        </div>
-      ) : (
-        <ul className="space-y-2">
-          {filtered.map(a => (
-            <li key={a.id} className="bg-white rounded-xl border px-4 py-3 flex items-center justify-between shadow-sm">
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-gray-800">{a.full_name}</p>
-                  {!a.active && <span className="text-xs bg-gray-100 text-gray-400 px-1.5 rounded">לא פעיל</span>}
-                </div>
-                <p className="text-xs text-gray-400">
-                  {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
-                  {a.phone && <span> · {a.phone}</span>}
-                </p>
+      )}
+
+      {subTab === 'active' && (
+        loading ? (
+          <p className="text-center text-gray-400 py-8">טוען מתאמנים...</p>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            <div className="text-4xl mb-2">👥</div>
+            <p>לא נמצאו מתאמנים</p>
+          </div>
+        ) : (
+          (() => {
+            // קיבוץ לפי סניפים
+            const byBranch = {}
+            const unassigned = []
+            filtered.forEach(a => {
+              const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+              if (bids.length === 0) { unassigned.push(a); return }
+              bids.forEach(bid => { (byBranch[bid] ||= []).push(a) })
+            })
+            const orderedBranches = branches.filter(b => byBranch[b.id]?.length)
+            return (
+              <div className="space-y-4">
+                {orderedBranches.map(b => (
+                  <div key={b.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <div className="bg-gradient-to-l from-blue-50 to-white px-4 py-2.5 border-b flex items-center justify-between">
+                      <h3 className="font-bold text-gray-800 text-sm">📍 {b.name}</h3>
+                      <span className="text-xs bg-blue-600 text-white font-bold px-2.5 py-0.5 rounded-full">
+                        {byBranch[b.id].length} רשומים
+                      </span>
+                    </div>
+                    <ul className="divide-y">
+                      {byBranch[b.id].map(a => (
+                        <li key={a.id} className="px-4 py-3 flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
+                              {!a.active && <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 rounded">לא פעיל</span>}
+                            </div>
+                            <p className="text-xs text-gray-400">
+                              {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
+                              {a.phone && <span> · {a.phone}</span>}
+                            </p>
+                          </div>
+                          <div className="flex gap-3 shrink-0">
+                            <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>
+                            <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">מחק</button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+                {unassigned.length > 0 && (
+                  <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <div className="bg-orange-50 px-4 py-2.5 border-b">
+                      <h3 className="font-bold text-orange-800 text-sm">⚠️ ללא סניף ({unassigned.length})</h3>
+                    </div>
+                    <ul className="divide-y">
+                      {unassigned.map(a => (
+                        <li key={a.id} className="px-4 py-3 flex items-center justify-between">
+                          <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
+                          <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
-              <div className="flex gap-3 shrink-0">
-                <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">
-                  עריכה
-                </button>
-                <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">
-                  מחק
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+            )
+          })()
+        )
       )}
     </div>
   )

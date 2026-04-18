@@ -70,15 +70,14 @@ export default function ShopManager({ onOrdersChange }) {
     try {
       const ext = file.name.split('.').pop()
       const path = `products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: upErr } = await supabase.storage.from('product-images').upload(path, file)
+      const { error: upErr } = await supabase.storage.from('products').upload(path, file)
       if (upErr) {
-        // fallback to announcements bucket
-        const { error: upErr2 } = await supabase.storage.from('announcements').upload(path, file)
+        const { error: upErr2 } = await supabase.storage.from('images').upload(path, file)
         if (upErr2) { alert('שגיאת העלאה: ' + upErr2.message); return null }
-        const { data: pub } = supabase.storage.from('announcements').getPublicUrl(path)
+        const { data: pub } = supabase.storage.from('images').getPublicUrl(path)
         return pub.publicUrl
       }
-      const { data: pub } = supabase.storage.from('product-images').getPublicUrl(path)
+      const { data: pub } = supabase.storage.from('products').getPublicUrl(path)
       return pub.publicUrl
     } finally {
       setUploading(false)

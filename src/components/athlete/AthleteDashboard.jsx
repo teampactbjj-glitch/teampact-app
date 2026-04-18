@@ -5,6 +5,7 @@ import BottomNav from '../BottomNav'
 const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const SUBSCRIPTION_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
+const DAYS_HE_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
 function resolveNextOccurrence(cls) {
   const now = new Date()
@@ -147,7 +148,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
                       : 'bg-white border border-gray-100 text-gray-600 hover:bg-gray-50 py-2 px-3 min-w-[56px]'
                 }`}>
                 <p className={`text-[10px] font-semibold ${todayFlag || selected ? 'opacity-95' : 'text-gray-400'}`}>
-                  {DAYS_HE[d.getDay()].slice(0,2)}
+                  {DAYS_HE_SHORT[d.getDay()]}
                 </p>
                 <p className={`font-black leading-none mt-0.5 ${todayFlag ? 'text-2xl' : 'text-lg'}`}>
                   {d.getDate()}

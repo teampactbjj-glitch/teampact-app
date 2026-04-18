@@ -53,7 +53,7 @@ export default function AnnouncementsManager({ trainerId }) {
     try {
       const ext = file.name.split('.').pop()
       const path = `seminars/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-      const buckets = ['product-images', 'announcements']
+      const buckets = ['images', 'products']
       for (const b of buckets) {
         const { error } = await supabase.storage.from(b).upload(path, file)
         if (!error) {
@@ -61,7 +61,7 @@ export default function AnnouncementsManager({ trainerId }) {
           return pub.publicUrl
         }
       }
-      alert('שגיאה בהעלאת תמונה — ודא שקיים bucket בשם product-images או announcements ב-Supabase Storage')
+      alert('שגיאה בהעלאת תמונה — ודא שקיים bucket בשם images או products ב-Supabase Storage')
       return null
     } finally {
       setUploading(false)

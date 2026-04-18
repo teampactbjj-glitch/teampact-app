@@ -81,16 +81,13 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         {activeTab === 'schedule' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />}
 
         {activeTab === 'athletes' && (
-          <div className="space-y-6">
-            <RegisterLinkCard />
-            {leadsCount > 0 && (
-              <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
-                <h3 className="font-bold text-orange-900 text-sm mb-3">🙋 בקשות הצטרפות ממתינות ({leadsCount})</h3>
-                <LeadsManager trainerId={profile?.id} onLeadsChange={(n) => { setLeadsCount(n); refreshCounts() }} />
-              </div>
-            )}
-            <AthleteManagement trainerId={profile?.id} isAdmin={isAdmin} hideSchedule />
-          </div>
+          <AthleteManagement
+            trainerId={profile?.id}
+            isAdmin={isAdmin}
+            hideSchedule
+            registerLinkCard={<RegisterLinkCard />}
+            onPendingChange={refreshCounts}
+          />
         )}
 
         {activeTab === 'shop' && (

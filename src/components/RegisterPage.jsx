@@ -13,7 +13,7 @@ const COACHES_FALLBACK = [
 export default function RegisterPage() {
   const [branches, setBranches] = useState([])
   const [coaches, setCoaches] = useState([])  // מהדב — משתמש ב-id אם קיים, אחרת לפי שם
-  const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '', passwordConfirm: '', branch_ids: [], subscription_type: '2x_week', coach_id: null, coach_name: '' })
+  const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '', passwordConfirm: '', branch_ids: [], subscription_type: '2x_week', coach_ids: [], coach_names: [], all_coaches: false })
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState(null)
@@ -45,14 +45,40 @@ export default function RegisterPage() {
     })
   }
 
+  function toggleCoach(coach) {
+    setForm(p => {
+      const max = p.subscription_type === '4x_week' ? 2 : 1
+      const already = p.coach_names.includes(coach.name)
+      if (already) {
+        return {
+          ...p,
+          coach_names: p.coach_names.filter(n => n !== coach.name),
+          coach_ids: p.coach_ids.filter(id => id !== coach.id),
+        }
+      }
+      // אם הגענו למקסימום — מחליפים את האחרון (ב-2x) או לא מוסיפים
+      if (p.coach_names.length >= max) {
+        if (max === 1) {
+          return { ...p, coach_names: [coach.name], coach_ids: coach.id ? [coach.id] : [] }
+        }
+        return p
+      }
+      return {
+        ...p,
+        coach_names: [...p.coach_names, coach.name],
+        coach_ids: coach.id ? [...p.coach_ids, coach.id] : p.coach_ids,
+      }
+    })
+  }
+
   async function handleSubmit() {
     if (!form.full_name.trim() || !form.email.trim() || form.branch_ids.length === 0) {
       setError('נא למלא שם, אימייל ולבחור לפחות סניף אחד')
       return
     }
     // בחירת מאמן חובה רק למנויי 2x/4x (לא ל-unlimited)
-    if (form.subscription_type !== 'unlimited' && !form.coach_name) {
-      setError('נא לבחור מאמן')
+    if (form.subscription_type !== 'unlimited' && form.coach_names.length === 0) {
+      setError(form.subscription_type === '4x_week' ? 'נא לבחור מאמן אחד או שניים' : 'נא לבחור מאמן')
       return
     }
     if (!form.password || form.password.length < 6) {
@@ -89,8 +115,9 @@ export default function RegisterPage() {
       branch_id: form.branch_ids[0],
       subscription_type: form.subscription_type,
       status: 'pending',
-      coach_id: form.coach_id || null,
-      requested_coach_name: form.subscription_type === 'unlimited' ? null : (form.coach_name || null),
+      coach_id: form.coach_ids[0] || null,
+      requested_coach_name: form.subscription_type === 'unlimited' ? null : (form.coach_names[0] || null),
+      requested_coach_names: form.subscription_type === 'unlimited' ? null : (form.coach_names.length ? form.coach_names : null),
     }
     if (userId) memberPayload.id = userId
     const { error: memberErr } = await supabase.from('members').insert(memberPayload)
@@ -204,7 +231,7 @@ export default function RegisterPage() {
             <select
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
               value={form.subscription_type}
-              onChange={e => setForm(p => ({ ...p, subscription_type: e.target.value, coach_id: null, coach_name: '' }))}
+              onChange={e => setForm(p => ({ ...p, subscription_type: e.target.value, coach_ids: [], coach_names: [], all_coaches: false }))}
             >
               <option value="2x_week">2× שבוע</option>
               <option value="4x_week">4× שבוע</option>
@@ -215,19 +242,23 @@ export default function RegisterPage() {
           {/* בחירת מאמן — חובה רק למנויי 2x/4x */}
           <div>
             <label className="text-xs font-semibold text-gray-500 block mb-2">
-              {form.subscription_type === 'unlimited' ? 'מאמן' : 'מאמן *'}
+              {form.subscription_type === 'unlimited'
+                ? 'מאמן'
+                : form.subscription_type === '4x_week'
+                  ? 'מאמן * (ניתן לבחור עד 2)'
+                  : 'מאמן *'}
             </label>
             {form.subscription_type === 'unlimited' ? (
               <button
                 type="button"
-                onClick={() => setForm(p => ({ ...p, coach_id: null, coach_name: 'all' }))}
+                onClick={() => setForm(p => ({ ...p, coach_ids: [], coach_names: [], all_coaches: true }))}
                 className={`w-full px-4 py-2 rounded-xl text-sm font-medium border transition ${
-                  form.coach_name === 'all'
+                  form.all_coaches
                     ? 'bg-emerald-600 text-white border-emerald-600'
                     : 'bg-white text-gray-600 border-gray-300 hover:border-emerald-400'
                 }`}
               >
-                {form.coach_name === 'all' ? '✓ ' : ''}כל המאמנים
+                {form.all_coaches ? '✓ ' : ''}כל המאמנים
               </button>
             ) : (
               <div className="flex flex-wrap gap-2">
@@ -237,12 +268,12 @@ export default function RegisterPage() {
                   coaches.forEach(c => { if (c.name) byName.set(c.name, c) })
                   const display = COACHES_FALLBACK.map(fb => byName.get(fb.name) || { id: null, name: fb.name })
                   return display.map(c => {
-                    const selected = form.coach_name === c.name
+                    const selected = form.coach_names.includes(c.name)
                     return (
                       <button
                         key={c.name}
                         type="button"
-                        onClick={() => setForm(p => ({ ...p, coach_id: c.id || null, coach_name: c.name }))}
+                        onClick={() => toggleCoach(c)}
                         className={`px-4 py-2 rounded-xl text-sm font-medium border transition ${
                           selected
                             ? 'bg-emerald-600 text-white border-emerald-600'

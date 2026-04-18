@@ -36,6 +36,7 @@ export default function LeadsManager({ trainerId = null, isAdmin = false } = {})
         if (l.subscription_type === 'unlimited') return false
         if (l.coach_id && coachIds.includes(l.coach_id)) return true
         if (l.requested_coach_name && coachNames.includes(l.requested_coach_name)) return true
+        if (Array.isArray(l.requested_coach_names) && l.requested_coach_names.some(n => coachNames.includes(n))) return true
         return false
       })
     }

@@ -9,6 +9,10 @@ ALTER TABLE members
 ALTER TABLE members
   ADD COLUMN IF NOT EXISTS requested_coach_name text;
 
+-- requested_coach_names: מערך שמות מאמנים (תומך במנוי 4× שמאפשר עד 2 מאמנים)
+ALTER TABLE members
+  ADD COLUMN IF NOT EXISTS requested_coach_names text[];
+
 -- אינדקסים לסינון מהיר של pending לפי מאמן
 CREATE INDEX IF NOT EXISTS idx_members_coach_id ON members(coach_id) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_members_requested_coach_name ON members(requested_coach_name) WHERE status = 'pending';

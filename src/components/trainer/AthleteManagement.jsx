@@ -94,6 +94,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       if (m.subscription_type === 'unlimited') return false
       if (m.coach_id && myCoachIds.includes(m.coach_id)) return true
       if (m.requested_coach_name && myCoachNames.includes(m.requested_coach_name)) return true
+      if (Array.isArray(m.requested_coach_names) && m.requested_coach_names.some(n => myCoachNames.includes(n))) return true
       return false
     }
 

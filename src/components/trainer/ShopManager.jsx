@@ -181,12 +181,14 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
       {tab === 'products' && (
         <div className="space-y-4">
-          <div className="flex justify-end">
+          {isAdmin && (
+            <div className="flex justify-end">
               <button onClick={() => showForm ? setShowForm(false) : openAdd()}
                 className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
                 {showForm ? 'ביטול' : '+ הוסף מוצר'}
               </button>
             </div>
+          )}
 
           {showForm && (
             <div className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
@@ -240,7 +242,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                       {item.price != null && <p className="text-sm text-emerald-600 font-bold">₪{item.price}</p>}
                     </div>
                   </div>
-                  {(isAdmin || item.trainer_id === trainerId) && (
+                  {isAdmin && (
                     <div className="flex gap-2 flex-shrink-0">
                       <button onClick={() => openEdit(item)} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
                       <button onClick={() => deleteProduct(item.id)} className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">🗑️ מחק</button>

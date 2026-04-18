@@ -10,6 +10,21 @@ export default function RegisterPage() {
 
   useEffect(() => {
     supabase.from('branches').select('id, name').then(({ data }) => setBranches(data || []))
+    // אם המשתמש כבר מחובר ומאושר — מעביר אותו לאפליקציה
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) return
+      const { data: member } = await supabase
+        .from('members')
+        .select('status')
+        .eq('id', session.user.id)
+        .maybeSingle()
+      if (!member) return
+      if (member.status === 'approved' || member.status === 'active') {
+        window.location.replace('/')
+      } else if (member.status === 'pending') {
+        setDone(true)
+      }
+    })
   }, [])
 
   function toggleBranch(id) {
@@ -76,6 +91,8 @@ export default function RegisterPage() {
         <div className="text-5xl">✅</div>
         <h2 className="font-bold text-xl text-gray-800">הבקשה נשלחה!</h2>
         <p className="text-gray-500 text-sm">הצוות יאשר אותך בקרוב ותוכל להתחבר לאפליקציה.</p>
+        <p className="text-gray-400 text-xs">לאחר האישור, פתח את הקישור הזה שוב ותועבר אוטומטית לאפליקציה.</p>
+        <a href="/" className="block mt-2 text-sm text-blue-600 underline">כבר אושרת? לחץ כאן להיכנס</a>
       </div>
     </div>
   )

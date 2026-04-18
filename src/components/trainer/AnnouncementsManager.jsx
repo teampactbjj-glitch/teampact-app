@@ -20,7 +20,7 @@ const TYPE_COLORS = {
   announcement: 'bg-gray-100 text-gray-600',
 }
 
-export default function AnnouncementsManager({ trainerId }) {
+export default function AnnouncementsManager({ trainerId, isAdmin }) {
   const [items, setItems]       = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -193,10 +193,12 @@ export default function AnnouncementsManager({ trainerId }) {
                   {item.content && <p className="text-sm text-gray-500 mt-1">{item.content}</p>}
                   <p className="text-xs text-gray-300 mt-2">{new Date(item.created_at).toLocaleDateString('he-IL')}</p>
                 </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={() => openEdit(item)} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
-                  <button onClick={() => deleteItem(item.id)} className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">🗑️ מחק</button>
-                </div>
+                {(isAdmin || item.trainer_id === trainerId) && (
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button onClick={() => openEdit(item)} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
+                    <button onClick={() => deleteItem(item.id)} className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">🗑️ מחק</button>
+                  </div>
+                )}
               </div>
             </li>
           ))}

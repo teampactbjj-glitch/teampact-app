@@ -40,6 +40,7 @@ function formatDateLabel(date) {
 export default function TodayClasses({ trainerId, isAdmin }) {
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
   const todayBtnRef = useRef(null)
+  const selectedBtnRef = useRef(null)
   const didInitialScroll = useRef(false)
   const [classes, setClasses] = useState([])
   const [expanded, setExpanded] = useState(null)
@@ -77,9 +78,18 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
   function jumpToToday() {
     setSelectedDate(startOfDay(new Date()))
-    // גלול את הסלייד אל "היום" במרכז
-    setTimeout(() => todayBtnRef.current?.scrollIntoView?.({ inline: 'center', block: 'nearest', behavior: 'smooth' }), 50)
   }
+
+  // גלול תמיד אל התאריך הנבחר בסלייד (כולל "היום" כשלוחצים עליו)
+  useEffect(() => {
+    if (!selectedBtnRef.current) return
+    selectedBtnRef.current.scrollIntoView?.({
+      inline: 'center',
+      block: 'nearest',
+      behavior: didInitialScroll.current ? 'smooth' : 'auto',
+    })
+    didInitialScroll.current = true
+  }, [selectedDate])
 
   function navigate(delta) {
     setSelectedDate(prev => {
@@ -414,13 +424,9 @@ export default function TodayClasses({ trainerId, isAdmin }) {
             return (
               <button key={i} onClick={() => setSelectedDate(startOfDay(d))}
                 ref={el => {
-                  if (el && today) {
-                    todayBtnRef.current = el
-                    if (!didInitialScroll.current) {
-                      didInitialScroll.current = true
-                      el.scrollIntoView?.({ inline: 'center', block: 'nearest' })
-                    }
-                  }
+                  if (!el) return
+                  if (today) todayBtnRef.current = el
+                  if (selected) selectedBtnRef.current = el
                 }}
                 className={`flex-shrink-0 rounded-xl transition text-center ${
                   today

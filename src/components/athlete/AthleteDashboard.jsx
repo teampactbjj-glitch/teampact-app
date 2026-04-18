@@ -30,7 +30,19 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
   const [loading, setLoading] = useState(true)
   const [activeBranch, setActiveBranch] = useState('all')
   const [selectedDate, setSelectedDate] = useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d })
+  const selectedBtnRef = useRef(null)
   const didInitialScroll = useRef(false)
+
+  // גלול תמיד אל התאריך הנבחר (כולל "היום")
+  useEffect(() => {
+    if (!selectedBtnRef.current) return
+    selectedBtnRef.current.scrollIntoView?.({
+      inline: 'center',
+      block: 'nearest',
+      behavior: didInitialScroll.current ? 'smooth' : 'auto',
+    })
+    didInitialScroll.current = true
+  }, [selectedDate])
 
   const branchIds = member?.branch_ids?.length
     ? member.branch_ids
@@ -141,10 +153,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
             return (
               <button key={i} onClick={() => setSelectedDate(new Date(d))}
                 ref={el => {
-                  if (el && todayFlag && !didInitialScroll.current) {
-                    didInitialScroll.current = true
-                    el.scrollIntoView?.({ inline: 'center', block: 'nearest' })
-                  }
+                  if (el && selected) selectedBtnRef.current = el
                 }}
                 className={`flex-shrink-0 rounded-xl transition text-center ${
                   todayFlag

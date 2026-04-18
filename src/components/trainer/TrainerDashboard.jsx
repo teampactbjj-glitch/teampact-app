@@ -102,7 +102,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
           </div>
         )}
 
-        {activeTab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} />}
+        {activeTab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} isAdmin={isAdmin} />}
       </main>
 
       <BottomNav

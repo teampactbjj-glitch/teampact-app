@@ -82,7 +82,9 @@ export default function TodayClasses({ trainerId, isAdmin }) {
   }
 
   // גלול תמיד אל התאריך הנבחר בסלייד (כולל "היום" כשלוחצים עליו)
+  // תלוי גם ב-loading כי הסלייד לא קיים ב-DOM בזמן טעינה
   useEffect(() => {
+    if (loading) return
     const t = setTimeout(() => {
       const btn = selectedBtnRef.current
       const container = sliderContainerRef.current
@@ -94,7 +96,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       didInitialScroll.current = true
     }, 50)
     return () => clearTimeout(t)
-  }, [selectedDate])
+  }, [selectedDate, loading])
 
   function navigate(delta) {
     setSelectedDate(prev => {

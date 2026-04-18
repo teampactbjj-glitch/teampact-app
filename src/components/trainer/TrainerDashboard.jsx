@@ -5,6 +5,7 @@ import AnnouncementsManager from './AnnouncementsManager'
 import LeadsManager from './LeadsManager'
 import ProfileChangeRequests from './ProfileChangeRequests'
 import ShopManager from './ShopManager'
+import TrainerProfile from './TrainerProfile'
 import BottomNav from '../BottomNav'
 import { supabase } from '../../lib/supabase'
 
@@ -103,6 +104,8 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         )}
 
         {activeTab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} isAdmin={isAdmin} />}
+
+        {activeTab === 'profile' && <TrainerProfile profile={profile} isAdmin={isAdmin} />}
       </main>
 
       <BottomNav

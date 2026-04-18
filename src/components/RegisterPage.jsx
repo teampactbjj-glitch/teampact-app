@@ -38,6 +38,29 @@ export default function RegisterPage() {
     })
   }, [])
 
+  // כשהמסך "הבקשה נשלחה" פעיל — בודקים כל 5 שניות אם המנהל אישר
+  // ברגע שהסטטוס הופך ל-active — מעבירים אוטומטית לאפליקציה
+  useEffect(() => {
+    if (!done) return
+    let cancelled = false
+    const interval = setInterval(async () => {
+      if (cancelled) return
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const { data: member } = await supabase
+        .from('members')
+        .select('status')
+        .eq('id', session.user.id)
+        .maybeSingle()
+      if (cancelled) return
+      if (member?.status === 'approved' || member?.status === 'active') {
+        clearInterval(interval)
+        window.location.replace('/')
+      }
+    }, 5000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [done])
+
   function toggleBranch(id) {
     setForm(p => {
       const already = p.branch_ids.includes(id)
@@ -135,8 +158,11 @@ export default function RegisterPage() {
       <div className="bg-white rounded-2xl shadow p-8 max-w-sm w-full text-center space-y-3">
         <div className="text-5xl">✅</div>
         <h2 className="font-bold text-xl text-gray-800">הבקשה נשלחה!</h2>
-        <p className="text-gray-500 text-sm">הצוות יאשר אותך בקרוב ותוכל להתחבר לאפליקציה.</p>
-        <p className="text-gray-400 text-xs">לאחר האישור, פתח את הקישור הזה שוב ותועבר אוטומטית לאפליקציה.</p>
+        <p className="text-gray-500 text-sm">הצוות יאשר אותך בקרוב.</p>
+        <div className="flex items-center justify-center gap-2 text-xs text-emerald-600 mt-2">
+          <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          <span>ממתין לאישור... הדף יתעדכן אוטומטית</span>
+        </div>
         <a href="/" className="block mt-2 text-sm text-blue-600 underline">כבר אושרת? לחץ כאן להיכנס</a>
       </div>
     </div>

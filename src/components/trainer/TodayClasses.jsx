@@ -82,21 +82,25 @@ export default function TodayClasses({ trainerId, isAdmin }) {
   }
 
   // גלול תמיד אל התאריך הנבחר בסלייד (כולל "היום" כשלוחצים עליו)
-  // תלוי גם ב-loading כי הסלייד לא קיים ב-DOM בזמן טעינה
+  // הסלייד תמיד ב-DOM, אז הגלילה לא תלויה ב-loading
   useEffect(() => {
-    if (loading) return
-    const t = setTimeout(() => {
+    const scrollFn = () => {
       const btn = selectedBtnRef.current
       const container = sliderContainerRef.current
       if (!btn || !container) return
       const btnRect = btn.getBoundingClientRect()
       const contRect = container.getBoundingClientRect()
+      if (btnRect.width === 0) return
       const delta = (btnRect.left + btnRect.width / 2) - (contRect.left + contRect.width / 2)
       container.scrollTo({ left: container.scrollLeft + delta, behavior: didInitialScroll.current ? 'smooth' : 'auto' })
       didInitialScroll.current = true
-    }, 50)
-    return () => clearTimeout(t)
-  }, [selectedDate, loading])
+    }
+    // שני rAF + setTimeout — לוודא שהגלילה עוקפת את התנהגות ברירת המחדל של הדפדפן ל-RTL
+    let raf1 = requestAnimationFrame(() => { raf1 = requestAnimationFrame(scrollFn) })
+    const t1 = setTimeout(scrollFn, 100)
+    const t2 = setTimeout(scrollFn, 350)
+    return () => { cancelAnimationFrame(raf1); clearTimeout(t1); clearTimeout(t2) }
+  }, [selectedDate])
 
   function navigate(delta) {
     setSelectedDate(prev => {

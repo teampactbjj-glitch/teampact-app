@@ -82,25 +82,31 @@ export default function TodayClasses({ trainerId, isAdmin }) {
   }
 
   // גלול תמיד אל התאריך הנבחר בסלייד (כולל "היום" כשלוחצים עליו)
-  // הסלייד תמיד ב-DOM, אז הגלילה לא תלויה ב-loading
+  // חייב לרוץ גם אחרי ש-loading מסתיים, כי fetchDayClasses גורם ל-re-renders שדורסים את הגלילה
   useEffect(() => {
     const scrollFn = () => {
       const btn = selectedBtnRef.current
       const container = sliderContainerRef.current
       if (!btn || !container) return
-      const btnRect = btn.getBoundingClientRect()
-      const contRect = container.getBoundingClientRect()
-      if (btnRect.width === 0) return
-      const delta = (btnRect.left + btnRect.width / 2) - (contRect.left + contRect.width / 2)
-      container.scrollTo({ left: container.scrollLeft + delta, behavior: didInitialScroll.current ? 'smooth' : 'auto' })
+      // scrollIntoView מטפל נכון ב-RTL מקונן ב-LTR
+      try {
+        btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: didInitialScroll.current ? 'smooth' : 'auto' })
+      } catch {
+        const btnRect = btn.getBoundingClientRect()
+        const contRect = container.getBoundingClientRect()
+        if (btnRect.width === 0) return
+        const delta = (btnRect.left + btnRect.width / 2) - (contRect.left + contRect.width / 2)
+        container.scrollTo({ left: container.scrollLeft + delta, behavior: didInitialScroll.current ? 'smooth' : 'auto' })
+      }
       didInitialScroll.current = true
     }
-    // שני rAF + setTimeout — לוודא שהגלילה עוקפת את התנהגות ברירת המחדל של הדפדפן ל-RTL
+    // מרובה timings — חשוב כי loading משתנה כמה פעמים אחרי בחירת תאריך
     let raf1 = requestAnimationFrame(() => { raf1 = requestAnimationFrame(scrollFn) })
     const t1 = setTimeout(scrollFn, 100)
-    const t2 = setTimeout(scrollFn, 350)
-    return () => { cancelAnimationFrame(raf1); clearTimeout(t1); clearTimeout(t2) }
-  }, [selectedDate])
+    const t2 = setTimeout(scrollFn, 400)
+    const t3 = setTimeout(scrollFn, 800)
+    return () => { cancelAnimationFrame(raf1); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+  }, [selectedDate, loading, classes.length])
 
   function navigate(delta) {
     setSelectedDate(prev => {

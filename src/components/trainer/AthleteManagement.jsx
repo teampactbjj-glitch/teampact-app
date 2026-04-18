@@ -67,9 +67,13 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
 
     // מאמן רגיל — סנן לסניפים שהוא מאמן בהם; admin רואה הכל
     let allowedBranchIds = null
+    let myCoachIds = []
+    let myCoachNames = []
     if (!isAdmin && trainerId) {
-      const { data: coaches } = await supabase.from('coaches').select('branch_id').eq('user_id', trainerId)
+      const { data: coaches } = await supabase.from('coaches').select('id, branch_id, name').eq('user_id', trainerId)
       allowedBranchIds = [...new Set((coaches || []).map(c => c.branch_id).filter(Boolean))]
+      myCoachIds   = (coaches || []).map(c => c.id).filter(Boolean)
+      myCoachNames = (coaches || []).map(c => c.name).filter(Boolean)
     }
 
     const pendingQ = supabase.from('members').select('*').eq('status', 'pending').order('created_at', { ascending: false })
@@ -84,7 +88,16 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       return bids.some(b => allowedBranchIds.includes(b))
     }
 
-    setPendingAthletes((pendingData || []).filter(matchesAllowed))
+    // למאמן רגיל — pending רק של מי שבחר אותו כמאמן. unlimited למנהל בלבד
+    const matchesPendingCoach = (m) => {
+      if (isAdmin) return true
+      if (m.subscription_type === 'unlimited') return false
+      if (m.coach_id && myCoachIds.includes(m.coach_id)) return true
+      if (m.requested_coach_name && myCoachNames.includes(m.requested_coach_name)) return true
+      return false
+    }
+
+    setPendingAthletes((pendingData || []).filter(m => matchesAllowed(m) && matchesPendingCoach(m)))
     setAthletes((data || []).filter(matchesAllowed))
     setLoading(false)
   }
@@ -124,7 +137,13 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   }
 
   async function approvePending(id) {
+    const lead = pendingAthletes.find(a => a.id === id)
     await supabase.from('members').update({ status: 'approved', active: true }).eq('id', id)
+    if (lead?.email) {
+      supabase.functions.invoke('send-approval-email', {
+        body: { email: lead.email, full_name: lead.full_name },
+      }).catch(err => console.warn('send-approval-email skipped:', err?.message || err))
+    }
     fetchAthletes()
     onPendingChange?.()
   }

@@ -3,21 +3,44 @@ import { supabase } from '../../lib/supabase'
 
 const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
-export default function LeadsManager() {
+export default function LeadsManager({ trainerId = null, isAdmin = false } = {}) {
   const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [branches, setBranches] = useState({})
   const [actionLoading, setActionLoading] = useState({})
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { fetchAll() }, [trainerId, isAdmin])
 
   async function fetchAll() {
     setLoading(true)
+
+    // מאמן רגיל רואה רק לידים שנרשמו אליו (לפי coach_id/requested_coach_name);
+    // מנהל רואה הכל, כולל unlimited (שלא משויך למאמן)
+    let coachNames = []
+    let coachIds = []
+    if (!isAdmin && trainerId) {
+      const { data: myCoaches } = await supabase
+        .from('coaches').select('id, name').eq('user_id', trainerId)
+      coachNames = (myCoaches || []).map(c => c.name).filter(Boolean)
+      coachIds   = (myCoaches || []).map(c => c.id).filter(Boolean)
+    }
+
     const [{ data: leadsData }, { data: branchData }] = await Promise.all([
       supabase.from('members').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('branches').select('id, name'),
     ])
-    setLeads(leadsData || [])
+
+    let filtered = leadsData || []
+    if (!isAdmin && trainerId) {
+      filtered = filtered.filter(l => {
+        if (l.subscription_type === 'unlimited') return false
+        if (l.coach_id && coachIds.includes(l.coach_id)) return true
+        if (l.requested_coach_name && coachNames.includes(l.requested_coach_name)) return true
+        return false
+      })
+    }
+
+    setLeads(filtered)
     const bmap = {}
     branchData?.forEach(b => { bmap[b.id] = b.name })
     setBranches(bmap)
@@ -27,6 +50,12 @@ export default function LeadsManager() {
   async function approveLead(lead, subType) {
     setActionLoading(p => ({ ...p, [lead.id]: 'approving' }))
     await supabase.from('members').update({ status: 'active', subscription_type: subType }).eq('id', lead.id)
+    // מייל אישור (אם ה-Edge Function לא מוגדרת — פשוט נתעלם משגיאה)
+    if (lead.email) {
+      supabase.functions.invoke('send-approval-email', {
+        body: { email: lead.email, full_name: lead.full_name },
+      }).catch(err => console.warn('send-approval-email skipped:', err?.message || err))
+    }
     setLeads(p => p.filter(l => l.id !== lead.id))
     setActionLoading(p => ({ ...p, [lead.id]: null }))
   }

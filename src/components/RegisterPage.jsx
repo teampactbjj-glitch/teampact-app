@@ -1,15 +1,26 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
+// רשימת המאמנים הזמינים בטופס — גם אם עדיין אין להם רשומה בטבלת coaches
+const COACHES_FALLBACK = [
+  { name: 'דודי בן זקן' },
+  { name: 'סהר גפלא' },
+  { name: 'מושיק קידר' },
+  { name: 'איתי ליפשיץ' },
+  { name: 'אולגה רובין' },
+]
+
 export default function RegisterPage() {
   const [branches, setBranches] = useState([])
-  const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '', passwordConfirm: '', branch_ids: [], subscription_type: '2x_week' })
+  const [coaches, setCoaches] = useState([])  // מהדב — משתמש ב-id אם קיים, אחרת לפי שם
+  const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '', passwordConfirm: '', branch_ids: [], subscription_type: '2x_week', coach_id: null, coach_name: '' })
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     supabase.from('branches').select('id, name').then(({ data }) => setBranches(data || []))
+    supabase.from('coaches').select('id, name').then(({ data }) => setCoaches(data || []))
     // אם המשתמש כבר מחובר ומאושר — מעביר אותו לאפליקציה
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) return
@@ -37,6 +48,11 @@ export default function RegisterPage() {
   async function handleSubmit() {
     if (!form.full_name.trim() || !form.email.trim() || form.branch_ids.length === 0) {
       setError('נא למלא שם, אימייל ולבחור לפחות סניף אחד')
+      return
+    }
+    // בחירת מאמן חובה רק למנויי 2x/4x (לא ל-unlimited)
+    if (form.subscription_type !== 'unlimited' && !form.coach_name) {
+      setError('נא לבחור מאמן')
       return
     }
     if (!form.password || form.password.length < 6) {
@@ -73,6 +89,8 @@ export default function RegisterPage() {
       branch_id: form.branch_ids[0],
       subscription_type: form.subscription_type,
       status: 'pending',
+      coach_id: form.coach_id || null,
+      requested_coach_name: form.subscription_type === 'unlimited' ? null : (form.coach_name || null),
     }
     if (userId) memberPayload.id = userId
     const { error: memberErr } = await supabase.from('members').insert(memberPayload)
@@ -186,12 +204,58 @@ export default function RegisterPage() {
             <select
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
               value={form.subscription_type}
-              onChange={e => setForm(p => ({ ...p, subscription_type: e.target.value }))}
+              onChange={e => setForm(p => ({ ...p, subscription_type: e.target.value, coach_id: null, coach_name: '' }))}
             >
               <option value="2x_week">2× שבוע</option>
               <option value="4x_week">4× שבוע</option>
               <option value="unlimited">ללא הגבלה</option>
             </select>
+          </div>
+
+          {/* בחירת מאמן — חובה רק למנויי 2x/4x */}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-2">
+              {form.subscription_type === 'unlimited' ? 'מאמן' : 'מאמן *'}
+            </label>
+            {form.subscription_type === 'unlimited' ? (
+              <button
+                type="button"
+                onClick={() => setForm(p => ({ ...p, coach_id: null, coach_name: 'all' }))}
+                className={`w-full px-4 py-2 rounded-xl text-sm font-medium border transition ${
+                  form.coach_name === 'all'
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-emerald-400'
+                }`}
+              >
+                {form.coach_name === 'all' ? '✓ ' : ''}כל המאמנים
+              </button>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {(() => {
+                  // מיזוג: מאמנים מהדב לפי שם, ו-fallback אם לא קיימים ברשימה
+                  const byName = new Map()
+                  coaches.forEach(c => { if (c.name) byName.set(c.name, c) })
+                  const display = COACHES_FALLBACK.map(fb => byName.get(fb.name) || { id: null, name: fb.name })
+                  return display.map(c => {
+                    const selected = form.coach_name === c.name
+                    return (
+                      <button
+                        key={c.name}
+                        type="button"
+                        onClick={() => setForm(p => ({ ...p, coach_id: c.id || null, coach_name: c.name }))}
+                        className={`px-4 py-2 rounded-xl text-sm font-medium border transition ${
+                          selected
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-white text-gray-600 border-gray-300 hover:border-emerald-400'
+                        }`}
+                      >
+                        {selected ? '✓ ' : ''}{c.name}
+                      </button>
+                    )
+                  })
+                })()}
+              </div>
+            )}
           </div>
         </div>
 

@@ -445,10 +445,12 @@ export default function TodayClasses({ trainerId, isAdmin }) {
         </div>
       </div>
 
-      {/* Branch filter chips */}
-      {branches.length > 1 && (() => {
+      {/* Branch filter chips — מציג רק סניפים שיש בהם שיעורים שהמאמן רואה */}
+      {(() => {
         const branchCount = {}
         classes.forEach(c => { if (c.branch_id) branchCount[c.branch_id] = (branchCount[c.branch_id] || 0) + 1 })
+        const visibleBranches = branches.filter(b => branchCount[b.id] > 0)
+        if (visibleBranches.length <= 1) return null  // אין מה לסנן
         return (
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
             <style>{`.no-scrollbar::-webkit-scrollbar { display: none }`}</style>
@@ -460,7 +462,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
               }`}>
               הכל ({classes.length})
             </button>
-            {branches.map(b => {
+            {visibleBranches.map(b => {
               const count = branchCount[b.id] || 0
               const active = selectedBranch === b.id
               return (

@@ -36,10 +36,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
-    supabase.from('branches').select('id, name').order('name').then(({ data }) => {
-      if (data?.length) setBranches(data)
-    })
-  }, [])
+    (async () => {
+      const { data: all } = await supabase.from('branches').select('id, name').order('name')
+      if (!all) return
+      if (isAdmin || !trainerId) { setBranches(all); return }
+      const { data: coaches } = await supabase.from('coaches').select('branch_id').eq('user_id', trainerId)
+      const allowed = new Set((coaches || []).map(c => c.branch_id).filter(Boolean))
+      setBranches(all.filter(b => allowed.has(b.id)))
+    })()
+  }, [isAdmin, trainerId])
 
   useEffect(() => { fetchAthletes() }, [trainerId, isAdmin])
 
@@ -59,14 +64,28 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
 
   async function fetchAthletes() {
     setLoading(true)
-    const { data: pendingData } = await supabase
-      .from('members').select('*').eq('status', 'pending').order('created_at', { ascending: false })
-    setPendingAthletes(pendingData || [])
 
-    const { data, error } = await supabase
-      .from('members').select('*').neq('status', 'pending').order('full_name')
+    // מאמן רגיל — סנן לסניפים שהוא מאמן בהם; admin רואה הכל
+    let allowedBranchIds = null
+    if (!isAdmin && trainerId) {
+      const { data: coaches } = await supabase.from('coaches').select('branch_id').eq('user_id', trainerId)
+      allowedBranchIds = [...new Set((coaches || []).map(c => c.branch_id).filter(Boolean))]
+    }
+
+    const pendingQ = supabase.from('members').select('*').eq('status', 'pending').order('created_at', { ascending: false })
+    const activeQ  = supabase.from('members').select('*').neq('status', 'pending').order('full_name')
+
+    const [{ data: pendingData }, { data, error }] = await Promise.all([pendingQ, activeQ])
     if (error) console.error('fetchAthletes error:', error)
-    setAthletes(data || [])
+
+    const matchesAllowed = (m) => {
+      if (!allowedBranchIds) return true
+      const bids = m.branch_ids?.length ? m.branch_ids : (m.branch_id ? [m.branch_id] : [])
+      return bids.some(b => allowedBranchIds.includes(b))
+    }
+
+    setPendingAthletes((pendingData || []).filter(matchesAllowed))
+    setAthletes((data || []).filter(matchesAllowed))
     setLoading(false)
   }
 

@@ -81,32 +81,35 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     setSelectedDate(startOfDay(new Date()))
   }
 
-  // גלול תמיד אל התאריך הנבחר בסלייד (כולל "היום" כשלוחצים עליו)
-  // חייב לרוץ גם אחרי ש-loading מסתיים, כי fetchDayClasses גורם ל-re-renders שדורסים את הגלילה
+  // גלול תמיד אל התאריך הנבחר בסלייד — עם retry שממשיך 2 שניות
+  // פתרון ל-fetchDayClasses שמשנה state כמה פעמים ודורס את הגלילה
   useEffect(() => {
-    const scrollFn = () => {
+    let cancelled = false
+    let attempts = 0
+    const MAX_ATTEMPTS = 20
+    const tick = () => {
+      if (cancelled) return
+      attempts++
       const btn = selectedBtnRef.current
       const container = sliderContainerRef.current
-      if (!btn || !container) return
-      // scrollIntoView מטפל נכון ב-RTL מקונן ב-LTR
-      try {
-        btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: didInitialScroll.current ? 'smooth' : 'auto' })
-      } catch {
-        const btnRect = btn.getBoundingClientRect()
-        const contRect = container.getBoundingClientRect()
-        if (btnRect.width === 0) return
-        const delta = (btnRect.left + btnRect.width / 2) - (contRect.left + contRect.width / 2)
-        container.scrollTo({ left: container.scrollLeft + delta, behavior: didInitialScroll.current ? 'smooth' : 'auto' })
+      if (btn && container) {
+        try {
+          btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: didInitialScroll.current && attempts > 1 ? 'smooth' : 'auto' })
+          didInitialScroll.current = true
+        } catch {
+          const btnRect = btn.getBoundingClientRect()
+          const contRect = container.getBoundingClientRect()
+          if (btnRect.width > 0) {
+            const delta = (btnRect.left + btnRect.width / 2) - (contRect.left + contRect.width / 2)
+            container.scrollTo({ left: container.scrollLeft + delta })
+          }
+        }
       }
-      didInitialScroll.current = true
+      if (attempts < MAX_ATTEMPTS) setTimeout(tick, 100)
     }
-    // מרובה timings — חשוב כי loading משתנה כמה פעמים אחרי בחירת תאריך
-    let raf1 = requestAnimationFrame(() => { raf1 = requestAnimationFrame(scrollFn) })
-    const t1 = setTimeout(scrollFn, 100)
-    const t2 = setTimeout(scrollFn, 400)
-    const t3 = setTimeout(scrollFn, 800)
-    return () => { cancelAnimationFrame(raf1); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
-  }, [selectedDate, loading, classes.length])
+    tick()
+    return () => { cancelled = true }
+  }, [selectedDate])
 
   function navigate(delta) {
     setSelectedDate(prev => {

@@ -51,7 +51,9 @@ export default function TodayClasses({ trainerId, isAdmin }) {
   const [regCountsByClass, setRegCountsByClass] = useState({}) // { classId: number } רישומים לשבוע
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
-  const [newClass, setNewClass] = useState({ name: '', start_time: '', duration_minutes: 60 })
+  const [newClass, setNewClass] = useState({ name: '', coach_id: '', date: '', start_time: '', duration_minutes: 60 })
+  const [addError, setAddError] = useState('')
+  const [coaches, setCoaches] = useState([])
   const [actionLoading, setActionLoading] = useState({}) // { `${classId}_${memberId}`: bool }
   // Visitor search state per class
   const [visitorSearch, setVisitorSearch] = useState({}) // { classId: query }
@@ -62,6 +64,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
   useEffect(() => {
     supabase.from('branches').select('id, name').order('name').then(({ data }) => setBranches(data || []))
+    supabase.from('coaches').select('id, name, branch_id, user_id').order('name').then(({ data }) => setCoaches(data || []))
   }, [])
 
   useEffect(() => {
@@ -76,10 +79,6 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     const i = setInterval(() => fetchMemberCounts(classes.map(c => c.id)), 15000)
     return () => clearInterval(i)
   }, [classes, selectedDate])
-
-  function jumpToToday() {
-    setSelectedDate(startOfDay(new Date()))
-  }
 
   // גלול תמיד אל התאריך הנבחר בסלייד — עם retry שממשיך 2 שניות
   // פתרון ל-fetchDayClasses שמשנה state כמה פעמים ודורס את הגלילה
@@ -137,7 +136,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
         coachName: cls.coach_name || '',
       }))
       setClasses(mapped)
-      fetchMemberCounts(mapped.map(c => c.id))
+      fetchMemberCounts(mapped.filter(c => c.status !== 'pending').map(c => c.id))
       setLoading(false)
       return
     }
@@ -162,13 +161,15 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       .order('start_time')
 
     if (error) console.error('fetchTodayClasses error:', error)
-    const mapped = (data || []).map(cls => ({
+    // מאמן רואה רק שיעורים מאושרים + שיעורים שלו הממתינים
+    const filtered = (data || []).filter(c => c.status !== 'pending' || coachIds.includes(c.coach_id))
+    const mapped = filtered.map(cls => ({
       ...cls,
       branchName: coachBranchMap[cls.coach_id] || '',
       coachName: cls.coach_name || '',
     }))
     setClasses(mapped)
-    fetchMemberCounts(mapped.map(c => c.id))
+    fetchMemberCounts(mapped.filter(c => c.status !== 'pending').map(c => c.id))
     setLoading(false)
   }
 
@@ -381,14 +382,56 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
   async function addClass(e) {
     e.preventDefault()
-    const { error } = await supabase.from('classes').insert({
-      ...newClass,
-      coach_id: trainerId,
-      day_of_week: selectedDate.getDay(),
-    })
-    if (error) { console.error('addClass error:', error); return }
+    setAddError('')
+    if (!newClass.coach_id) { setAddError('יש לבחור מאמן'); return }
+    if (!newClass.date) { setAddError('יש לבחור תאריך'); return }
+    const coach = coaches.find(c => c.id === newClass.coach_id)
+    const d = new Date(newClass.date + 'T00:00:00')
+    const payload = {
+      name: newClass.name,
+      start_time: newClass.start_time,
+      duration_minutes: newClass.duration_minutes,
+      coach_id: newClass.coach_id,
+      coach_name: coach?.name || null,
+      branch_id: coach?.branch_id || null,
+      day_of_week: d.getDay(),
+      status: isAdmin ? 'approved' : 'pending',
+    }
+    const { error } = await supabase.from('classes').insert(payload)
+    if (error) { console.error('addClass error:', error); setAddError(error.message || 'שגיאה בשמירה'); return }
     setShowAdd(false)
-    setNewClass({ name: '', start_time: '', duration_minutes: 60 })
+    setNewClass({ name: '', coach_id: '', date: '', start_time: '', duration_minutes: 60 })
+    alert(isAdmin ? 'השיעור נוסף ומאושר' : 'השיעור נשלח לאישור מנהל')
+    fetchDayClasses(selectedDate)
+  }
+
+  function openAddForm() {
+    if (showAdd) { setShowAdd(false); return }
+    const defaultCoach = !isAdmin ? coaches.find(c => c.user_id === trainerId) : null
+    const isoDate = (() => {
+      const d = startOfDay(selectedDate)
+      const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    })()
+    setNewClass(p => ({
+      ...p,
+      date: p.date || isoDate,
+      coach_id: p.coach_id || defaultCoach?.id || '',
+    }))
+    setAddError('')
+    setShowAdd(true)
+  }
+
+  async function approveClass(classId) {
+    const { error } = await supabase.from('classes').update({ status: 'approved' }).eq('id', classId)
+    if (error) { console.error('approveClass error:', error); alert('שגיאה באישור'); return }
+    fetchDayClasses(selectedDate)
+  }
+
+  async function rejectClass(classId) {
+    if (!confirm('למחוק את השיעור הממתין?')) return
+    const { error } = await supabase.from('classes').delete().eq('id', classId)
+    if (error) { console.error('rejectClass error:', error); alert('שגיאה במחיקה'); return }
     fetchDayClasses(selectedDate)
   }
 
@@ -420,15 +463,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
           <p className="text-xs text-gray-400 mt-0.5">{selectedDate.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={jumpToToday}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
-              isToday(selectedDate)
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'text-blue-600 border-blue-300 hover:bg-blue-50'
-            }`}>
-            היום
-          </button>
-          <button onClick={() => setShowAdd(!showAdd)}
+          <button onClick={openAddForm}
             className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap">
             + הוסף שיעור
           </button>
@@ -508,29 +543,71 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
       {showAdd && (
         <form onSubmit={addClass} className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
-          <input
-            className="w-full border rounded-lg px-3 py-2 text-sm"
-            placeholder="שם השיעור"
-            value={newClass.name}
-            onChange={e => setNewClass(p => ({ ...p, name: e.target.value }))}
-            required
-          />
-          <input
-            type="time"
-            className="w-full border rounded-lg px-3 py-2 text-sm"
-            value={newClass.start_time}
-            onChange={e => setNewClass(p => ({ ...p, start_time: e.target.value }))}
-            required
-          />
-          <input
-            type="number"
-            className="w-full border rounded-lg px-3 py-2 text-sm"
-            placeholder="משך (דקות)"
-            value={newClass.duration_minutes}
-            onChange={e => setNewClass(p => ({ ...p, duration_minutes: Number(e.target.value) }))}
-          />
+          {!isAdmin && (
+            <p className="text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-3 py-2">
+              שיעור שתוסיף יישלח לאישור מנהל לפני שיופיע למתאמנים.
+            </p>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">שם השיעור</label>
+            <input
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              placeholder="לדוגמה: No-Gi מתקדמים"
+              value={newClass.name}
+              onChange={e => setNewClass(p => ({ ...p, name: e.target.value }))}
+              required
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">שם המאמן</label>
+            <select
+              className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+              value={newClass.coach_id}
+              onChange={e => setNewClass(p => ({ ...p, coach_id: e.target.value }))}
+              required
+            >
+              <option value="">בחר מאמן…</option>
+              {coaches.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">תאריך האימון</label>
+              <input
+                type="date"
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={newClass.date}
+                onChange={e => setNewClass(p => ({ ...p, date: e.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">שעת האימון</label>
+              <input
+                type="time"
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={newClass.start_time}
+                onChange={e => setNewClass(p => ({ ...p, start_time: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">משך (דקות)</label>
+            <input
+              type="number"
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              value={newClass.duration_minutes}
+              onChange={e => setNewClass(p => ({ ...p, duration_minutes: Number(e.target.value) }))}
+            />
+          </div>
+          {addError && <p className="text-xs text-red-600">{addError}</p>}
           <div className="flex gap-2">
-            <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm">שמור</button>
+            <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-bold">
+              {isAdmin ? 'שמור ופרסם' : 'שלח לאישור'}
+            </button>
             <button type="button" onClick={() => setShowAdd(false)} className="flex-1 border py-2 rounded-lg text-sm">ביטול</button>
           </div>
         </form>
@@ -554,7 +631,24 @@ export default function TodayClasses({ trainerId, isAdmin }) {
         const totalCount = data?.members?.length ?? 0
 
         return (
-          <div key={cls.id} className="bg-white rounded-xl shadow-sm overflow-hidden border">
+          <div key={cls.id} className={`bg-white rounded-xl shadow-sm overflow-hidden border ${cls.status === 'pending' ? 'border-amber-300 ring-1 ring-amber-200' : ''}`}>
+            {cls.status === 'pending' && (
+              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-amber-900">⏳ ממתין לאישור מנהל</span>
+                {isAdmin && (
+                  <div className="flex gap-2">
+                    <button onClick={() => approveClass(cls.id)}
+                      className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg font-bold">
+                      ✓ אשר ופרסם
+                    </button>
+                    <button onClick={() => rejectClass(cls.id)}
+                      className="text-xs bg-white border border-red-300 text-red-600 hover:bg-red-50 px-3 py-1 rounded-lg font-bold">
+                      ✕ דחה
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             {/* Class header */}
             <button
               onClick={() => handleExpand(cls.id)}

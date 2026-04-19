@@ -81,6 +81,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
         if (branchIds.length === 0) { setClasses([]); return }
         const { data, error } = await supabase.from('classes')
           .select('*, branches(name)').in('branch_id', branchIds)
+          .or('status.eq.approved,status.is.null')
           .order('day_of_week').order('start_time')
         if (error) console.error('ScheduleTab classes error:', error)
         setClasses(data || [])
@@ -772,6 +773,8 @@ export default function AthleteDashboard({ profile }) {
 
   const subscriptionType = member?.subscription_type || profile?.subscription_type
   const limit = SUBSCRIPTION_LIMITS[subscriptionType] ?? 2
+  const displayName = member?.full_name || profile?.full_name || profile?.email || 'מתאמן'
+  const displaySub = SUBSCRIPTION_LABELS[subscriptionType] || (subscriptionType ? subscriptionType : null)
   const announcementsForTab = announcements.filter(a => a.type === 'general' || a.type === 'announcement' || a.type === 'seminar')
 
   useEffect(() => {
@@ -861,12 +864,12 @@ export default function AthleteDashboard({ profile }) {
             </div>
             <div>
               <h1 className="font-black text-lg leading-none tracking-wide">TeamPact</h1>
-              <p className="text-gray-300 text-xs mt-0.5">שלום, <span className="font-bold text-white">{profile?.full_name}</span></p>
+              <p className="text-gray-300 text-xs mt-0.5">שלום, <span className="font-bold text-white">{displayName}</span></p>
             </div>
           </div>
-          {SUBSCRIPTION_LABELS[subscriptionType] && (
+          {displaySub && (
             <span className="text-[10px] bg-red-600 text-white px-2 py-1 rounded-full font-bold shadow">
-              {SUBSCRIPTION_LABELS[subscriptionType]}
+              {displaySub}
             </span>
           )}
         </div>

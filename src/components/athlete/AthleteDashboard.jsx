@@ -774,9 +774,33 @@ export default function AthleteDashboard({ profile }) {
   const limit = SUBSCRIPTION_LIMITS[subscriptionType] ?? 2
   const announcementsForTab = announcements.filter(a => a.type === 'general' || a.type === 'announcement' || a.type === 'seminar')
 
+  const lastSeenKey = profile?.id ? `announcements_last_seen_${profile.id}` : null
+  const [lastSeen, setLastSeen] = useState(() => (lastSeenKey && typeof window !== 'undefined' ? window.localStorage.getItem(lastSeenKey) : null) || '')
+  const announcementsCount = announcementsForTab.filter(a => a.created_at && a.created_at > lastSeen).length
+
+  useEffect(() => {
+    if (activeTab === 'announcements' && announcementsForTab.length && lastSeenKey) {
+      const max = announcementsForTab.reduce((m, a) => (a.created_at && a.created_at > m ? a.created_at : m), '')
+      if (max && max !== lastSeen) {
+        window.localStorage.setItem(lastSeenKey, max)
+        setLastSeen(max)
+      }
+    }
+  }, [activeTab, announcements, lastSeenKey])
+
   useEffect(() => {
     if (profile?.id) { fetchMyClasses(); fetchAnnouncements(); fetchRegistrations(); fetchBranches() }
   }, [profile])
+
+  useEffect(() => {
+    if (!profile?.id) return
+    const ch = supabase.channel('announcements-athlete')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => fetchAnnouncements())
+      .subscribe()
+    const onVis = () => { if (document.visibilityState === 'visible') fetchAnnouncements() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { supabase.removeChannel(ch); document.removeEventListener('visibilitychange', onVis) }
+  }, [profile?.id])
 
   async function fetchBranches() {
     const { data } = await supabase.from('branches').select('id, name')
@@ -886,7 +910,7 @@ export default function AthleteDashboard({ profile }) {
         {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} />}
         {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}
       </main>
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} isTrainer={false} />
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} isTrainer={false} announcementsCount={announcementsCount} />
     </div>
   )
 }

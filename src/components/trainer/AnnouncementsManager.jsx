@@ -20,7 +20,7 @@ const TYPE_COLORS = {
   announcement: 'bg-gray-100 text-gray-600',
 }
 
-export default function AnnouncementsManager({ trainerId, isAdmin }) {
+export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   const [items, setItems]       = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -96,11 +96,13 @@ export default function AnnouncementsManager({ trainerId, isAdmin }) {
     setEditingId(null)
     setShowForm(false)
     fetchAnnouncements()
+    onChange?.()
   }
 
   async function deleteItem(id) {
     await supabase.from('announcements').delete().eq('id', id)
     setItems(prev => prev.filter(i => i.id !== id))
+    onChange?.()
   }
 
   return (

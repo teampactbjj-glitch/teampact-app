@@ -137,9 +137,11 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
     fetchAthletes()
   }
 
-  async function approvePending(id) {
+  async function approvePending(id, subType) {
     const lead = pendingAthletes.find(a => a.id === id)
-    await supabase.from('members').update({ status: 'approved', active: true }).eq('id', id)
+    const patch = { status: 'approved', active: true }
+    if (subType) { patch.subscription_type = subType; patch.membership_type = subType }
+    await supabase.from('members').update(patch).eq('id', id)
     if (lead?.email) {
       supabase.functions.invoke('send-approval-email', {
         body: { email: lead.email, full_name: lead.full_name },
@@ -345,32 +347,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
           </div>
         ) : (
           <ul className="space-y-3">
-            {pendingAthletes.map(a => {
-              const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
-              const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
-              return (
-                <li key={a.id} className="bg-white rounded-xl border px-4 py-3 shadow-sm space-y-2">
-                  <div>
-                    <p className="font-semibold text-gray-800">{a.full_name}</p>
-                    <p className="text-xs text-gray-500">
-                      {a.email && <span>{a.email} · </span>}
-                      {a.phone && <span>{a.phone} · </span>}
-                      {bnames && <span>📍 {bnames}</span>}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => approvePending(a.id)}
-                      className="flex-1 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700">
-                      ✓ אשר
-                    </button>
-                    <button type="button" onClick={() => rejectPending(a.id)}
-                      className="flex-1 py-1.5 border border-red-300 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50">
-                      ✕ דחה
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
+            {pendingAthletes.map(a => (
+              <PendingLeadCard
+                key={a.id}
+                lead={a}
+                branches={branches}
+                onApprove={(sub) => approvePending(a.id, sub)}
+                onReject={() => rejectPending(a.id)}
+              />
+            ))}
           </ul>
         )
       )}
@@ -485,5 +470,73 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
         )
       })()}
     </div>
+  )
+}
+
+
+function PendingLeadCard({ lead, branches, onApprove, onReject }) {
+  const [subType, setSubType] = useState(lead.subscription_type || lead.membership_type || '2x_week')
+  const [busy, setBusy] = useState(null)
+  const bids = lead.branch_ids?.length ? lead.branch_ids : (lead.branch_id ? [lead.branch_id] : [])
+  const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
+  const coachName = lead.requested_coach_name
+    || (Array.isArray(lead.requested_coach_names) ? lead.requested_coach_names.filter(Boolean).join(', ') : '')
+  const original = lead.subscription_type || lead.membership_type
+
+  async function handleApprove() {
+    setBusy('approve')
+    try { await onApprove(subType) } finally { setBusy(null) }
+  }
+  async function handleReject() {
+    if (!window.confirm('למחוק את הבקשה?')) return
+    setBusy('reject')
+    try { await onReject() } finally { setBusy(null) }
+  }
+
+  return (
+    <li className="bg-white rounded-xl border px-4 py-3 shadow-sm space-y-3">
+      <div>
+        <p className="font-semibold text-gray-800">{lead.full_name}</p>
+        <p className="text-xs text-gray-500">
+          {lead.email && <span>{lead.email}</span>}
+          {lead.phone && <span> · {lead.phone}</span>}
+        </p>
+        {bnames && <p className="text-xs text-blue-600 mt-0.5">📍 {bnames}</p>}
+        {coachName && <p className="text-xs text-purple-600 mt-0.5">👤 מאמן מבוקש: {coachName}</p>}
+        {original && (
+          <p className="text-xs text-emerald-700 mt-0.5">
+            🏋️ נרשם ל-: {MEMBERSHIP_LABELS[original] || original}
+          </p>
+        )}
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-gray-500">סוג מנוי לאישור</label>
+          {subType !== original && (
+            <span className="text-[11px] text-orange-600 font-semibold">שונה מהבקשה</span>
+          )}
+        </div>
+        <select
+          className="w-full border rounded-lg px-3 py-1.5 text-sm"
+          value={subType}
+          onChange={e => setSubType(e.target.value)}
+        >
+          {Object.entries(MEMBERSHIP_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <p className="text-[11px] text-gray-400 mt-1">ניתן לערוך לפני אישור</p>
+      </div>
+
+      <div className="flex gap-2">
+        <button type="button" onClick={handleApprove} disabled={!!busy}
+          className="flex-1 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50">
+          {busy === 'approve' ? '...' : '✓ אשר'}
+        </button>
+        <button type="button" onClick={handleReject} disabled={!!busy}
+          className="flex-1 py-1.5 border border-red-300 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50 disabled:opacity-50">
+          {busy === 'reject' ? '...' : '✕ דחה'}
+        </button>
+      </div>
+    </li>
   )
 }

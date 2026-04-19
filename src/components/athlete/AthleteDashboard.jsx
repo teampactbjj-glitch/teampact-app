@@ -147,10 +147,12 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
     return d
   }
 
-  // סליידר של 90 תאריכים (30 אחורה, 60 קדימה)
+  // סליידר של שבוע אחד — יום א' עד יום ו' (אין אימונים בשבת)
+  const weekStart = new Date(today)
+  weekStart.setDate(today.getDate() - today.getDay())
   const sliderCells = []
-  for (let i = -30; i <= 60; i++) {
-    const d = new Date(today); d.setDate(today.getDate() + i); sliderCells.push(d)
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); sliderCells.push(d)
   }
   const isSelected = (d) => selectedDate && d.toDateString() === selectedDate.toDateString()
   const isTodayDate = (d) => d.toDateString() === today.toDateString()

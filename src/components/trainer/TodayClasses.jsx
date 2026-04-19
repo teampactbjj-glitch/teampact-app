@@ -398,12 +398,14 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     if (!classData[id]) fetchClassDetails(id)
   }
 
-  // סליידר של כל התאריכים (30 אחורה, 60 קדימה)
-  const sliderCells = []
+  // סליידר של שבוע אחד — יום א' עד יום ו' (אין אימונים בשבת)
   const today0 = startOfDay(new Date())
-  for (let i = -30; i <= 60; i++) {
-    const d = new Date(today0)
-    d.setDate(today0.getDate() + i)
+  const weekStart0 = new Date(today0)
+  weekStart0.setDate(today0.getDate() - today0.getDay())
+  const sliderCells = []
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(weekStart0)
+    d.setDate(weekStart0.getDate() + i)
     sliderCells.push(d)
   }
   const isSelected = (d) => d.toDateString() === selectedDate.toDateString()

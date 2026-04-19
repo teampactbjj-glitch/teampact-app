@@ -304,8 +304,11 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
       )}
 
       {/* השיעורים שלי השבוע — מופיע תמיד */}
-      <div className="space-y-2">
-        <h3 className="text-sm font-bold text-gray-700">📌 השיעורים שנרשמתי אליהם</h3>
+      <div className="space-y-2 pt-5 mt-5 border-t-2 border-gray-200">
+        <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+          <span className="text-xl">📌</span>
+          השיעורים שנרשמתי אליהם
+        </h3>
         {myClasses.length === 0 ? (
           <div className="text-center py-8 text-gray-400 bg-white rounded-2xl border">
             <div className="text-3xl mb-2">📭</div>
@@ -339,7 +342,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
                 <span className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap ${
                   past ? 'bg-gray-200 text-gray-500' : 'bg-white text-red-700'
                 }`}>
-                  {past ? 'הסתיים' : '✓ רשום'}
+                  {past ? 'הסתיים' : '✕ ביטול'}
                 </span>
               </button>
             )

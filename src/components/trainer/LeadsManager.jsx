@@ -127,12 +127,28 @@ function LeadCard({ lead, branches, loading, onApprove, onReject }) {
           <p className="text-xs text-gray-500 mt-0.5">{lead.email}</p>
           {lead.phone && <p className="text-xs text-gray-500">{lead.phone}</p>}
           <p className="text-xs text-blue-600 mt-1">📍 {branchNames}</p>
+          {(() => {
+            const coachName = lead.requested_coach_name
+              || (Array.isArray(lead.requested_coach_names) ? lead.requested_coach_names.filter(Boolean).join(', ') : '')
+            return coachName ? <p className="text-xs text-purple-600 mt-0.5">👤 מאמן מבוקש: {coachName}</p> : null
+          })()}
+          {lead.subscription_type && (
+            <p className="text-xs text-emerald-700 mt-0.5">🏋️ נרשם ל-: {SUB_LABELS[lead.subscription_type] || lead.subscription_type}</p>
+          )}
         </div>
         <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium shrink-0">ממתין</span>
       </div>
 
       <div>
-        <label className="text-xs text-gray-500 block mb-1">סוג מנוי לאישור</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-gray-500">סוג מנוי לאישור</label>
+          {lead.subscription_type && (
+            <span className="text-[11px] text-gray-500">
+              בחירת המתאמן: <span className="font-semibold text-gray-700">{SUB_LABELS[lead.subscription_type] || lead.subscription_type}</span>
+              {subType !== lead.subscription_type && <span className="text-orange-600 mr-1">(שונה)</span>}
+            </span>
+          )}
+        </div>
         <select
           className="w-full border rounded-lg px-3 py-1.5 text-sm"
           value={subType}
@@ -140,6 +156,7 @@ function LeadCard({ lead, branches, loading, onApprove, onReject }) {
         >
           {Object.entries(SUB_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
+        <p className="text-[11px] text-gray-400 mt-1">ניתן לערוך לפני אישור</p>
       </div>
 
       <div className="flex gap-2">

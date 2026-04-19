@@ -383,22 +383,37 @@ export default function TodayClasses({ trainerId, isAdmin }) {
   async function addClass(e) {
     e.preventDefault()
     setAddError('')
+    if (!newClass.name?.trim()) { setAddError('יש להזין שם לשיעור'); return }
     if (!newClass.coach_id) { setAddError('יש לבחור מאמן'); return }
     if (!newClass.date) { setAddError('יש לבחור תאריך'); return }
+    if (!newClass.start_time) { setAddError('יש לבחור שעה'); return }
     const coach = coaches.find(c => c.id === newClass.coach_id)
     const d = new Date(newClass.date + 'T00:00:00')
-    const payload = {
-      name: newClass.name,
+    const basePayload = {
+      name: newClass.name.trim(),
       start_time: newClass.start_time,
-      duration_minutes: newClass.duration_minutes,
+      duration_minutes: Number(newClass.duration_minutes) || 60,
       coach_id: newClass.coach_id,
       coach_name: coach?.name || null,
       branch_id: coach?.branch_id || null,
       day_of_week: d.getDay(),
-      status: isAdmin ? 'approved' : 'pending',
     }
-    const { error } = await supabase.from('classes').insert(payload)
-    if (error) { console.error('addClass error:', error); setAddError(error.message || 'שגיאה בשמירה'); return }
+    const payload = { ...basePayload, status: isAdmin ? 'approved' : 'pending' }
+    let { error } = await supabase.from('classes').insert(payload)
+
+    // אם עמודת status עדיין לא קיימת במסד — fallback להוספה בלי status.
+    // במקרה כזה המנהל יראה את השיעור מיד (בלי תהליך אישור) — עדיף מלחסום לגמרי.
+    if (error && /status/i.test(error.message || '') && /column/i.test(error.message || '')) {
+      console.warn('[addClass] status column missing, inserting without it. Run migration-classes-approval.sql!')
+      const retry = await supabase.from('classes').insert(basePayload)
+      error = retry.error
+    }
+
+    if (error) {
+      console.error('addClass error:', error)
+      setAddError(error.message || 'שגיאה בשמירה')
+      return
+    }
     setShowAdd(false)
     setNewClass({ name: '', coach_id: '', date: '', start_time: '', duration_minutes: 60 })
     alert(isAdmin ? 'השיעור נוסף ומאושר' : 'השיעור נשלח לאישור מנהל')
@@ -541,17 +556,28 @@ export default function TodayClasses({ trainerId, isAdmin }) {
         )
       })()}
 
-      {showAdd && (
-        <form onSubmit={addClass} className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
+      {showAdd && (() => {
+        // dedupe coaches by trimmed name — עדיפות לרשומה שמקושרת ל־user_id
+        const byName = new Map()
+        for (const c of coaches) {
+          const key = (c.name || '').trim()
+          if (!key) continue
+          const existing = byName.get(key)
+          if (!existing || (!existing.user_id && c.user_id)) byName.set(key, c)
+        }
+        const uniqueCoaches = Array.from(byName.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        return (
+        <form onSubmit={addClass} className="bg-white border-2 border-blue-200 rounded-2xl p-5 space-y-4 shadow-lg">
+          <h3 className="font-black text-lg text-gray-800">➕ הוספת שיעור חדש</h3>
           {!isAdmin && (
             <p className="text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-3 py-2">
               שיעור שתוסיף יישלח לאישור מנהל לפני שיופיע למתאמנים.
             </p>
           )}
           <div>
-            <label className="text-xs font-semibold text-gray-600 block mb-1">שם השיעור</label>
+            <label className="text-sm font-bold text-gray-700 block mb-1.5">שם השיעור</label>
             <input
-              className="w-full border rounded-lg px-3 py-2 text-sm"
+              className="w-full border-2 border-gray-200 focus:border-blue-500 focus:outline-none rounded-lg px-3 py-2.5 text-sm transition"
               placeholder="לדוגמה: No-Gi מתקדמים"
               value={newClass.name}
               onChange={e => setNewClass(p => ({ ...p, name: e.target.value }))}
@@ -559,35 +585,39 @@ export default function TodayClasses({ trainerId, isAdmin }) {
             />
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 block mb-1">שם המאמן</label>
+            <label className="text-sm font-bold text-gray-700 block mb-1.5">שם המאמן</label>
             <select
-              className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+              className="w-full border-2 border-gray-200 focus:border-blue-500 focus:outline-none rounded-lg px-3 py-2.5 text-sm bg-white transition"
               value={newClass.coach_id}
               onChange={e => setNewClass(p => ({ ...p, coach_id: e.target.value }))}
               required
             >
               <option value="">בחר מאמן…</option>
-              {coaches.map(c => (
+              {uniqueCoaches.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-gray-600 block mb-1">תאריך האימון</label>
+              <label className="text-sm font-bold text-gray-700 mb-1.5 flex items-center gap-1">
+                <span>📅</span><span>תאריך האימון</span>
+              </label>
               <input
                 type="date"
-                className="w-full border rounded-lg px-3 py-2 text-sm"
+                className="w-full border-2 border-gray-200 focus:border-blue-500 focus:outline-none rounded-lg px-3 py-2.5 text-base font-semibold text-gray-800 bg-blue-50/40 transition"
                 value={newClass.date}
                 onChange={e => setNewClass(p => ({ ...p, date: e.target.value }))}
                 required
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-600 block mb-1">שעת האימון</label>
+              <label className="text-sm font-bold text-gray-700 mb-1.5 flex items-center gap-1">
+                <span>🕐</span><span>שעת האימון</span>
+              </label>
               <input
                 type="time"
-                className="w-full border rounded-lg px-3 py-2 text-sm"
+                className="w-full border-2 border-gray-200 focus:border-blue-500 focus:outline-none rounded-lg px-3 py-2.5 text-base font-semibold text-gray-800 bg-blue-50/40 transition"
                 value={newClass.start_time}
                 onChange={e => setNewClass(p => ({ ...p, start_time: e.target.value }))}
                 required
@@ -595,23 +625,32 @@ export default function TodayClasses({ trainerId, isAdmin }) {
             </div>
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 block mb-1">משך (דקות)</label>
+            <label className="text-sm font-bold text-gray-700 block mb-1.5">משך (דקות)</label>
             <input
               type="number"
-              className="w-full border rounded-lg px-3 py-2 text-sm"
+              min="15"
+              step="5"
+              className="w-full border-2 border-gray-200 focus:border-blue-500 focus:outline-none rounded-lg px-3 py-2.5 text-sm transition"
               value={newClass.duration_minutes}
               onChange={e => setNewClass(p => ({ ...p, duration_minutes: Number(e.target.value) }))}
             />
           </div>
-          {addError && <p className="text-xs text-red-600">{addError}</p>}
-          <div className="flex gap-2">
-            <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-bold">
+          {addError && (
+            <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 font-semibold">
+              ⚠️ {addError}
+            </p>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold shadow-sm transition">
               {isAdmin ? 'שמור ופרסם' : 'שלח לאישור'}
             </button>
-            <button type="button" onClick={() => setShowAdd(false)} className="flex-1 border py-2 rounded-lg text-sm">ביטול</button>
+            <button type="button" onClick={() => setShowAdd(false)} className="flex-1 border-2 border-gray-200 hover:bg-gray-50 py-2.5 rounded-lg text-sm font-bold text-gray-600 transition">
+              ביטול
+            </button>
           </div>
         </form>
-      )}
+        )
+      })()}
 
       {(() => {
         if (loading) return <p className="text-center text-gray-400 py-10">טוען שיעורים...</p>

@@ -208,7 +208,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
 
       {/* סליידר תאריכים אופקי */}
       <div ref={sliderContainerRef} className="bg-white rounded-2xl border shadow-sm p-3 overflow-x-auto" dir="ltr">
-        <div className="flex gap-1.5 min-w-max" dir="rtl">
+        <div className="flex gap-1.5 justify-center" dir="rtl">
           {sliderCells.map((d, i) => {
             const todayFlag = isTodayDate(d)
             const selected = isSelected(d)

@@ -46,18 +46,43 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   const [leadsCount, setLeadsCount]     = useState(0)
   const [ordersCount, setOrdersCount]   = useState(0)
   const [requestsCount, setRequestsCount] = useState(0)
+  const [announcementsCount, setAnnouncementsCount] = useState(0)
+  const [latestAnnouncementAt, setLatestAnnouncementAt] = useState('')
+
+  const lastSeenKey = profile?.id ? `announcements_last_seen_${profile.id}` : null
 
   useEffect(() => { refreshCounts() }, [])
 
+  useEffect(() => {
+    const ch = supabase.channel('announcements-trainer')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => refreshCounts())
+      .subscribe()
+    const onVis = () => { if (document.visibilityState === 'visible') refreshCounts() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { supabase.removeChannel(ch); document.removeEventListener('visibilitychange', onVis) }
+  }, [profile?.id])
+
+  useEffect(() => {
+    if (activeTab === 'announcements' && lastSeenKey && latestAnnouncementAt) {
+      window.localStorage.setItem(lastSeenKey, latestAnnouncementAt)
+      setAnnouncementsCount(0)
+    }
+  }, [activeTab, latestAnnouncementAt, lastSeenKey])
+
   async function refreshCounts() {
-    const [{ count: leads }, { count: orders }, { count: requests }] = await Promise.all([
+    const lastSeen = (lastSeenKey && typeof window !== 'undefined' ? window.localStorage.getItem(lastSeenKey) : '') || ''
+    const [{ count: leads }, { count: orders }, { count: requests }, { data: latest }, { count: unread }] = await Promise.all([
       supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('product_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('announcements').select('created_at').order('created_at', { ascending: false }).limit(1),
+      supabase.from('announcements').select('id', { count: 'exact', head: true }).gt('created_at', lastSeen || '1970-01-01'),
     ])
     setLeadsCount(leads || 0)
     setOrdersCount(orders || 0)
     setRequestsCount(requests || 0)
+    setLatestAnnouncementAt(latest?.[0]?.created_at || '')
+    setAnnouncementsCount(unread || 0)
   }
 
   return (
@@ -106,7 +131,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
           <ShopManager isAdmin={isAdmin} trainerId={profile?.id} onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />
         )}
 
-        {activeTab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} isAdmin={isAdmin} />}
+        {activeTab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} isAdmin={isAdmin} onChange={refreshCounts} />}
 
         {activeTab === 'profile' && <TrainerProfile profile={profile} isAdmin={isAdmin} />}
       </main>
@@ -118,6 +143,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         leadsCount={leadsCount}
         ordersCount={ordersCount}
         pendingCount={requestsCount}
+        announcementsCount={announcementsCount}
       />
     </div>
   )

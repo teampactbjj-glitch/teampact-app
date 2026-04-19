@@ -1,4 +1,4 @@
-export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCount = 0, leadsCount = 0, ordersCount = 0 }) {
+export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCount = 0, leadsCount = 0, ordersCount = 0, announcementsCount = 0 }) {
   const tabs = isTrainer
     ? [
         { id: 'schedule',      icon: '📅', label: 'לו״ז' },
@@ -34,6 +34,10 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCo
             {tab.id === 'athletes' && isTrainer && (leadsCount + pendingCount) > 0 && (
               <span className="absolute top-1.5 flex items-center justify-center rounded-full bg-orange-500 text-white text-[10px] font-bold"
                 style={{ right: '22%', width: 16, height: 16 }}>{leadsCount + pendingCount}</span>
+            )}
+            {tab.id === 'announcements' && announcementsCount > 0 && (
+              <span className="absolute top-1.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold"
+                style={{ right: '22%', width: 16, height: 16 }}>{announcementsCount}</span>
             )}
           </button>
         )

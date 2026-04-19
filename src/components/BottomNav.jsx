@@ -14,15 +14,18 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCo
         { id: 'profile',       icon: '👤', label: 'פרופיל' },
       ]
   return (
-    <nav dir="rtl" className="bg-white border-t border-gray-200 shadow-lg flex"
-      style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', zIndex: 9999, paddingBottom: 'env(safe-area-inset-bottom)', minHeight: '60px' }}>
+    <nav dir="rtl" className="flex"
+      style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', zIndex: 9999, paddingBottom: 'env(safe-area-inset-bottom)', minHeight: '54px', background: '#ffffff', borderTop: '2px solid #d1d5db', boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.12)' }}>
       {tabs.map(tab => {
         const active = activeTab === tab.id
         return (
           <button key={tab.id} type="button" onClick={() => onTabChange(tab.id)}
-            className="relative flex flex-1 flex-col items-center justify-center gap-1 py-3 bg-transparent border-none cursor-pointer transition-colors duration-150"
-            style={{ color: active ? '#059669' : '#9ca3af' }}>
-            <span className="text-xl leading-none">{tab.icon}</span>
+            className="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 border-none cursor-pointer transition-all duration-150"
+            style={{ color: active ? '#047857' : '#6b7280', background: active ? 'rgba(5, 150, 105, 0.10)' : 'transparent' }}>
+            {active && (
+              <span style={{ position: 'absolute', top: 0, left: '15%', right: '15%', height: 3, background: '#059669', borderRadius: '0 0 3px 3px' }} />
+            )}
+            <span className="leading-none" style={{ fontSize: active ? '1.35rem' : '1.15rem', transition: 'font-size 150ms' }}>{tab.icon}</span>
             <span className="text-[10px] leading-none" style={{ fontWeight: active ? 700 : 500 }}>{tab.label}</span>
             {tab.id === 'shop' && isTrainer && ordersCount > 0 && (
               <span className="absolute top-1.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold"

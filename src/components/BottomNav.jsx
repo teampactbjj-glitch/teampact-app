@@ -15,18 +15,18 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCo
       ]
   return (
     <nav dir="rtl" className="flex"
-      style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', zIndex: 9999, paddingBottom: 'env(safe-area-inset-bottom)', minHeight: '54px', background: '#ffffff', borderTop: '2px solid #d1d5db', boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.12)' }}>
+      style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', zIndex: 9999, paddingBottom: 'env(safe-area-inset-bottom)', minHeight: '68px', background: '#ffffff', borderTop: '2px solid #d1d5db', boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.12)' }}>
       {tabs.map(tab => {
         const active = activeTab === tab.id
         return (
           <button key={tab.id} type="button" onClick={() => onTabChange(tab.id)}
-            className="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 border-none cursor-pointer transition-all duration-150"
+            className="relative flex flex-1 flex-col items-center justify-center gap-1 py-2.5 border-none cursor-pointer transition-all duration-150"
             style={{ color: active ? '#047857' : '#6b7280', background: active ? 'rgba(5, 150, 105, 0.10)' : 'transparent' }}>
             {active && (
               <span style={{ position: 'absolute', top: 0, left: '15%', right: '15%', height: 3, background: '#059669', borderRadius: '0 0 3px 3px' }} />
             )}
-            <span className="leading-none" style={{ fontSize: active ? '1.35rem' : '1.15rem', transition: 'font-size 150ms' }}>{tab.icon}</span>
-            <span className="text-[10px] leading-none" style={{ fontWeight: active ? 700 : 500 }}>{tab.label}</span>
+            <span className="leading-none" style={{ fontSize: active ? '1.5rem' : '1.3rem', transition: 'font-size 150ms' }}>{tab.icon}</span>
+            <span className="text-[11px] leading-none" style={{ fontWeight: active ? 700 : 500 }}>{tab.label}</span>
             {tab.id === 'shop' && isTrainer && ordersCount > 0 && (
               <span className="absolute top-1.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold"
                 style={{ right: '22%', width: 16, height: 16 }}>{ordersCount}</span>

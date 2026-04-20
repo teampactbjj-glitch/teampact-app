@@ -374,20 +374,6 @@ function AnnouncementsTab({ announcements, profile }) {
     try { localStorage.setItem(storageKey, JSON.stringify([...ordered])) } catch {}
   }, [ordered, storageKey])
 
-  useEffect(() => {
-    if (!profile?.id) return
-    supabase.from('product_requests')
-      .select('product_name')
-      .eq('athlete_id', profile.id)
-      .eq('status', 'pending')
-      .then(({ data }) => {
-        if (!data) return
-        const names = new Set(data.map(r => r.product_name))
-        const ids = seminars.filter(p => names.has(p.title)).map(p => p.id)
-        if (ids.length) setOrdered(prev => new Set([...prev, ...ids]))
-      })
-  }, [profile?.id, seminars.length])
-
   async function handleOrder(item) {
     if (ordered.has(item.id)) return
     setOrderingId(item.id)
@@ -450,7 +436,7 @@ function AnnouncementsTab({ announcements, profile }) {
                   {item.price != null && <p className="text-sm font-bold text-emerald-600 mt-2">₪{item.price}</p>}
                   <button onClick={() => handleOrder(item)} disabled={orderingId === item.id || ordered.has(item.id)}
                     className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${ordered.has(item.id) ? 'bg-gray-100 text-gray-400' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
-                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הוזמן' : 'לפרטים ורכישה'}
+                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הוזמן — יתקבל באימון' : 'לפרטים ורכישה'}
                   </button>
                 </div>
               </div>
@@ -475,20 +461,6 @@ function ShopTab({ profile, allAnnouncements }) {
     if (!storageKey) return
     try { localStorage.setItem(storageKey, JSON.stringify([...ordered])) } catch {}
   }, [ordered, storageKey])
-
-  useEffect(() => {
-    if (!profile?.id) return
-    supabase.from('product_requests')
-      .select('product_name')
-      .eq('athlete_id', profile.id)
-      .eq('status', 'pending')
-      .then(({ data }) => {
-        if (!data) return
-        const names = new Set(data.map(r => r.product_name))
-        const ids = products.filter(p => names.has(p.title)).map(p => p.id)
-        if (ids.length) setOrdered(prev => new Set([...prev, ...ids]))
-      })
-  }, [profile?.id, products.length])
 
   async function handleOrder(item) {
     if (ordered.has(item.id)) return
@@ -538,7 +510,7 @@ function ShopTab({ profile, allAnnouncements }) {
                   </div>
                   <button onClick={() => handleOrder(item)} disabled={orderingId === item.id || ordered.has(item.id)}
                     className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${ordered.has(item.id) ? 'bg-gray-100 text-gray-400' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
-                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הוזמן' : 'לפרטים ורכישה'}
+                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הוזמן — יתקבל באימון' : 'לפרטים ורכישה'}
                   </button>
                 </div>
               </div>

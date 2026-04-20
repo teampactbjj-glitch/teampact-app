@@ -48,6 +48,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   const [requestsCount, setRequestsCount] = useState(0)
   const [announcementsCount, setAnnouncementsCount] = useState(0)
   const [latestAnnouncementAt, setLatestAnnouncementAt] = useState('')
+  const [toast, setToast] = useState(null) // { name, id }
 
   const lastSeenKey = profile?.id ? `announcements_last_seen_${profile.id}` : null
 
@@ -69,6 +70,33 @@ export default function TrainerDashboard({ profile, isAdmin }) {
     }
   }, [activeTab, latestAnnouncementAt, lastSeenKey])
 
+  // Realtime: new pending registrations → toast + browser notification
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {})
+    }
+    const channel = supabase
+      .channel('pending-members')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'members',
+        filter: 'status=eq.pending',
+      }, (payload) => {
+        const row = payload.new || {}
+        refreshCounts()
+        setToast({ id: row.id || Date.now(), name: row.full_name || 'מתאמן חדש' })
+        setTimeout(() => setToast(null), 8000)
+        try {
+          if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+            new Notification('בקשת הצטרפות חדשה', { body: row.full_name || 'מתאמן חדש נרשם', icon: '/favicon.ico' })
+          }
+        } catch {}
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
   async function refreshCounts() {
     const lastSeen = (lastSeenKey && typeof window !== 'undefined' ? window.localStorage.getItem(lastSeenKey) : '') || ''
     const [{ count: leads }, { count: orders }, { count: requests }, { data: latest }, { count: unread }] = await Promise.all([
@@ -87,6 +115,23 @@ export default function TrainerDashboard({ profile, isAdmin }) {
 
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
+      {toast && (
+        <button
+          type="button"
+          onClick={() => { setActiveTab('athletes'); setToast(null) }}
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl shadow-lg max-w-md w-[92%] flex items-center gap-3 animate-[pulse_1s_ease-in-out_1]"
+        >
+          <span className="text-2xl">🔔</span>
+          <div className="text-right flex-1">
+            <div className="font-bold text-sm">בקשת הצטרפות חדשה</div>
+            <div className="text-xs text-emerald-50">{toast.name} — לחץ למעבר</div>
+          </div>
+          <span
+            onClick={(e) => { e.stopPropagation(); setToast(null) }}
+            className="text-white/80 hover:text-white text-lg px-2"
+          >✕</span>
+        </button>
+      )}
       <header className="bg-blue-700 text-white px-6 py-4 flex items-center justify-between shadow">
         <div className="flex items-center gap-3">
           <span className="text-2xl">🥋</span>

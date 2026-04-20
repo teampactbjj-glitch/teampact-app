@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Weekly backup sync to this Mac.
+
+  Install:
+    cp scripts/backup/com.teampact.backup-sync.plist ~/Library/LaunchAgents/
+    # Edit the absolute path to sync-to-mac.sh inside the plist first.
+    launchctl load ~/Library/LaunchAgents/com.teampact.backup-sync.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.teampact.backup-sync.plist
+    rm ~/Library/LaunchAgents/com.teampact.backup-sync.plist
+
+  The agent fires every Sunday at 10:00 local time. If the Mac is asleep it
+  runs at the next wake.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.teampact.backup-sync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/dudibenzaken/teampact-app/scripts/backup/sync-to-mac.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>0</integer>   <!-- Sunday -->
+    <key>Hour</key><integer>10</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/teampact-backup-sync.out</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/teampact-backup-sync.err</string>
+</dict>
+</plist>

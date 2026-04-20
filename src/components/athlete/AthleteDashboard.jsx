@@ -374,6 +374,18 @@ function AnnouncementsTab({ announcements, profile }) {
     try { localStorage.setItem(storageKey, JSON.stringify([...ordered])) } catch {}
   }, [ordered, storageKey])
 
+  useEffect(() => {
+    if (!profile?.id || seminars.length === 0) return
+    supabase.from('product_requests')
+      .select('product_name, status')
+      .eq('athlete_id', profile.id)
+      .then(({ data }) => {
+        const pendingNames = new Set((data || []).filter(r => r.status !== 'done').map(r => r.product_name))
+        const ids = seminars.filter(p => pendingNames.has(p.title)).map(p => p.id)
+        setOrdered(new Set(ids))
+      })
+  }, [profile?.id, seminars.length])
+
   async function handleOrder(item) {
     if (ordered.has(item.id)) {
       if (!confirm(`לבטל את ההזמנה של "${item.title}"?`)) return
@@ -472,6 +484,18 @@ function ShopTab({ profile, allAnnouncements }) {
     if (!storageKey) return
     try { localStorage.setItem(storageKey, JSON.stringify([...ordered])) } catch {}
   }, [ordered, storageKey])
+
+  useEffect(() => {
+    if (!profile?.id || products.length === 0) return
+    supabase.from('product_requests')
+      .select('product_name, status')
+      .eq('athlete_id', profile.id)
+      .then(({ data }) => {
+        const pendingNames = new Set((data || []).filter(r => r.status !== 'done').map(r => r.product_name))
+        const ids = products.filter(p => pendingNames.has(p.title)).map(p => p.id)
+        setOrdered(new Set(ids))
+      })
+  }, [profile?.id, products.length])
 
   async function handleOrder(item) {
     if (ordered.has(item.id)) {

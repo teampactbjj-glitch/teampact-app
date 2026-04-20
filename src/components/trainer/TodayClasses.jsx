@@ -492,6 +492,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   async function approveClass(classId) {
     const { error } = await supabase.from('classes').update({ status: 'approved' }).eq('id', classId)
     if (error) { console.error('approveClass error:', error); alert('שגיאה באישור'); return }
+    setPendingRequests(prev => prev.filter(r => r.id !== classId))
     fetchDayClasses(selectedDate)
   }
 
@@ -499,6 +500,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     if (!confirm('למחוק את השיעור הממתין?')) return
     const { error } = await supabase.from('classes').delete().eq('id', classId)
     if (error) { console.error('rejectClass error:', error); alert('שגיאה במחיקה'); return }
+    setPendingRequests(prev => prev.filter(r => r.id !== classId))
     fetchDayClasses(selectedDate)
   }
 
@@ -543,6 +545,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     if (!confirm(`לאשר מחיקה של "${cls.name || cls.title || 'ללא שם'}"? הפעולה בלתי הפיכה.`)) return
     const { error } = await performHardDelete(cls)
     if (error) { console.error('approveDeletion error:', error); alert('שגיאה: ' + (error.message || '')); return }
+    setPendingRequests(prev => prev.filter(r => r.id !== cls.id))
     setExpanded(null)
     fetchDayClasses(selectedDate)
   }
@@ -552,6 +555,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       .update({ deletion_requested_at: null })
       .eq('id', cls.id)
     if (error) { console.error('cancelDeletionRequest error:', error); alert('שגיאה: ' + (error.message || '')); return }
+    setPendingRequests(prev => prev.filter(r => r.id !== cls.id))
     fetchDayClasses(selectedDate)
   }
 

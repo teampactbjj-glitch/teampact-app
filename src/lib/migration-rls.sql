@@ -197,6 +197,7 @@ CREATE POLICY "announcements_write" ON announcements
 ALTER TABLE product_requests ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "product_req_select" ON product_requests;
+DROP POLICY IF EXISTS "product_req_select_own" ON product_requests;
 DROP POLICY IF EXISTS "product_req_insert" ON product_requests;
 DROP POLICY IF EXISTS "product_req_write"  ON product_requests;
 
@@ -205,6 +206,10 @@ CREATE POLICY "product_req_select" ON product_requests
   FOR SELECT USING (
     EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'trainer')
   );
+
+-- Athletes can read their own product requests
+CREATE POLICY "product_req_select_own" ON product_requests
+  FOR SELECT USING (athlete_id = auth.uid());
 
 -- Anyone (anon athletes) can submit a product request
 CREATE POLICY "product_req_insert" ON product_requests

@@ -359,7 +359,8 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
   )
 }
 
-function AnnouncementsTab({ announcements, profile }) {
+function AnnouncementsTab({ announcements, profile, member }) {
+  const athleteName = member?.full_name || profile?.full_name || profile?.email || 'לא ידוע'
   const general = announcements.filter(a => a.type === 'general' || a.type === 'announcement')
   const seminars = announcements.filter(a => a.type === 'seminar')
   const storageKey = profile?.id ? `seminars_ordered_${profile.id}` : null
@@ -403,7 +404,7 @@ function AnnouncementsTab({ announcements, profile }) {
     const { error } = await supabase.from('product_requests').insert({
       product_name: item.title,
       athlete_id: profile?.id || null,
-      athlete_name: profile?.full_name || 'לא ידוע',
+      athlete_name: athleteName,
       status: 'pending',
     })
     if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
@@ -413,7 +414,7 @@ function AnnouncementsTab({ announcements, profile }) {
         .then(ids => notifyPush({
           userIds: ids,
           title: 'הזמנה חדשה מהחנות',
-          body: `${profile?.full_name || 'מתאמן'} הזמין: ${item.title}`,
+          body: `${athleteName} הזמין: ${item.title}`,
           url: '/#shop',
           tag: `order:${Date.now()}`,
         }))
@@ -471,8 +472,9 @@ function AnnouncementsTab({ announcements, profile }) {
   )
 }
 
-function ShopTab({ profile, allAnnouncements }) {
+function ShopTab({ profile, member, allAnnouncements }) {
   const products = allAnnouncements.filter(a => a.type === 'product')
+  const athleteName = member?.full_name || profile?.full_name || profile?.email || 'לא ידוע'
   const storageKey = profile?.id ? `shop_ordered_${profile.id}` : null
   const [ordered, setOrdered] = useState(() => {
     if (!storageKey) return new Set()
@@ -514,7 +516,7 @@ function ShopTab({ profile, allAnnouncements }) {
     const { error } = await supabase.from('product_requests').insert({
       product_name: item.title,
       athlete_id: profile?.id || null,
-      athlete_name: profile?.full_name || 'לא ידוע',
+      athlete_name: athleteName,
       status: 'pending',
     })
     if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
@@ -524,7 +526,7 @@ function ShopTab({ profile, allAnnouncements }) {
         .then(ids => notifyPush({
           userIds: ids,
           title: 'הזמנה חדשה מהחנות',
-          body: `${profile?.full_name || 'מתאמן'} הזמין: ${item.title}`,
+          body: `${athleteName} הזמין: ${item.title}`,
           url: '/#shop',
           tag: `order:${Date.now()}`,
         }))
@@ -1023,8 +1025,8 @@ export default function AthleteDashboard({ profile }) {
           <EnablePushBanner profile={profile} />
         </div>
         {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} onRegister={handleRegister} branchesMap={branchesMap} />}
-        {activeTab === 'shop' && <ShopTab profile={profile} allAnnouncements={announcements} />}
-        {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} />}
+        {activeTab === 'shop' && <ShopTab profile={profile} member={member} allAnnouncements={announcements} />}
+        {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} />}
         {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}
       </main>
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} isTrainer={false} announcementsCount={announcementsCount} />

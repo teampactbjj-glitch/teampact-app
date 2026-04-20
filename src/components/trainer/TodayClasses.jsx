@@ -37,7 +37,7 @@ function formatDateLabel(date) {
   return `${dayName} · ${dateStr}`
 }
 
-export default function TodayClasses({ trainerId, isAdmin }) {
+export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
   const todayBtnRef = useRef(null)
   const selectedBtnRef = useRef(null)

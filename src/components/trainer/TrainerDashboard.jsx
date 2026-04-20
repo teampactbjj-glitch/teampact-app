@@ -48,6 +48,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   const [requestsCount, setRequestsCount] = useState(0)
   const [announcementsCount, setAnnouncementsCount] = useState(0)
   const [latestAnnouncementAt, setLatestAnnouncementAt] = useState('')
+  const [scheduleCount, setScheduleCount] = useState(0) // שיעורים ממתינים לאישור + בקשות מחיקה (אדמין בלבד)
   const [toast, setToast] = useState(null) // { name, id }
 
   const lastSeenKey = profile?.id ? `announcements_last_seen_${profile.id}` : null
@@ -97,6 +98,31 @@ export default function TrainerDashboard({ profile, isAdmin }) {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
+  // Realtime: שינויי שיעורים (הוספה/בקשת מחיקה/אישור) → עדכון הבאדג' של טאב הלו״ז
+  useEffect(() => {
+    if (!isAdmin) return
+    const channel = supabase
+      .channel('classes-admin')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, (payload) => {
+        refreshCounts()
+        const isNewPending = payload.eventType === 'INSERT' && payload.new?.status === 'pending'
+        const isNewDeletionRequest = payload.eventType === 'UPDATE'
+          && !payload.old?.deletion_requested_at
+          && payload.new?.deletion_requested_at
+        if (isNewPending || isNewDeletionRequest) {
+          const name = payload.new?.name || 'שיעור'
+          const action = isNewPending ? 'שיעור חדש ממתין לאישור' : 'בקשת מחיקת שיעור'
+          try {
+            if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+              new Notification(action, { body: name, icon: '/favicon.ico' })
+            }
+          } catch {}
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [isAdmin])
+
   async function refreshCounts() {
     const lastSeen = (lastSeenKey && typeof window !== 'undefined' ? window.localStorage.getItem(lastSeenKey) : '') || ''
     const [{ count: leads }, { count: orders }, { count: requests }, { data: latest }, { count: unread }] = await Promise.all([
@@ -111,6 +137,19 @@ export default function TrainerDashboard({ profile, isAdmin }) {
     setRequestsCount(requests || 0)
     setLatestAnnouncementAt(latest?.[0]?.created_at || '')
     setAnnouncementsCount(unread || 0)
+
+    // שינויי לו״ז שמחכים לאישור המנהל (שיעור חדש שמאמן הוסיף + בקשות מחיקה)
+    if (isAdmin) {
+      const [addsRes, delsRes] = await Promise.all([
+        supabase.from('classes').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('classes').select('id', { count: 'exact', head: true }).not('deletion_requested_at', 'is', null),
+      ])
+      const adds = addsRes.error ? 0 : (addsRes.count || 0)
+      const dels = delsRes.error ? 0 : (delsRes.count || 0)
+      setScheduleCount(adds + dels)
+    } else {
+      setScheduleCount(0)
+    }
   }
 
   return (
@@ -149,7 +188,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </header>
 
       <main className="p-4 max-w-3xl mx-auto pb-24">
-        {activeTab === 'schedule' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />}
+        {activeTab === 'schedule' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} onChange={refreshCounts} />}
 
         {activeTab === 'athletes' && (
           <div className="space-y-6">
@@ -189,6 +228,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         ordersCount={ordersCount}
         pendingCount={requestsCount}
         announcementsCount={announcementsCount}
+        scheduleCount={scheduleCount}
       />
     </div>
   )

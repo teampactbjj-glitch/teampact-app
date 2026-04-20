@@ -61,11 +61,41 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   const [visitorLoading, setVisitorLoading] = useState({}) // { classId: bool }
   const [branches, setBranches] = useState([])
   const [selectedBranch, setSelectedBranch] = useState('all')
+  const [pendingRequests, setPendingRequests] = useState([])
+  const [showPending, setShowPending] = useState(true)
 
   useEffect(() => {
     supabase.from('branches').select('id, name').order('name').then(({ data }) => setBranches(data || []))
     supabase.from('coaches').select('id, name, branch_id, user_id').order('name').then(({ data }) => setCoaches(data || []))
   }, [])
+
+  // שליפת כל הבקשות הממתינות (כל הימים) — להצגה למנהל בראש המסך
+  async function fetchPendingRequests() {
+    if (!isAdmin) { setPendingRequests([]); return }
+    const { data, error } = await supabase
+      .from('classes')
+      .select('*, branches(name)')
+      .or('status.eq.pending,deletion_requested_at.not.is.null')
+      .order('day_of_week')
+      .order('start_time')
+    if (error) { console.warn('fetchPendingRequests error:', error); setPendingRequests([]); return }
+    setPendingRequests((data || []).map(c => ({
+      ...c,
+      branchName: c.branches?.name || '',
+      coachName: c.coach_name || '',
+    })))
+  }
+
+  useEffect(() => { fetchPendingRequests() }, [isAdmin])
+
+  // Realtime: ריענון הרשימה עם כל שינוי בטבלת classes
+  useEffect(() => {
+    if (!isAdmin) return
+    const ch = supabase.channel('classes-pending-list')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, () => fetchPendingRequests())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [isAdmin])
 
   useEffect(() => {
     setExpanded(null)
@@ -544,8 +574,96 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   const isSelected = (d) => d.toDateString() === selectedDate.toDateString()
   const isToday = (d) => d.toDateString() === new Date().toDateString()
 
+  // ניווט אל היום של השבוע של השיעור (ההופעה הבאה של day_of_week)
+  function jumpToClassDay(dayOfWeek) {
+    const now = new Date(); now.setHours(0, 0, 0, 0)
+    const diff = (dayOfWeek - now.getDay() + 7) % 7
+    const target = new Date(now); target.setDate(now.getDate() + diff)
+    setSelectedDate(target)
+  }
+
   return (
     <div className="space-y-4">
+      {/* Admin — בקשות ממתינות (כל הימים) */}
+      {isAdmin && pendingRequests.length > 0 && (
+        <div className="bg-gradient-to-br from-rose-50 to-amber-50 border-2 border-rose-200 rounded-2xl p-4 shadow-sm">
+          <button
+            onClick={() => setShowPending(s => !s)}
+            className="w-full flex items-center justify-between text-right mb-2"
+          >
+            <span className="text-base font-black text-rose-900">
+              🔔 בקשות ממתינות לאישור ({pendingRequests.length})
+            </span>
+            <span className="text-rose-700 text-lg">{showPending ? '▲' : '▼'}</span>
+          </button>
+          {showPending && (
+            <ul className="space-y-2">
+              {pendingRequests.map(req => {
+                const isDeletionReq = !!req.deletion_requested_at
+                const isNewAddReq = req.status === 'pending'
+                return (
+                  <li key={req.id} className="bg-white border border-rose-200 rounded-xl p-3 shadow-sm">
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <div className="flex-1 min-w-0 text-right">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isNewAddReq && (
+                            <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">➕ שיעור חדש</span>
+                          )}
+                          {isDeletionReq && (
+                            <span className="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full font-bold">🗑️ בקשת מחיקה</span>
+                          )}
+                          <p className="font-bold text-gray-800 text-sm">
+                            {req.name || req.title || 'ללא שם'}
+                            {req.coachName ? ` · ${req.coachName}` : ''}
+                          </p>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          יום {DAYS_HE[req.day_of_week]} · {formatTime(req.start_time)}
+                          {req.branchName ? ` · 📍 ${req.branchName}` : ''}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => jumpToClassDay(req.day_of_week)}
+                        className="text-[11px] bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 px-2 py-1 rounded-lg font-semibold"
+                        title="עבור ליום השיעור"
+                      >
+                        📅 עבור
+                      </button>
+                    </div>
+                    <div className="flex gap-2 mt-3">
+                      {isNewAddReq && (
+                        <>
+                          <button onClick={() => approveClass(req.id)}
+                            className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-bold">
+                            ✓ אשר ופרסם
+                          </button>
+                          <button onClick={() => rejectClass(req.id)}
+                            className="flex-1 text-xs bg-white border border-red-300 text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg font-bold">
+                            ✕ דחה
+                          </button>
+                        </>
+                      )}
+                      {isDeletionReq && (
+                        <>
+                          <button onClick={() => approveDeletion(req)}
+                            className="flex-1 text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg font-bold">
+                            ✓ אשר מחיקה
+                          </button>
+                          <button onClick={() => cancelDeletionRequest(req)}
+                            className="flex-1 text-xs bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 px-3 py-1.5 rounded-lg font-bold">
+                            ✕ בטל בקשה
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* Header with date label + add button */}
       <div className="flex items-center justify-between gap-2">
         <div>

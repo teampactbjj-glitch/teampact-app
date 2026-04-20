@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 
-// Returns user_ids of trainers to notify about a new pending registration.
-// Prefers trainers tied to the member's requested coach names; falls back to all trainers.
+// Members' id is the auth user_id (RegisterPage inserts memberPayload.id = userId).
+
 export async function trainerUserIdsForMember(member) {
   const requestedNames = Array.isArray(member?.requested_coach_names)
     ? member.requested_coach_names.filter(Boolean)
@@ -23,49 +23,42 @@ export async function allTrainerUserIds() {
   return (data || []).map(p => p.id).filter(Boolean)
 }
 
-// Active athlete user_ids (where a matching auth user exists) filtered by branch.
 export async function athleteUserIdsForBranch(branchId) {
   if (!branchId) return []
   const { data } = await supabase
     .from('members')
-    .select('user_id, branch_ids, branch_id')
-    .not('user_id', 'is', null)
+    .select('id, branch_ids, branch_id')
     .eq('active', true)
   return (data || [])
     .filter(m => (m.branch_ids || []).includes(branchId) || m.branch_id === branchId)
-    .map(m => m.user_id)
+    .map(m => m.id)
+    .filter(Boolean)
 }
 
 export async function athleteUserIdsForCoach(coachName) {
   if (!coachName) return []
   const { data } = await supabase
     .from('members')
-    .select('user_id, requested_coach_name, requested_coach_names')
-    .not('user_id', 'is', null)
+    .select('id, requested_coach_name, requested_coach_names')
     .eq('active', true)
   return (data || [])
     .filter(m =>
       m.requested_coach_name === coachName ||
       (Array.isArray(m.requested_coach_names) && m.requested_coach_names.includes(coachName))
     )
-    .map(m => m.user_id)
+    .map(m => m.id)
+    .filter(Boolean)
 }
 
 export async function athleteUserIdFromMemberId(memberId) {
-  if (!memberId) return null
-  const { data } = await supabase
-    .from('members')
-    .select('user_id')
-    .eq('id', memberId)
-    .maybeSingle()
-  return data?.user_id || null
+  // members.id IS the auth user_id.
+  return memberId || null
 }
 
 export async function allActiveAthleteUserIds() {
   const { data } = await supabase
     .from('members')
-    .select('user_id')
-    .not('user_id', 'is', null)
+    .select('id')
     .eq('active', true)
-  return (data || []).map(m => m.user_id).filter(Boolean)
+  return (data || []).map(m => m.id).filter(Boolean)
 }

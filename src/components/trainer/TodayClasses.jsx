@@ -472,16 +472,56 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     fetchDayClasses(selectedDate)
   }
 
-  async function deleteClass(cls) {
-    const msg = `למחוק את השיעור "${cls.name || cls.title || 'ללא שם'}"${cls.coachName ? ` של ${cls.coachName}` : ''}?\n\nפעולה זו תמחק גם את כל הרישומים והנוכחות של השיעור.`
-    if (!confirm(msg)) return
+  async function performHardDelete(cls) {
     // ניקוי תלויות לפני מחיקת השיעור (במקרה שאין ON DELETE CASCADE)
     await supabase.from('class_registrations').delete().eq('class_id', cls.id)
     await supabase.from('member_classes').delete().eq('class_id', cls.id)
     await supabase.from('checkins').delete().eq('class_id', cls.id)
-    const { error } = await supabase.from('classes').delete().eq('id', cls.id)
-    if (error) { console.error('deleteClass error:', error); alert('שגיאה במחיקה: ' + (error.message || '')); return }
+    return await supabase.from('classes').delete().eq('id', cls.id)
+  }
+
+  async function deleteClass(cls) {
+    const label = `${cls.name || cls.title || 'ללא שם'}${cls.coachName ? ` · ${cls.coachName}` : ''}`
+    if (isAdmin) {
+      if (!confirm(`למחוק את השיעור "${label}"?\n\nפעולה זו תמחק גם את כל הרישומים והנוכחות של השיעור.`)) return
+      const { error } = await performHardDelete(cls)
+      if (error) { console.error('deleteClass error:', error); alert('שגיאה במחיקה: ' + (error.message || '')); return }
+      setExpanded(null)
+      fetchDayClasses(selectedDate)
+      return
+    }
+    // מאמן — שולח בקשת מחיקה למנהל
+    if (!confirm(`לשלוח בקשת מחיקה של "${label}" לאישור מנהל?`)) return
+    const { error } = await supabase.from('classes')
+      .update({ deletion_requested_at: new Date().toISOString() })
+      .eq('id', cls.id)
+    if (error) {
+      console.error('request deletion error:', error)
+      if (/deletion_requested_at/i.test(error.message || '')) {
+        alert('המסד לא מעודכן עדיין — יש להריץ את migration-classes-deletion-requests.sql ב-Supabase')
+      } else {
+        alert('שגיאה: ' + (error.message || ''))
+      }
+      return
+    }
+    alert('בקשת המחיקה נשלחה לאישור מנהל')
     setExpanded(null)
+    fetchDayClasses(selectedDate)
+  }
+
+  async function approveDeletion(cls) {
+    if (!confirm(`לאשר מחיקה של "${cls.name || cls.title || 'ללא שם'}"? הפעולה בלתי הפיכה.`)) return
+    const { error } = await performHardDelete(cls)
+    if (error) { console.error('approveDeletion error:', error); alert('שגיאה: ' + (error.message || '')); return }
+    setExpanded(null)
+    fetchDayClasses(selectedDate)
+  }
+
+  async function cancelDeletionRequest(cls) {
+    const { error } = await supabase.from('classes')
+      .update({ deletion_requested_at: null })
+      .eq('id', cls.id)
+    if (error) { console.error('cancelDeletionRequest error:', error); alert('שגיאה: ' + (error.message || '')); return }
     fetchDayClasses(selectedDate)
   }
 
@@ -711,7 +751,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
         const totalCount = data?.members?.length ?? 0
 
         return (
-          <div key={cls.id} className={`bg-white rounded-xl shadow-sm overflow-hidden border ${cls.status === 'pending' ? 'border-amber-300 ring-1 ring-amber-200' : ''}`}>
+          <div key={cls.id} className={`bg-white rounded-xl shadow-sm overflow-hidden border ${cls.status === 'pending' ? 'border-amber-300 ring-1 ring-amber-200' : ''} ${cls.deletion_requested_at ? 'border-rose-300 ring-1 ring-rose-200' : ''}`}>
             {cls.status === 'pending' && (
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-2">
                 <span className="text-xs font-bold text-amber-900">⏳ ממתין לאישור מנהל</span>
@@ -724,6 +764,23 @@ export default function TodayClasses({ trainerId, isAdmin }) {
                     <button onClick={() => rejectClass(cls.id)}
                       className="text-xs bg-white border border-red-300 text-red-600 hover:bg-red-50 px-3 py-1 rounded-lg font-bold">
                       ✕ דחה
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {cls.deletion_requested_at && (
+              <div className="bg-rose-50 border-b border-rose-200 px-4 py-2 flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-rose-900">📝 בקשת מחיקה ממתינה לאישור מנהל</span>
+                {isAdmin && (
+                  <div className="flex gap-2">
+                    <button onClick={() => approveDeletion(cls)}
+                      className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg font-bold">
+                      ✓ אשר מחיקה
+                    </button>
+                    <button onClick={() => cancelDeletionRequest(cls)}
+                      className="text-xs bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 px-3 py-1 rounded-lg font-bold">
+                      ✕ בטל בקשה
                     </button>
                   </div>
                 )}
@@ -915,12 +972,18 @@ export default function TodayClasses({ trainerId, isAdmin }) {
 
                     {/* Danger zone — מחיקת שיעור */}
                     <div className="pt-3 border-t">
-                      <button
-                        onClick={() => deleteClass(cls)}
-                        className="w-full text-sm bg-white hover:bg-red-50 border-2 border-red-200 hover:border-red-400 text-red-600 hover:text-red-700 px-3 py-2 rounded-lg font-bold transition"
-                      >
-                        🗑️ מחק שיעור זה
-                      </button>
+                      {cls.deletion_requested_at && !isAdmin ? (
+                        <div className="w-full text-sm bg-rose-50 border-2 border-rose-200 text-rose-700 px-3 py-2 rounded-lg font-bold text-center">
+                          📝 בקשת מחיקה נשלחה — ממתין לאישור מנהל
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => deleteClass(cls)}
+                          className="w-full text-sm bg-white hover:bg-red-50 border-2 border-red-200 hover:border-red-400 text-red-600 hover:text-red-700 px-3 py-2 rounded-lg font-bold transition"
+                        >
+                          {isAdmin ? '🗑️ מחק שיעור זה' : '🗑️ בקש מחיקת שיעור (דרוש אישור מנהל)'}
+                        </button>
+                      )}
                     </div>
                   </>
                 )}

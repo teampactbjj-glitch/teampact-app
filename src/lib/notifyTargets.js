@@ -24,8 +24,9 @@ export async function allTrainerUserIds() {
 }
 
 export async function allAdminUserIds() {
-  const { data } = await supabase.from('profiles').select('id').eq('is_admin', true)
-  return (data || []).map(p => p.id).filter(Boolean)
+  const { data, error } = await supabase.rpc('get_admin_user_ids')
+  if (error) { console.warn('allAdminUserIds rpc error', error); return [] }
+  return (data || []).filter(Boolean)
 }
 
 export async function athleteUserIdsForBranch(branchId) {

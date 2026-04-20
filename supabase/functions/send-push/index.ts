@@ -21,8 +21,11 @@ const MAX_TITLE = 120
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
+  console.log(`[send-push] incoming ${req.method} ${req.url}`)
+
   try {
     const payload = await req.json().catch(() => null)
+    console.log('[send-push] payload', JSON.stringify(payload))
     if (!payload) return bad('invalid json')
 
     const userIds: string[] = Array.isArray(payload.user_ids) ? payload.user_ids.slice(0, MAX_USERS) : []
@@ -32,7 +35,10 @@ serve(async (req) => {
     const tag: string   = payload.tag ? String(payload.tag).slice(0, 80) : ''
     const icon: string  = String(payload.icon  || '/icons/icon-192.png')
 
-    if (!userIds.length || !title) return bad('missing user_ids or title')
+    if (!userIds.length || !title) {
+      console.log('[send-push] rejected: missing user_ids or title', { userIds: userIds.length, title })
+      return bad('missing user_ids or title')
+    }
 
     const pub = Deno.env.get('VAPID_PUBLIC_KEY')
     const priv = Deno.env.get('VAPID_PRIVATE_KEY')
@@ -59,22 +65,42 @@ serve(async (req) => {
     const notificationPayload = JSON.stringify({ title, body, url, tag, icon })
     const staleEndpoints: string[] = []
 
+    // Apple Web Push rejects topics that aren't short base64url (max 32 chars),
+    // so only pass topic to non-Apple endpoints and sanitize it.
+    const safeTopic = (tag || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || undefined
+
     const results = await Promise.allSettled(
-      subs.map((s: any) =>
-        webpush.sendNotification(
+      subs.map((s: any) => {
+        const isApple = /web\.push\.apple\.com/.test(s.endpoint)
+        const opts: any = { TTL: 60, urgency: 'high' }
+        if (!isApple && safeTopic) opts.topic = safeTopic
+        return webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
           notificationPayload,
-          { TTL: 60, urgency: 'high', topic: tag || undefined },
+          opts,
         ).catch((err: any) => {
           const code = err?.statusCode || err?.status
           if (code === 404 || code === 410) staleEndpoints.push(s.endpoint)
           throw err
-        }),
-      ),
+        })
+      }),
     )
 
     let sent = 0, failed = 0
-    for (const r of results) r.status === 'fulfilled' ? sent++ : failed++
+    const failures: Array<{ endpoint: string; code: any; body: any }> = []
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i]
+      if (r.status === 'fulfilled') sent++
+      else {
+        failed++
+        const err: any = r.reason
+        failures.push({
+          endpoint: subs[i].endpoint.slice(0, 60) + '...',
+          code: err?.statusCode || err?.status || 'unknown',
+          body: err?.body || String(err?.message || err).slice(0, 200),
+        })
+      }
+    }
 
     let pruned = 0
     if (staleEndpoints.length) {
@@ -85,7 +111,8 @@ serve(async (req) => {
       if (!delErr) pruned = count || 0
     }
 
-    return json({ sent, failed, pruned })
+    console.log(JSON.stringify({ sent, failed, pruned, userIds: userIds.length, title, failures }))
+    return json({ sent, failed, pruned, failures })
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: corsJson() })
   }

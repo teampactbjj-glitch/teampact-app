@@ -416,6 +416,9 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       branch_id: coach?.branch_id || null,
       day_of_week: d.getDay(),
       status: isAdmin ? 'approved' : 'pending',
+      // שדות NOT NULL שאין לנו בטופס — ממלאים ברירות מחדל סבירות
+      class_type: 'regular',
+      hall: '',
     }
     let { error } = await insertWithFallback(basePayload)
 

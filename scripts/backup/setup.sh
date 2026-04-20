@@ -78,7 +78,7 @@ fi
 
 read -r -p "Set up Telegram alerts on backup failure? [y/N] " TG_YN
 TG_TOKEN=""; TG_CHAT=""
-if [[ "${TG_YN,,}" == "y" ]]; then
+if [[ "$(echo "$TG_YN" | tr '[:upper:]' '[:lower:]')" == "y" ]]; then
   ask "  Telegram bot token:"  TG_TOKEN
   ask "  Telegram chat id:"    TG_CHAT
 fi
@@ -195,7 +195,7 @@ echo "   Watch it: https://github.com/$APP_REPO/actions"
 step "6/6  Weekly Mac sync (optional)"
 # ---------------------------------------------------------------
 read -r -p "Install the weekly launchd agent now? [y/N] " INSTALL_YN
-if [[ "${INSTALL_YN,,}" == "y" ]]; then
+if [[ "$(echo "$INSTALL_YN" | tr '[:upper:]' '[:lower:]')" == "y" ]]; then
   PLIST_SRC="$REPO_ROOT/scripts/backup/com.teampact.backup-sync.plist"
   PLIST_DST="$HOME/Library/LaunchAgents/com.teampact.backup-sync.plist"
   mkdir -p "$HOME/Library/LaunchAgents"

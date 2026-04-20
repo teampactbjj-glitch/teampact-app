@@ -951,8 +951,12 @@ export default function AthleteDashboard({ profile }) {
   }
 
   async function fetchAnnouncements() {
-    const { data } = await supabase.from('announcements').select('*').or('status.eq.approved,status.is.null').order('created_at', { ascending: false }).limit(200)
-    setAnnouncements(data || [])
+    const statusFilter = 'status.eq.approved,status.is.null'
+    const [itemsRes, generalRes] = await Promise.all([
+      supabase.from('announcements').select('*').in('type', ['product', 'seminar']).or(statusFilter).order('created_at', { ascending: false }),
+      supabase.from('announcements').select('*').in('type', ['general', 'announcement']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
+    ])
+    setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])
   }
 
   async function fetchRegistrations() {

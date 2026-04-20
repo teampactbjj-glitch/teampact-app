@@ -23,6 +23,11 @@ export async function allTrainerUserIds() {
   return (data || []).map(p => p.id).filter(Boolean)
 }
 
+export async function allAdminUserIds() {
+  const { data } = await supabase.from('profiles').select('id').eq('is_admin', true)
+  return (data || []).map(p => p.id).filter(Boolean)
+}
+
 // Active athlete user_ids (where a matching auth user exists) filtered by branch.
 export async function athleteUserIdsForBranch(branchId) {
   if (!branchId) return []

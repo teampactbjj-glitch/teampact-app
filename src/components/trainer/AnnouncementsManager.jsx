@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { notifyPush } from '../../lib/notifyPush'
-import { allActiveAthleteUserIds } from '../../lib/notifyTargets'
+import { allActiveAthleteUserIds, allAdminUserIds } from '../../lib/notifyTargets'
 
 const TYPE_OPTIONS = [
   { value: 'general',  label: '📢 הודעה כללית (שינוי לו"ז / סגירה)' },
@@ -92,21 +92,60 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
     if (editingId) {
       await supabase.from('announcements').update(payload).eq('id', editingId)
     } else {
-      await supabase.from('announcements').insert(payload)
-      // Push למתאמנים על הודעה חדשה (לא על עריכות)
-      allActiveAthleteUserIds()
-        .then(userIds => notifyPush({
-          userIds,
-          title: form.type === 'seminar' ? 'סמינר חדש' : 'הודעה חדשה',
-          body: form.title,
-          url: '/#announcements',
-          tag: `announcement:${Date.now()}`,
-        }))
-        .catch(() => {})
+      const status = isAdmin ? 'approved' : 'pending'
+      const insertPayload = {
+        ...payload,
+        status,
+        ...(isAdmin ? { approved_by: trainerId, approved_at: new Date().toISOString() } : {}),
+      }
+      await supabase.from('announcements').insert(insertPayload)
+      if (status === 'approved') {
+        // אדמין פרסם ישירות — התראה למתאמנים
+        allActiveAthleteUserIds()
+          .then(userIds => notifyPush({
+            userIds,
+            title: form.type === 'seminar' ? 'סמינר חדש' : 'הודעה חדשה',
+            body: form.title,
+            url: '/#announcements',
+            tag: `announcement:${Date.now()}`,
+          }))
+          .catch(() => {})
+      } else {
+        // מאמן רגיל — התראה למנהלים לאישור
+        allAdminUserIds()
+          .then(userIds => notifyPush({
+            userIds,
+            title: 'בקשה לאישור הודעה',
+            body: form.title,
+            url: '/#announcements',
+            tag: `announcement-pending:${Date.now()}`,
+          }))
+          .catch(() => {})
+      }
     }
     setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '' })
     setEditingId(null)
     setShowForm(false)
+    fetchAnnouncements()
+    onChange?.()
+  }
+
+  async function approveItem(item) {
+    await supabase.from('announcements').update({
+      status: 'approved',
+      approved_by: trainerId,
+      approved_at: new Date().toISOString(),
+    }).eq('id', item.id)
+    // התראה למתאמנים על הפרסום
+    allActiveAthleteUserIds()
+      .then(userIds => notifyPush({
+        userIds,
+        title: item.type === 'seminar' ? 'סמינר חדש' : 'הודעה חדשה',
+        body: item.title,
+        url: '/#announcements',
+        tag: `announcement:${item.id}`,
+      }))
+      .catch(() => {})
     fetchAnnouncements()
     onChange?.()
   }
@@ -202,13 +241,19 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                     </span>
                     {item.event_date && <span className="text-xs text-gray-400">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</span>}
                     {item.price != null && <span className="text-xs font-bold text-green-600">₪{item.price}</span>}
+                    {item.status === 'pending' && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-orange-700">⏳ ממתין לאישור</span>
+                    )}
                   </div>
                   <p className="font-semibold text-gray-800">{item.title}</p>
                   {item.content && <p className="text-sm text-gray-500 mt-1">{item.content}</p>}
                   <p className="text-xs text-gray-300 mt-2">{new Date(item.created_at).toLocaleDateString('he-IL')}</p>
                 </div>
                 {(isAdmin || item.trainer_id === trainerId) && (
-                  <div className="flex gap-2 flex-shrink-0">
+                  <div className="flex gap-2 flex-shrink-0 flex-wrap">
+                    {isAdmin && item.status === 'pending' && (
+                      <button onClick={() => approveItem(item)} className="text-xs bg-green-50 text-green-600 hover:bg-green-100 px-3 py-1.5 rounded-lg">✅ אשר</button>
+                    )}
                     <button onClick={() => openEdit(item)} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
                     <button onClick={() => deleteItem(item.id)} className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">🗑️ מחק</button>
                   </div>

@@ -885,7 +885,7 @@ export default function AthleteDashboard({ profile }) {
   }
 
   async function fetchAnnouncements() {
-    const { data } = await supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(20)
+    const { data } = await supabase.from('announcements').select('*').eq('status', 'approved').order('created_at', { ascending: false }).limit(20)
     setAnnouncements(data || [])
   }
 

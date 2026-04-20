@@ -171,10 +171,10 @@ else
   git -c commit.gpgsign=false commit -m "Add daily backup workflow" || true
 fi
 
-# Use the PAT for this one push so it has workflow scope
-REMOTE_URL=$(git remote get-url origin)
-AUTH_URL=$(echo "$REMOTE_URL" | sed "s#https://#https://x-access-token:$GH_PAT@#")
-git push "$AUTH_URL" main
+# Push with the PAT as a Basic-auth header — more robust than embedding
+# the token in the URL (which some curl builds reject as "Bad hostname").
+AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+git -c http.extraheader="$AUTH_HEADER" push origin main
 
 # ---------------------------------------------------------------
 step "5/6  Kicking off the first run"

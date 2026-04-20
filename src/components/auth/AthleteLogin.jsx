@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import InstallBanner from '../InstallBanner'
 
 export default function AthleteLogin({ onSwitch }) {
   const [email, setEmail] = useState('')
@@ -29,7 +30,9 @@ export default function AthleteLogin({ onSwitch }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-red-900 p-4" dir="rtl">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div className="w-full max-w-md space-y-3">
+      <InstallBanner />
+      <div className="bg-white rounded-2xl shadow-2xl p-8">
         <div className="text-center mb-8">
           <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center shadow-lg mb-3">
             <span className="text-3xl">🥋</span>
@@ -72,6 +75,7 @@ export default function AthleteLogin({ onSwitch }) {
             מאמן? לחץ כאן
           </button>
         </div>
+      </div>
       </div>
     </div>
   )

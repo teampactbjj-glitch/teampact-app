@@ -19,6 +19,10 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setSession(session)
     })
+    // רישום service worker ל-PWA (push listeners יתווספו ב-Stage 2)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(err => console.warn('SW register failed', err))
+    }
     return () => subscription.unsubscribe()
   }, [])
 

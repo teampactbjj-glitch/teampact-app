@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import InstallBanner from './InstallBanner'
+import { notifyPush } from '../lib/notifyPush'
+import { trainerUserIdsForMember } from '../lib/notifyTargets'
+
+const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
 // רשימת המאמנים הזמינים בטופס — גם אם עדיין אין להם רשומה בטבלת coaches
 const COACHES_FALLBACK = [
@@ -150,27 +155,42 @@ export default function RegisterPage() {
       console.error(memberErr)
       return
     }
+    // Push למאמנים הרלוונטיים (fire-and-forget)
+    trainerUserIdsForMember(memberPayload)
+      .then(userIds => notifyPush({
+        userIds,
+        title: 'בקשת הצטרפות חדשה',
+        body: `${memberPayload.full_name} — ${SUB_LABELS[memberPayload.subscription_type] || memberPayload.subscription_type}`,
+        url: '/#athletes',
+        tag: `lead:${userId || Date.now()}`,
+      }))
+      .catch(() => {})
     setDone(true)
   }
 
   if (done) return (
     <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow p-8 max-w-sm w-full text-center space-y-3">
-        <div className="text-5xl">✅</div>
-        <h2 className="font-bold text-xl text-gray-800">הבקשה נשלחה!</h2>
-        <p className="text-gray-500 text-sm">הצוות יאשר אותך בקרוב.</p>
-        <div className="flex items-center justify-center gap-2 text-xs text-emerald-600 mt-2">
-          <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-          <span>ממתין לאישור... הדף יתעדכן אוטומטית</span>
+      <div className="max-w-sm w-full space-y-3">
+        <div className="bg-white rounded-2xl shadow p-8 text-center space-y-3">
+          <div className="text-5xl">✅</div>
+          <h2 className="font-bold text-xl text-gray-800">הבקשה נשלחה!</h2>
+          <p className="text-gray-500 text-sm">הצוות יאשר אותך בקרוב.</p>
+          <div className="flex items-center justify-center gap-2 text-xs text-emerald-600 mt-2">
+            <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            <span>ממתין לאישור... הדף יתעדכן אוטומטית</span>
+          </div>
+          <a href="/" className="block mt-2 text-sm text-blue-600 underline">כבר אושרת? לחץ כאן להיכנס</a>
         </div>
-        <a href="/" className="block mt-2 text-sm text-blue-600 underline">כבר אושרת? לחץ כאן להיכנס</a>
+        <InstallBanner />
       </div>
     </div>
   )
 
   return (
     <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-lg p-6 max-w-sm w-full space-y-4">
+      <div className="max-w-sm w-full space-y-3">
+      <InstallBanner />
+      <div className="bg-white rounded-2xl shadow-lg p-6 space-y-4">
         <div className="text-center">
           <div className="text-4xl mb-1">🥋</div>
           <h1 className="font-bold text-xl text-gray-800">הצטרפות ל-TeamPact</h1>
@@ -326,6 +346,7 @@ export default function RegisterPage() {
         >
           {loading ? 'שולח...' : 'שלח בקשת הצטרפות'}
         </button>
+      </div>
       </div>
     </div>
   )

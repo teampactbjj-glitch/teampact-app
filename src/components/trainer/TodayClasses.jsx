@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { notifyPush } from '../../lib/notifyPush'
+import { allTrainerUserIds } from '../../lib/notifyTargets'
 
 const WEEKLY_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
@@ -466,6 +468,16 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       setAddError(error.message || 'שגיאה בשמירה')
       return
     }
+    // Push למאמנים אחרים על שינוי לו"ז
+    allTrainerUserIds()
+      .then(ids => notifyPush({
+        userIds: ids.filter(id => id !== trainerId),
+        title: 'שינוי לו"ז',
+        body: `שיעור חדש: ${basePayload.name} — ${d.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })} ${basePayload.start_time}`,
+        url: '/#schedule',
+        tag: `class:${Date.now()}`,
+      }))
+      .catch(() => {})
     setShowAdd(false)
     setNewClass({ name: '', coach_id: '', date: '', start_time: '', duration_minutes: 60 })
     alert(isAdmin ? 'השיעור נוסף ומאושר' : 'השיעור נשלח לאישור מנהל')

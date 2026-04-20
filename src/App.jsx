@@ -19,7 +19,33 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setSession(session)
     })
+    // רישום service worker ל-PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(err => console.warn('SW register failed', err))
+    }
     return () => subscription.unsubscribe()
+  }, [])
+
+  // כשפרופיל נטען וקיימת כבר הרשאה — נוודא subscription עדכני
+  useEffect(() => {
+    if (!profile?.id) return
+    import('./lib/push').then(({ ensurePushSubscription }) => {
+      ensurePushSubscription(profile).catch(() => {})
+    }).catch(() => {})
+  }, [profile?.id])
+
+  // ניווט על לחיצה בהתראה מה-service worker (hash-based)
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return
+    function onMessage(e) {
+      if (e?.data?.type === 'navigate' && typeof e.data.url === 'string') {
+        const hashIdx = e.data.url.indexOf('#')
+        if (hashIdx >= 0) window.location.hash = e.data.url.slice(hashIdx)
+        else window.location.href = e.data.url
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', onMessage)
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage)
   }, [])
 
   useEffect(() => {

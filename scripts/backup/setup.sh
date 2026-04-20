@@ -84,41 +84,36 @@ if [[ "$(echo "$TG_YN" | tr '[:upper:]' '[:lower:]')" == "y" ]]; then
 fi
 
 # ---------------------------------------------------------------
-step "2/6  Creating $BACKUPS_REPO (if needed)"
+step "2/6  Ensuring $BACKUPS_REPO exists"
 # ---------------------------------------------------------------
-CREATE_RESP=$(curl -sS -o /tmp/gh-create.json -w '%{http_code}' \
-  -X POST "https://api.github.com/orgs/$BACKUPS_OWNER/repos" \
-  -H "Authorization: Bearer $GH_PAT" \
-  -H "Accept: application/vnd.github+json" \
-  -d "{\"name\":\"$BACKUPS_NAME\",\"private\":true,\"auto_init\":true,\"description\":\"Automated TeamPact DB+Storage snapshots\"}" || true)
+EXISTS=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.github.com/repos/$BACKUPS_REPO" \
+  -H "Authorization: Bearer $GH_PAT")
 
-if [[ "$CREATE_RESP" == "201" ]]; then
-  echo "   ✓ created"
-elif [[ "$CREATE_RESP" == "422" ]]; then
-  # exists OR owner isn't an org. Try user endpoint.
-  CREATE_RESP2=$(curl -sS -o /tmp/gh-create2.json -w '%{http_code}' \
+if [[ "$EXISTS" == "200" ]]; then
+  echo "   ✓ already exists — reusing"
+else
+  # Try user endpoint first (most common case), fall back to org.
+  CREATE_RESP=$(curl -sS -o /tmp/gh-create.json -w '%{http_code}' \
     -X POST "https://api.github.com/user/repos" \
     -H "Authorization: Bearer $GH_PAT" \
     -H "Accept: application/vnd.github+json" \
     -d "{\"name\":\"$BACKUPS_NAME\",\"private\":true,\"auto_init\":true,\"description\":\"Automated TeamPact DB+Storage snapshots\"}" || true)
-  if [[ "$CREATE_RESP2" == "201" ]]; then
-    echo "   ✓ created (user repo)"
+  if [[ "$CREATE_RESP" == "201" ]]; then
+    echo "   ✓ created"
   else
-    # Check if it already exists
-    EXISTS=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.github.com/repos/$BACKUPS_REPO" \
-      -H "Authorization: Bearer $GH_PAT")
-    if [[ "$EXISTS" == "200" ]]; then
-      echo "   ✓ already exists — reusing"
+    CREATE_RESP2=$(curl -sS -o /tmp/gh-create2.json -w '%{http_code}' \
+      -X POST "https://api.github.com/orgs/$BACKUPS_OWNER/repos" \
+      -H "Authorization: Bearer $GH_PAT" \
+      -H "Accept: application/vnd.github+json" \
+      -d "{\"name\":\"$BACKUPS_NAME\",\"private\":true,\"auto_init\":true,\"description\":\"Automated TeamPact DB+Storage snapshots\"}" || true)
+    if [[ "$CREATE_RESP2" == "201" ]]; then
+      echo "   ✓ created (org repo)"
     else
-      echo "   ERROR creating repo. Response:" >&2
+      echo "   ERROR creating repo:" >&2
       cat /tmp/gh-create.json /tmp/gh-create2.json 2>/dev/null | head >&2
       exit 1
     fi
   fi
-else
-  echo "   ERROR creating repo (HTTP $CREATE_RESP):"
-  cat /tmp/gh-create.json
-  exit 1
 fi
 
 # ---------------------------------------------------------------

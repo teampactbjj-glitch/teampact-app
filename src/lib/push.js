@@ -43,6 +43,29 @@ export async function ensurePushSubscription(user) {
 
   const reg = await navigator.serviceWorker.ready
   let sub = await reg.pushManager.getSubscription()
+
+  // If there's an existing sub but it was created with a different VAPID key
+  // (e.g. keys were rotated), the push will fail with 403 "VAPID credentials do
+  // not correspond". Detect and re-subscribe with the current key.
+  if (sub) {
+    const currentKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    const subKey = sub.options?.applicationServerKey
+    const subKeyBytes = subKey ? new Uint8Array(subKey) : null
+    const keysMatch = subKeyBytes && subKeyBytes.length === currentKey.length &&
+      subKeyBytes.every((b, i) => b === currentKey[i])
+    if (!keysMatch) {
+      console.warn('push sub has stale VAPID key — re-subscribing')
+      try {
+        const oldEndpoint = sub.endpoint
+        await sub.unsubscribe()
+        if (oldEndpoint) {
+          await supabase.from('push_subscriptions').delete().eq('endpoint', oldEndpoint)
+        }
+      } catch {}
+      sub = null
+    }
+  }
+
   if (!sub) {
     try {
       sub = await reg.pushManager.subscribe({

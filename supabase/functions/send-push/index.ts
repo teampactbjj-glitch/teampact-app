@@ -80,7 +80,11 @@ serve(async (req) => {
           opts,
         ).catch((err: any) => {
           const code = err?.statusCode || err?.status
-          if (code === 404 || code === 410) staleEndpoints.push(s.endpoint)
+          const body = err?.body || ''
+          // 404/410: endpoint gone. 403 with VAPID mismatch: sub was created
+          // with a different VAPID key and cannot be recovered — treat as stale.
+          const vapidMismatch = code === 403 && /VAPID credentials/i.test(String(body))
+          if (code === 404 || code === 410 || vapidMismatch) staleEndpoints.push(s.endpoint)
           throw err
         })
       }),

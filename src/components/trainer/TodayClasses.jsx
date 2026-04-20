@@ -472,6 +472,19 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     fetchDayClasses(selectedDate)
   }
 
+  async function deleteClass(cls) {
+    const msg = `למחוק את השיעור "${cls.name || cls.title || 'ללא שם'}"${cls.coachName ? ` של ${cls.coachName}` : ''}?\n\nפעולה זו תמחק גם את כל הרישומים והנוכחות של השיעור.`
+    if (!confirm(msg)) return
+    // ניקוי תלויות לפני מחיקת השיעור (במקרה שאין ON DELETE CASCADE)
+    await supabase.from('class_registrations').delete().eq('class_id', cls.id)
+    await supabase.from('member_classes').delete().eq('class_id', cls.id)
+    await supabase.from('checkins').delete().eq('class_id', cls.id)
+    const { error } = await supabase.from('classes').delete().eq('id', cls.id)
+    if (error) { console.error('deleteClass error:', error); alert('שגיאה במחיקה: ' + (error.message || '')); return }
+    setExpanded(null)
+    fetchDayClasses(selectedDate)
+  }
+
   function handleExpand(id) {
     if (expanded === id) { setExpanded(null); return }
     setExpanded(id)
@@ -898,6 +911,16 @@ export default function TodayClasses({ trainerId, isAdmin }) {
                           </button>
                         </div>
                       )}
+                    </div>
+
+                    {/* Danger zone — מחיקת שיעור */}
+                    <div className="pt-3 border-t">
+                      <button
+                        onClick={() => deleteClass(cls)}
+                        className="w-full text-sm bg-white hover:bg-red-50 border-2 border-red-200 hover:border-red-400 text-red-600 hover:text-red-700 px-3 py-2 rounded-lg font-bold transition"
+                      >
+                        🗑️ מחק שיעור זה
+                      </button>
                     </div>
                   </>
                 )}

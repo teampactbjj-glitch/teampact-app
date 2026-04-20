@@ -30,12 +30,21 @@ export async function allAdminUserIds() {
 
 export async function athleteUserIdsForBranch(branchId) {
   if (!branchId) return []
+  return athleteUserIdsForBranches([branchId])
+}
+
+export async function athleteUserIdsForBranches(branchIds) {
+  if (!Array.isArray(branchIds) || branchIds.length === 0) return []
   const { data } = await supabase
     .from('members')
     .select('id, branch_ids, branch_id')
     .eq('active', true)
+  const targetSet = new Set(branchIds.filter(Boolean))
   return (data || [])
-    .filter(m => (m.branch_ids || []).includes(branchId) || m.branch_id === branchId)
+    .filter(m => {
+      const mb = (m.branch_ids && m.branch_ids.length) ? m.branch_ids : (m.branch_id ? [m.branch_id] : [])
+      return mb.some(b => targetSet.has(b))
+    })
     .map(m => m.id)
     .filter(Boolean)
 }

@@ -5,10 +5,12 @@ import AthleteLogin from './components/auth/AthleteLogin'
 import TrainerDashboard from './components/trainer/TrainerDashboard'
 import AthleteDashboard from './components/athlete/AthleteDashboard'
 import RegisterPage from './components/RegisterPage'
+import PendingApprovalScreen from './components/PendingApprovalScreen'
 
 export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [memberStatus, setMemberStatus] = useState(null)
   const [loginMode, setLoginMode] = useState('athlete')
   const [loadingProfile, setLoadingProfile] = useState(false)
 
@@ -50,22 +52,42 @@ export default function App() {
 
   useEffect(() => {
     if (session?.user) fetchProfile(session.user)
-    else setProfile(null)
+    else { setProfile(null); setMemberStatus(null) }
   }, [session])
 
   async function fetchProfile(user) {
     setLoadingProfile(true)
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*, is_admin')
-      .eq('id', user.id)
-      .maybeSingle()
+    const [{ data, error }, { data: member }] = await Promise.all([
+      supabase.from('profiles').select('*, is_admin').eq('id', user.id).maybeSingle(),
+      supabase.from('members').select('status').eq('id', user.id).maybeSingle(),
+    ])
     if (error) console.error('fetchProfile error:', error)
     // ודא שיש email — לעיתים הוא לא שמור בטבלת profiles, אז ניקח מה-auth
     const merged = { ...(data || { id: user.id }), email: data?.email || user.email }
     setProfile(merged)
+    setMemberStatus(member?.status || null)
     setLoadingProfile(false)
   }
+
+  // כאשר יש בקשה ממתינה — בודקים כל 5 שניות אם המנהל אישר
+  useEffect(() => {
+    if (memberStatus !== 'pending' || !session?.user?.id) return
+    const userId = session.user.id
+    let cancelled = false
+    const interval = setInterval(async () => {
+      if (cancelled) return
+      const { data: member } = await supabase
+        .from('members')
+        .select('status')
+        .eq('id', userId)
+        .maybeSingle()
+      if (cancelled) return
+      if (member?.status && member.status !== 'pending') {
+        setMemberStatus(member.status)
+      }
+    }, 5000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [memberStatus, session?.user?.id])
 
   if (!session) {
     return loginMode === 'trainer'
@@ -80,5 +102,6 @@ export default function App() {
   )
 
   if (profile?.role === 'trainer') return <TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} />
+  if (memberStatus === 'pending') return <PendingApprovalScreen />
   return <AthleteDashboard profile={profile} />
 }

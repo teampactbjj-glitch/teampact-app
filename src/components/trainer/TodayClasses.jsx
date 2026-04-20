@@ -617,10 +617,19 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                             {req.coachName ? ` · ${req.coachName}` : ''}
                           </p>
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                          יום {DAYS_HE[req.day_of_week]} · {formatTime(req.start_time)}
-                          {req.branchName ? ` · 📍 ${req.branchName}` : ''}
-                        </p>
+                        {(() => {
+                          const now = new Date(); now.setHours(0, 0, 0, 0)
+                          const diff = (req.day_of_week - now.getDay() + 7) % 7
+                          const nextDate = new Date(now); nextDate.setDate(now.getDate() + diff)
+                          const dateStr = nextDate.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })
+                          const relLabel = diff === 0 ? 'היום' : diff === 1 ? 'מחר' : `יום ${DAYS_HE[req.day_of_week]}`
+                          return (
+                            <p className="text-xs text-gray-600 mt-1 font-semibold">
+                              📅 {relLabel} · {dateStr} · 🕐 {formatTime(req.start_time)}
+                              {req.branchName ? ` · 📍 ${req.branchName}` : ''}
+                            </p>
+                          )
+                        })()}
                       </div>
                       <button
                         onClick={() => jumpToClassDay(req.day_of_week)}

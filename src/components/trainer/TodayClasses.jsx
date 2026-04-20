@@ -407,10 +407,19 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       return res
     }
 
+    const duration = Number(newClass.duration_minutes) || 60
+    // מחשבים end_time על סמך start_time + duration
+    const [sh, sm] = (newClass.start_time || '00:00').split(':').map(Number)
+    const totalMin = sh * 60 + sm + duration
+    const eh = Math.floor((totalMin / 60) % 24)
+    const em = totalMin % 60
+    const endTime = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`
+
     const basePayload = {
       name: newClass.name.trim(),
       start_time: newClass.start_time,
-      duration_minutes: Number(newClass.duration_minutes) || 60,
+      end_time: endTime,
+      duration_minutes: duration,
       coach_id: newClass.coach_id,
       coach_name: coach?.name || null,
       branch_id: coach?.branch_id || null,

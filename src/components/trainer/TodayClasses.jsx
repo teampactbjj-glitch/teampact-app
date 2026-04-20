@@ -389,6 +389,24 @@ export default function TodayClasses({ trainerId, isAdmin }) {
     if (!newClass.start_time) { setAddError('יש לבחור שעה'); return }
     const coach = coaches.find(c => c.id === newClass.coach_id)
     const d = new Date(newClass.date + 'T00:00:00')
+    // בונים payload ומסירים שדות שה-schema cache של Supabase לא מכיר
+    async function insertWithFallback(obj) {
+      let res = await supabase.from('classes').insert(obj)
+      while (res.error) {
+        const msg = res.error.message || ''
+        // דפוס: "Could not find the 'X' column of 'classes' in the schema cache"
+        const match = msg.match(/Could not find the '([^']+)' column/i)
+        if (!match) return res
+        const badCol = match[1]
+        if (!(badCol in obj)) return res
+        const { [badCol]: _, ...next } = obj
+        console.warn(`[addClass] dropping unknown column "${badCol}" and retrying`)
+        res = await supabase.from('classes').insert(next)
+        obj = next
+      }
+      return res
+    }
+
     const basePayload = {
       name: newClass.name.trim(),
       start_time: newClass.start_time,
@@ -397,17 +415,9 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       coach_name: coach?.name || null,
       branch_id: coach?.branch_id || null,
       day_of_week: d.getDay(),
+      status: isAdmin ? 'approved' : 'pending',
     }
-    const payload = { ...basePayload, status: isAdmin ? 'approved' : 'pending' }
-    let { error } = await supabase.from('classes').insert(payload)
-
-    // אם עמודת status עדיין לא קיימת במסד — fallback להוספה בלי status.
-    // במקרה כזה המנהל יראה את השיעור מיד (בלי תהליך אישור) — עדיף מלחסום לגמרי.
-    if (error && /status/i.test(error.message || '') && /column/i.test(error.message || '')) {
-      console.warn('[addClass] status column missing, inserting without it. Run migration-classes-approval.sql!')
-      const retry = await supabase.from('classes').insert(basePayload)
-      error = retry.error
-    }
+    let { error } = await insertWithFallback(basePayload)
 
     if (error) {
       console.error('addClass error:', error)
@@ -557,10 +567,16 @@ export default function TodayClasses({ trainerId, isAdmin }) {
       })()}
 
       {showAdd && (() => {
-        // dedupe coaches by trimmed name — עדיפות לרשומה שמקושרת ל־user_id
+        // dedupe coaches by normalized name — עדיפות לרשומה שמקושרת ל־user_id.
+        // מנרמל רווחים, תווים בלתי-נראים (zero-width, BOM), וגרסאות אותיות עברית.
+        const normalizeCoachName = (n) => (n || '')
+          .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '') // zero-width / bidi marks
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase()
         const byName = new Map()
         for (const c of coaches) {
-          const key = (c.name || '').trim()
+          const key = normalizeCoachName(c.name)
           if (!key) continue
           const existing = byName.get(key)
           if (!existing || (!existing.user_id && c.user_id)) byName.set(key, c)
@@ -704,7 +720,7 @@ export default function TodayClasses({ trainerId, isAdmin }) {
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-gray-500">{formatTime(cls.start_time)} · {cls.duration_minutes} דקות</p>
+                <p className="text-sm text-gray-500">{formatTime(cls.start_time)}{cls.duration_minutes ? ` · ${cls.duration_minutes} דקות` : ''}</p>
               </div>
               <div className="flex items-center gap-1 flex-wrap justify-end">
                 {(regCountsByClass[cls.id] || 0) > 0 && (

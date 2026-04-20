@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { notifyPush } from '../../lib/notifyPush'
+import { allActiveAthleteUserIds } from '../../lib/notifyTargets'
 
 const TYPE_OPTIONS = [
   { value: 'general',  label: '📢 הודעה כללית (שינוי לו"ז / סגירה)' },
@@ -91,6 +93,16 @@ export default function AnnouncementsManager({ trainerId, isAdmin }) {
       await supabase.from('announcements').update(payload).eq('id', editingId)
     } else {
       await supabase.from('announcements').insert(payload)
+      // Push למתאמנים על הודעה חדשה (לא על עריכות)
+      allActiveAthleteUserIds()
+        .then(userIds => notifyPush({
+          userIds,
+          title: form.type === 'seminar' ? 'סמינר חדש' : 'הודעה חדשה',
+          body: form.title,
+          url: '/#announcements',
+          tag: `announcement:${Date.now()}`,
+        }))
+        .catch(() => {})
     }
     setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '' })
     setEditingId(null)

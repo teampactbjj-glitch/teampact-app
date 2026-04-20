@@ -7,7 +7,10 @@ import ProfileChangeRequests from './ProfileChangeRequests'
 import ShopManager from './ShopManager'
 import TrainerProfile from './TrainerProfile'
 import BottomNav from '../BottomNav'
+import InstallBanner from '../InstallBanner'
+import EnablePushBanner from '../EnablePushBanner'
 import { supabase } from '../../lib/supabase'
+import { isStandalone } from '../../lib/platform'
 
 function RegisterLinkCard() {
   const [copied, setCopied] = useState(false)
@@ -50,11 +53,20 @@ export default function TrainerDashboard({ profile, isAdmin }) {
 
   useEffect(() => { refreshCounts() }, [])
 
-  // Realtime: new pending registrations
+  // hash → tab (מאפשר ניווט מהתראת push)
   useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {})
+    const TAB_HASHES = ['schedule', 'athletes', 'shop', 'announcements', 'profile']
+    function syncFromHash() {
+      const h = (window.location.hash || '').replace('#', '')
+      if (TAB_HASHES.includes(h)) setActiveTab(h)
     }
+    syncFromHash()
+    window.addEventListener('hashchange', syncFromHash)
+    return () => window.removeEventListener('hashchange', syncFromHash)
+  }, [])
+
+  // Realtime: new pending registrations (in-app toast when tab is open)
+  useEffect(() => {
     const channel = supabase
       .channel('pending-members')
       .on('postgres_changes', {
@@ -124,6 +136,10 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       </header>
 
       <main className="p-4 max-w-3xl mx-auto pb-24">
+        <div className="mb-3 space-y-2">
+          {!isStandalone() && <InstallBanner variant="slim" />}
+          <EnablePushBanner profile={profile} />
+        </div>
         {activeTab === 'schedule' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} />}
 
         {activeTab === 'athletes' && (

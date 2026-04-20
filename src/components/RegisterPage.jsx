@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import InstallBanner from './InstallBanner'
+import { notifyPush } from '../lib/notifyPush'
+import { trainerUserIdsForMember } from '../lib/notifyTargets'
+
+const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
 // רשימת המאמנים הזמינים בטופס — גם אם עדיין אין להם רשומה בטבלת coaches
 const COACHES_FALLBACK = [
@@ -151,6 +155,16 @@ export default function RegisterPage() {
       console.error(memberErr)
       return
     }
+    // Push למאמנים הרלוונטיים (fire-and-forget)
+    trainerUserIdsForMember(memberPayload)
+      .then(userIds => notifyPush({
+        userIds,
+        title: 'בקשת הצטרפות חדשה',
+        body: `${memberPayload.full_name} — ${SUB_LABELS[memberPayload.subscription_type] || memberPayload.subscription_type}`,
+        url: '/#athletes',
+        tag: `lead:${userId || Date.now()}`,
+      }))
+      .catch(() => {})
     setDone(true)
   }
 

@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import BottomNav from '../BottomNav'
+import InstallBanner from '../InstallBanner'
+import EnablePushBanner from '../EnablePushBanner'
+import { isStandalone } from '../../lib/platform'
+import { notifyPush } from '../../lib/notifyPush'
+import { allTrainerUserIds } from '../../lib/notifyTargets'
 
 const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const SUBSCRIPTION_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -364,7 +369,18 @@ function AnnouncementsTab({ announcements, profile }) {
       status: 'pending',
     })
     if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
-    else { setOrdered(prev => new Set([...prev, item.id])) }
+    else {
+      setOrdered(prev => new Set([...prev, item.id]))
+      allTrainerUserIds()
+        .then(ids => notifyPush({
+          userIds: ids,
+          title: 'הזמנה חדשה מהחנות',
+          body: `${profile?.full_name || 'מתאמן'} הזמין: ${item.title}`,
+          url: '/#shop',
+          tag: `order:${Date.now()}`,
+        }))
+        .catch(() => {})
+    }
     setOrderingId(null)
   }
 
@@ -432,7 +448,18 @@ function ShopTab({ profile, allAnnouncements }) {
       status: 'pending',
     })
     if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
-    else { setOrdered(prev => new Set([...prev, item.id])) }
+    else {
+      setOrdered(prev => new Set([...prev, item.id]))
+      allTrainerUserIds()
+        .then(ids => notifyPush({
+          userIds: ids,
+          title: 'הזמנה חדשה מהחנות',
+          body: `${profile?.full_name || 'מתאמן'} הזמין: ${item.title}`,
+          url: '/#shop',
+          tag: `order:${Date.now()}`,
+        }))
+        .catch(() => {})
+    }
     setOrderingId(null)
   }
 
@@ -765,6 +792,18 @@ export default function AthleteDashboard({ profile }) {
   const [branchesMap, setBranchesMap]       = useState({})
   const [registrations, setRegistrations]   = useState(new Set())
 
+  // hash → tab (ניווט מהתראת push)
+  useEffect(() => {
+    const TAB_HASHES = ['schedule', 'shop', 'announcements', 'profile']
+    function syncFromHash() {
+      const h = (window.location.hash || '').replace('#', '')
+      if (TAB_HASHES.includes(h)) setActiveTab(h)
+    }
+    syncFromHash()
+    window.addEventListener('hashchange', syncFromHash)
+    return () => window.removeEventListener('hashchange', syncFromHash)
+  }, [])
+
   const subscriptionType = member?.subscription_type || profile?.subscription_type
   const limit = SUBSCRIPTION_LIMITS[subscriptionType] ?? 2
   const announcementsForTab = announcements.filter(a => a.type === 'general' || a.type === 'announcement' || a.type === 'seminar')
@@ -876,6 +915,10 @@ export default function AthleteDashboard({ profile }) {
         )}
       </header>
       <main className="p-4 max-w-lg mx-auto pb-24">
+        <div className="mb-3 space-y-2">
+          {!isStandalone() && <InstallBanner variant="slim" />}
+          <EnablePushBanner profile={profile} />
+        </div>
         {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} onRegister={handleRegister} branchesMap={branchesMap} />}
         {activeTab === 'shop' && <ShopTab profile={profile} allAnnouncements={announcements} />}
         {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} />}

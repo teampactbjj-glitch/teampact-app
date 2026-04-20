@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { notifyPush } from '../../lib/notifyPush'
-import { allActiveAthleteUserIds, allAdminUserIds } from '../../lib/notifyTargets'
+import { allActiveAthleteUserIds, allAdminUserIds, athleteUserIdsForBranches } from '../../lib/notifyTargets'
 
 const TYPE_OPTIONS = [
   { value: 'general',  label: '📢 הודעה כללית (שינוי לו"ז / סגירה)' },
@@ -26,9 +26,14 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   const [items, setItems]       = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '' })
+  const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '', branch_ids: [] })
   const [loading, setLoading]   = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [branches, setBranches] = useState([])
+
+  useEffect(() => {
+    supabase.from('branches').select('id, name').order('name').then(({ data }) => setBranches(data || []))
+  }, [])
 
   function openEdit(item) {
     setEditingId(item.id)
@@ -39,14 +44,22 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       event_date: item.event_date ? new Date(item.event_date).toISOString().slice(0, 16) : '',
       price: item.price != null ? String(item.price) : '',
       image_url: item.image_url || '',
+      branch_ids: Array.isArray(item.branch_ids) ? item.branch_ids : [],
     })
     setShowForm(true)
   }
 
   function openAdd() {
     setEditingId(null)
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '' })
+    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '', branch_ids: [] })
     setShowForm(true)
+  }
+
+  function toggleBranch(id) {
+    setForm(p => {
+      const has = p.branch_ids.includes(id)
+      return { ...p, branch_ids: has ? p.branch_ids.filter(b => b !== id) : [...p.branch_ids, id] }
+    })
   }
 
   async function uploadImage(file) {
@@ -83,8 +96,10 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    const branchIds = Array.isArray(form.branch_ids) ? form.branch_ids.filter(Boolean) : []
     const payload = {
       title: form.title, content: form.content, type: form.type, trainer_id: trainerId,
+      branch_ids: branchIds.length ? branchIds : null,
       ...(form.type === 'seminar' && form.event_date ? { event_date: form.event_date } : {}),
       ...(form.type === 'seminar' && form.price      ? { price: parseFloat(form.price) } : {}),
       ...(form.image_url ? { image_url: form.image_url } : {}),
@@ -100,8 +115,11 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       }
       await supabase.from('announcements').insert(insertPayload)
       if (status === 'approved') {
-        // אדמין פרסם ישירות — התראה למתאמנים
-        allActiveAthleteUserIds()
+        // אדמין פרסם ישירות — התראה למתאמנים (לפי סניף או לכולם)
+        const targetIdsPromise = branchIds.length
+          ? athleteUserIdsForBranches(branchIds)
+          : allActiveAthleteUserIds()
+        targetIdsPromise
           .then(userIds => notifyPush({
             userIds,
             title: form.type === 'seminar' ? 'סמינר חדש' : 'הודעה חדשה',
@@ -123,7 +141,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
           .catch(() => {})
       }
     }
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '' })
+    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '', branch_ids: [] })
     setEditingId(null)
     setShowForm(false)
     fetchAnnouncements()
@@ -136,8 +154,12 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       approved_by: trainerId,
       approved_at: new Date().toISOString(),
     }).eq('id', item.id)
-    // התראה למתאמנים על הפרסום
-    allActiveAthleteUserIds()
+    // התראה למתאמנים על הפרסום (לפי סניף אם הוגדר, אחרת לכולם)
+    const branchIds = Array.isArray(item.branch_ids) ? item.branch_ids.filter(Boolean) : []
+    const targetIdsPromise = branchIds.length
+      ? athleteUserIdsForBranches(branchIds)
+      : allActiveAthleteUserIds()
+    targetIdsPromise
       .then(userIds => notifyPush({
         userIds,
         title: item.type === 'seminar' ? 'סמינר חדש' : 'הודעה חדשה',
@@ -178,6 +200,37 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                 </label>
               ))}
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">סניף יעד</label>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setForm(p => ({ ...p, branch_ids: [] }))}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                  form.branch_ids.length === 0
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                }`}>
+                כל הסניפים
+              </button>
+              {branches.map(b => {
+                const on = form.branch_ids.includes(b.id)
+                return (
+                  <button key={b.id} type="button" onClick={() => toggleBranch(b.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                      on
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                    }`}>
+                    {on ? '✓ ' : ''}{b.name}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">
+              {form.branch_ids.length === 0
+                ? 'ההודעה תישלח לכל המתאמנים'
+                : `ההודעה תישלח ל-${form.branch_ids.length} סניפים נבחרים`}
+            </p>
           </div>
           <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="כותרת" value={form.title}
             onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required />
@@ -243,6 +296,16 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                     {item.price != null && <span className="text-xs font-bold text-green-600">₪{item.price}</span>}
                     {item.status === 'pending' && (
                       <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-orange-700">⏳ ממתין לאישור</span>
+                    )}
+                    {Array.isArray(item.branch_ids) && item.branch_ids.length > 0 ? (
+                      item.branch_ids.map(bid => {
+                        const name = branches.find(b => b.id === bid)?.name || ''
+                        return name ? (
+                          <span key={bid} className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-700">📍 {name}</span>
+                        ) : null
+                      })
+                    ) : (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-500">📍 כל הסניפים</span>
                     )}
                   </div>
                   <p className="font-semibold text-gray-800">{item.title}</p>

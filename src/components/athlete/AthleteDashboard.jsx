@@ -832,7 +832,14 @@ export default function AthleteDashboard({ profile }) {
   const limit = SUBSCRIPTION_LIMITS[subscriptionType] ?? 2
   const displayName = member?.full_name || profile?.full_name || profile?.email || 'מתאמן'
   const displaySub = SUBSCRIPTION_LABELS[subscriptionType] || (subscriptionType ? subscriptionType : null)
-  const announcementsForTab = announcements.filter(a => a.type === 'general' || a.type === 'announcement' || a.type === 'seminar')
+  // הודעה מיועדת למתאמן אם: אין בה branch_ids (כלומר "לכל הסניפים"), או שאחד הסניפים שלה הוא סניף של המתאמן.
+  const memberBranches = (member?.branch_ids?.length ? member.branch_ids : (member?.branch_id ? [member.branch_id] : []))
+  const announcementsForTab = announcements
+    .filter(a => a.type === 'general' || a.type === 'announcement' || a.type === 'seminar')
+    .filter(a => {
+      if (!Array.isArray(a.branch_ids) || a.branch_ids.length === 0) return true
+      return a.branch_ids.some(bid => memberBranches.includes(bid))
+    })
 
   const lastSeenKey = profile?.id ? `announcements_last_seen_${profile.id}` : null
   const [lastSeen, setLastSeen] = useState(() => (lastSeenKey && typeof window !== 'undefined' ? window.localStorage.getItem(lastSeenKey) : null) || '')

@@ -1,0 +1,88 @@
+name: Backup
+
+on:
+  schedule:
+    # Every 4 hours, on the hour (UTC). Israel = UTC+2/+3, so ~03:00, 07:00, ...
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+
+      - name: Install Postgres client
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Dump DB
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          OUT_DIR: out
+        run: ./scripts/backup/dump-db.sh
+
+      - name: Dump Storage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OUT_DIR: out
+        run: ./scripts/backup/dump-storage.sh
+
+      - name: Manifest
+        env:
+          OUT_DIR: out
+        run: ./scripts/backup/make-manifest.sh
+
+      - name: Checkout backups repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.BACKUPS_REPO }}
+          token: ${{ secrets.BACKUPS_REPO_TOKEN }}
+          path: backups-repo
+
+      - name: Commit snapshot
+        working-directory: backups-repo
+        run: |
+          STAMP=$(date -u +'%Y-%m-%d_%H%M')
+          DEST="snapshots/$STAMP"
+          mkdir -p "$DEST"
+          cp -R ../out/db "$DEST/"
+          cp -R ../out/storage "$DEST/"
+          cp ../out/MANIFEST.txt "$DEST/"
+
+          # Retention: keep all hourly snapshots for 30 days; older than 30d,
+          # keep only the 00:00 UTC snapshot per day. Simple cutoff: prune
+          # snapshots older than 365 days entirely.
+          find snapshots -maxdepth 1 -mindepth 1 -type d -mtime +365 -exec rm -rf {} +
+          find snapshots -maxdepth 1 -mindepth 1 -type d -mtime +30 ! -name "*_0000" -exec rm -rf {} + || true
+
+          git config user.name  "teampact-backup-bot"
+          git config user.email "backup-bot@teampact.local"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit (empty snapshot?)"
+          else
+            git commit -m "backup: $STAMP"
+            git push
+          fi
+
+      - name: Notify Telegram on failure
+        if: failure() && env.TG_TOKEN != ''
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=❌ TeamPact backup failed — ${RUN_URL}"

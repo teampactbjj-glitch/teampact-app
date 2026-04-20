@@ -375,7 +375,18 @@ function AnnouncementsTab({ announcements, profile }) {
   }, [ordered, storageKey])
 
   async function handleOrder(item) {
-    if (ordered.has(item.id)) return
+    if (ordered.has(item.id)) {
+      if (!confirm(`לבטל את ההזמנה של "${item.title}"?`)) return
+      setOrderingId(item.id)
+      await supabase.from('product_requests')
+        .delete()
+        .eq('athlete_id', profile?.id)
+        .eq('product_name', item.title)
+        .eq('status', 'pending')
+      setOrdered(prev => { const n = new Set(prev); n.delete(item.id); return n })
+      setOrderingId(null)
+      return
+    }
     setOrderingId(item.id)
     const { error } = await supabase.from('product_requests').insert({
       product_name: item.title,
@@ -434,9 +445,9 @@ function AnnouncementsTab({ announcements, profile }) {
                   <p className="font-semibold text-gray-800">{item.title}</p>
                   {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
                   {item.price != null && <p className="text-sm font-bold text-emerald-600 mt-2">₪{item.price}</p>}
-                  <button onClick={() => handleOrder(item)} disabled={orderingId === item.id || ordered.has(item.id)}
-                    className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${ordered.has(item.id) ? 'bg-gray-100 text-gray-400' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
-                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הוזמן — יתקבל באימון' : 'לפרטים ורכישה'}
+                  <button onClick={() => handleOrder(item)} disabled={orderingId === item.id}
+                    className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${ordered.has(item.id) ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
+                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הוזמן — יתקבל באימון (לחץ לביטול)' : 'לפרטים ורכישה'}
                   </button>
                 </div>
               </div>
@@ -463,7 +474,18 @@ function ShopTab({ profile, allAnnouncements }) {
   }, [ordered, storageKey])
 
   async function handleOrder(item) {
-    if (ordered.has(item.id)) return
+    if (ordered.has(item.id)) {
+      if (!confirm(`לבטל את ההזמנה של "${item.title}"?`)) return
+      setOrderingId(item.id)
+      await supabase.from('product_requests')
+        .delete()
+        .eq('athlete_id', profile?.id)
+        .eq('product_name', item.title)
+        .eq('status', 'pending')
+      setOrdered(prev => { const n = new Set(prev); n.delete(item.id); return n })
+      setOrderingId(null)
+      return
+    }
     setOrderingId(item.id)
     const { error } = await supabase.from('product_requests').insert({
       product_name: item.title,
@@ -508,9 +530,9 @@ function ShopTab({ profile, allAnnouncements }) {
                     </div>
                     {item.price != null && <span className="text-lg font-bold text-emerald-600 flex-shrink-0">₪{item.price}</span>}
                   </div>
-                  <button onClick={() => handleOrder(item)} disabled={orderingId === item.id || ordered.has(item.id)}
-                    className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${ordered.has(item.id) ? 'bg-gray-100 text-gray-400' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
-                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הוזמן — יתקבל באימון' : 'לפרטים ורכישה'}
+                  <button onClick={() => handleOrder(item)} disabled={orderingId === item.id}
+                    className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${ordered.has(item.id) ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
+                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הוזמן — יתקבל באימון (לחץ לביטול)' : 'לפרטים ורכישה'}
                   </button>
                 </div>
               </div>

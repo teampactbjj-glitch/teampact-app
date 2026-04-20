@@ -199,6 +199,7 @@ ALTER TABLE product_requests ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "product_req_select" ON product_requests;
 DROP POLICY IF EXISTS "product_req_select_own" ON product_requests;
 DROP POLICY IF EXISTS "product_req_insert" ON product_requests;
+DROP POLICY IF EXISTS "product_req_delete_own" ON product_requests;
 DROP POLICY IF EXISTS "product_req_write"  ON product_requests;
 
 -- Trainers can read and manage all product requests
@@ -214,6 +215,10 @@ CREATE POLICY "product_req_select_own" ON product_requests
 -- Anyone (anon athletes) can submit a product request
 CREATE POLICY "product_req_insert" ON product_requests
   FOR INSERT WITH CHECK (true);
+
+-- Athletes can cancel (delete) their own pending requests
+CREATE POLICY "product_req_delete_own" ON product_requests
+  FOR DELETE USING (athlete_id = auth.uid() AND status = 'pending');
 
 -- Only trainers can update/delete (mark as done etc.)
 CREATE POLICY "product_req_write" ON product_requests

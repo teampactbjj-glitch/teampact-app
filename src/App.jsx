@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
-import TrainerLogin from './components/auth/TrainerLogin'
 import AthleteLogin from './components/auth/AthleteLogin'
 import TrainerDashboard from './components/trainer/TrainerDashboard'
 import AthleteDashboard from './components/athlete/AthleteDashboard'
@@ -11,7 +10,6 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [memberStatus, setMemberStatus] = useState(null)
-  const [loginMode, setLoginMode] = useState('athlete')
   const [loadingProfile, setLoadingProfile] = useState(false)
 
   if (window.location.pathname === '/register') return <RegisterPage />
@@ -89,11 +87,7 @@ export default function App() {
     return () => { cancelled = true; clearInterval(interval) }
   }, [memberStatus, session?.user?.id])
 
-  if (!session) {
-    return loginMode === 'trainer'
-      ? <TrainerLogin onSwitch={() => setLoginMode('athlete')} />
-      : <AthleteLogin onSwitch={() => setLoginMode('trainer')} />
-  }
+  if (!session) return <AthleteLogin />
 
   if (loadingProfile) return (
     <div className="min-h-screen flex items-center justify-center">

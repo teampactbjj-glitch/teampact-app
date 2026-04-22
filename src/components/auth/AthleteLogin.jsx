@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import InstallBanner from '../InstallBanner'
 
-export default function AthleteLogin({ onSwitch }) {
+export default function AthleteLogin() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -38,7 +38,7 @@ export default function AthleteLogin({ onSwitch }) {
             <span className="text-3xl">🥋</span>
           </div>
           <h1 className="text-2xl font-black text-gray-800">TeamPact</h1>
-          <p className="text-gray-500 mt-1">כניסת מתאמן</p>
+          <p className="text-gray-500 mt-1">כניסת מאמן / מתאמן</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
@@ -65,15 +65,11 @@ export default function AthleteLogin({ onSwitch }) {
           </button>
         </form>
 
-        <div className="mt-6 pt-6 border-t text-center space-y-2">
+        <div className="mt-6 pt-6 border-t text-center">
           <a href="/register"
             className="block w-full py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition">
             עדיין לא רשום? הרשמה כאן
           </a>
-          <button onClick={onSwitch}
-            className="w-full text-xs text-gray-400 hover:text-gray-600">
-            מאמן? לחץ כאן
-          </button>
         </div>
       </div>
       </div>

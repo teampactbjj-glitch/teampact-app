@@ -7,7 +7,7 @@ const STATUS_COLORS = { pending: 'bg-orange-100 text-orange-700', done: 'bg-gree
 export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId = null }) {
   const [products, setProducts] = useState([])
   const [orders, setOrders] = useState([])
-  const [tab, setTab] = useState('orders')
+  const [tab, setTab] = useState(isAdmin ? 'orders' : 'products')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({ title: '', content: '', price: '', image_url: '' })
@@ -35,6 +35,16 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
   async function fetchAll() {
     setLoading(true)
+    // מאמן רגיל (לא אדמין) רואה רק מוצרים — לא מושכים בקשות הזמנה בכלל
+    if (!isAdmin) {
+      const { data: prods } = await supabase
+        .from('announcements').select('*').eq('type', 'product').order('created_at', { ascending: false })
+      setProducts(prods || [])
+      setOrders([])
+      onOrdersChange?.(0)
+      setLoading(false)
+      return
+    }
     const [{ data: prods }, { data: ords1 }, { data: ords2 }] = await Promise.all([
       supabase.from('announcements').select('*').eq('type', 'product').order('created_at', { ascending: false }),
       supabase.from('product_orders').select('*, members(full_name, phone)').order('created_at', { ascending: false }),
@@ -125,18 +135,20 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 border-b pb-2">
-        <button onClick={() => setTab('orders')}
-          className={`px-4 py-1.5 rounded-lg text-sm font-medium ${tab === 'orders' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
-          בקשות הזמנה {orders.filter(o => o.status === 'pending').length > 0 && `(${orders.filter(o => o.status === 'pending').length})`}
-        </button>
-        <button onClick={() => setTab('products')}
-          className={`px-4 py-1.5 rounded-lg text-sm font-medium ${tab === 'products' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
-          מוצרים
-        </button>
-      </div>
+      {isAdmin && (
+        <div className="flex gap-2 border-b pb-2">
+          <button onClick={() => setTab('orders')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium ${tab === 'orders' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
+            בקשות הזמנה {orders.filter(o => o.status === 'pending').length > 0 && `(${orders.filter(o => o.status === 'pending').length})`}
+          </button>
+          <button onClick={() => setTab('products')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium ${tab === 'products' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
+            מוצרים
+          </button>
+        </div>
+      )}
 
-      {tab === 'orders' && (
+      {isAdmin && tab === 'orders' && (
         <div className="space-y-3">
           {orders.length === 0 ? (
             <div className="text-center py-12 text-gray-400"><div className="text-4xl mb-2">📭</div><p>אין הזמנות עדיין</p></div>

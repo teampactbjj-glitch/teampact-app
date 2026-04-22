@@ -52,7 +52,8 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   const [announcementsCount, setAnnouncementsCount] = useState(0)
   const [latestAnnouncementAt, setLatestAnnouncementAt] = useState('')
   const [scheduleCount, setScheduleCount] = useState(0) // שיעורים ממתינים לאישור + בקשות מחיקה (אדמין בלבד)
-  const [toast, setToast] = useState(null) // { name, id }
+  const [athleteDeletionCount, setAthleteDeletionCount] = useState(0) // בקשות מחיקת מתאמנים (אדמין בלבד)
+  const [toast, setToast] = useState(null) // { name, id, kind }
 
   const lastSeenKey = profile?.id ? `announcements_last_seen_${profile.id}` : null
 
@@ -110,6 +111,32 @@ export default function TrainerDashboard({ profile, isAdmin }) {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
+  // Realtime: בקשת מחיקת מתאמן חדשה → toast למנהל בלבד
+  useEffect(() => {
+    if (!isAdmin) return
+    const channel = supabase
+      .channel('athlete-deletion-requests')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'members',
+      }, (payload) => {
+        const becamePending = payload.old?.status !== 'pending_deletion' && payload.new?.status === 'pending_deletion'
+        if (!becamePending) return
+        refreshCounts()
+        const name = payload.new?.full_name || 'מתאמן'
+        setToast({ id: payload.new?.id || Date.now(), name, kind: 'deletion' })
+        setTimeout(() => setToast(null), 8000)
+        try {
+          if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+            new Notification('בקשת מחיקת מתאמן', { body: name, icon: '/favicon.ico' })
+          }
+        } catch {}
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [isAdmin])
+
   // Realtime: שינויי שיעורים (הוספה/בקשת מחיקה/אישור) → עדכון הבאדג' של טאב הלו״ז
   useEffect(() => {
     if (!isAdmin) return
@@ -152,37 +179,46 @@ export default function TrainerDashboard({ profile, isAdmin }) {
 
     // שינויי לו״ז שמחכים לאישור המנהל (שיעור חדש שמאמן הוסיף + בקשות מחיקה)
     if (isAdmin) {
-      const [addsRes, delsRes] = await Promise.all([
+      const [addsRes, delsRes, athDelRes] = await Promise.all([
         supabase.from('classes').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('classes').select('id', { count: 'exact', head: true }).not('deletion_requested_at', 'is', null),
+        supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'pending_deletion').is('deleted_at', null),
       ])
       const adds = addsRes.error ? 0 : (addsRes.count || 0)
       const dels = delsRes.error ? 0 : (delsRes.count || 0)
       setScheduleCount(adds + dels)
+      setAthleteDeletionCount(athDelRes.error ? 0 : (athDelRes.count || 0))
     } else {
       setScheduleCount(0)
+      setAthleteDeletionCount(0)
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
-      {toast && (
-        <button
-          type="button"
-          onClick={() => { setActiveTab('athletes'); setToast(null) }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl shadow-lg max-w-md w-[92%] flex items-center gap-3 animate-[pulse_1s_ease-in-out_1]"
-        >
-          <span className="text-2xl">🔔</span>
-          <div className="text-right flex-1">
-            <div className="font-bold text-sm">בקשת הצטרפות חדשה</div>
-            <div className="text-xs text-emerald-50">{toast.name} — לחץ למעבר</div>
-          </div>
-          <span
-            onClick={(e) => { e.stopPropagation(); setToast(null) }}
-            className="text-white/80 hover:text-white text-lg px-2"
-          >✕</span>
-        </button>
-      )}
+      {toast && (() => {
+        const isDeletion = toast.kind === 'deletion'
+        const bg = isDeletion ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
+        const titleText = isDeletion ? 'בקשת מחיקת מתאמן' : 'בקשת הצטרפות חדשה'
+        const subColor = isDeletion ? 'text-red-50' : 'text-emerald-50'
+        return (
+          <button
+            type="button"
+            onClick={() => { setActiveTab('athletes'); setToast(null) }}
+            className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 ${bg} text-white px-4 py-3 rounded-xl shadow-lg max-w-md w-[92%] flex items-center gap-3 animate-[pulse_1s_ease-in-out_1]`}
+          >
+            <span className="text-2xl">{isDeletion ? '🗑' : '🔔'}</span>
+            <div className="text-right flex-1">
+              <div className="font-bold text-sm">{titleText}</div>
+              <div className={`text-xs ${subColor}`}>{toast.name} — לחץ למעבר</div>
+            </div>
+            <span
+              onClick={(e) => { e.stopPropagation(); setToast(null) }}
+              className="text-white/80 hover:text-white text-lg px-2"
+            >✕</span>
+          </button>
+        )
+      })()}
       <header className="bg-blue-700 text-white px-6 shadow safe-area-header">
         <div className="flex items-center gap-3">
           <span className="text-2xl">🥋</span>
@@ -239,7 +275,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         isTrainer={true}
-        leadsCount={leadsCount}
+        leadsCount={leadsCount + athleteDeletionCount}
         ordersCount={ordersCount}
         pendingCount={requestsCount}
         announcementsCount={announcementsCount}

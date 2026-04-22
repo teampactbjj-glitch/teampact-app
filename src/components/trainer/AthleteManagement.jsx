@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import ImportAthletes from './ImportAthletes'
+import { notifyPush } from '../../lib/notifyPush'
+import { allAdminUserIds } from '../../lib/notifyTargets'
 
 const MEMBERSHIP_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 const SESSION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
@@ -137,6 +139,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   }
 
   async function deleteAthlete(id) {
+    const athleteObj = athletes.find(a => a.id === id) || pendingDeletions.find(a => a.id === id)
     if (isAdmin) {
       if (!window.confirm('למחוק את המתאמן לצמיתות?')) return
       const { error } = await supabase.from('members').delete().eq('id', id)
@@ -145,6 +148,14 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       if (!window.confirm('לשלוח בקשת מחיקה למנהל?')) return
       const { error } = await supabase.from('members').update({ status: 'pending_deletion' }).eq('id', id)
       if (error) { alert('שגיאה בשליחת הבקשה: ' + error.message); return }
+      // Push למנהל (עובד גם כשהאפליקציה סגורה)
+      allAdminUserIds().then(ids => notifyPush({
+        userIds: ids,
+        title: 'בקשת מחיקת מתאמן',
+        body: `${athleteObj?.full_name || 'מתאמן'} — ממתין לאישור מחיקה`,
+        url: '/#athletes',
+        tag: `member-deletion:${id}`,
+      })).catch(() => {})
     }
     setSelectedIds(prev => {
       if (!prev.has(id)) return prev
@@ -230,6 +241,14 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
           const { error } = await supabase.from('members').update({ status: 'pending_deletion' }).in('id', part)
           if (error) { console.error('bulk request error:', error); alert('שגיאה בשליחת הבקשות: ' + error.message); break }
         }
+        // Push למנהל (עובד גם כשהאפליקציה סגורה)
+        allAdminUserIds().then(adminIds => notifyPush({
+          userIds: adminIds,
+          title: 'בקשות מחיקת מתאמנים',
+          body: `${ids.length} מתאמנים ממתינים לאישור מחיקה`,
+          url: '/#athletes',
+          tag: 'member-deletion-bulk',
+        })).catch(() => {})
         clearSelection()
         await fetchAthletes()
       } finally {

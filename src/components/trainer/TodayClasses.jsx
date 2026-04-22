@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { notifyPush } from '../../lib/notifyPush'
-import { allTrainerUserIds } from '../../lib/notifyTargets'
+import { allTrainerUserIds, allAdminUserIds } from '../../lib/notifyTargets'
 
 const WEEKLY_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
@@ -478,6 +478,18 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         tag: `class:${Date.now()}`,
       }))
       .catch(() => {})
+    // Push למנהל כשמאמן (לא-אדמין) מוסיף שיעור שממתין לאישור
+    if (!isAdmin) {
+      allAdminUserIds()
+        .then(ids => notifyPush({
+          userIds: ids,
+          title: 'שיעור חדש ממתין לאישור',
+          body: `${basePayload.name} — ${d.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })} ${basePayload.start_time}`,
+          url: '/#schedule',
+          tag: `class-pending:${Date.now()}`,
+        }))
+        .catch(() => {})
+    }
     setShowAdd(false)
     setNewClass({ name: '', coach_id: '', date: '', start_time: '', duration_minutes: 60 })
     alert(isAdmin ? 'השיעור נוסף ומאושר' : 'השיעור נשלח לאישור מנהל')
@@ -548,6 +560,16 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       }
       return
     }
+    // Push למנהל (עובד גם כשהאפליקציה סגורה)
+    allAdminUserIds()
+      .then(ids => notifyPush({
+        userIds: ids,
+        title: 'בקשת מחיקת שיעור',
+        body: `${label} — ממתין לאישור מחיקה`,
+        url: '/#schedule',
+        tag: `class-deletion:${cls.id}`,
+      }))
+      .catch(() => {})
     alert('בקשת המחיקה נשלחה לאישור מנהל')
     setExpanded(null)
     fetchDayClasses(selectedDate)

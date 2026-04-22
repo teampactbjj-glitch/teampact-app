@@ -34,6 +34,8 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   const [form, setForm] = useState(EMPTY_FORM)
   const [search, setSearch] = useState('')
   const [saveError, setSaveError] = useState('')
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   useEffect(() => {
     (async () => {
@@ -76,8 +78,8 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       myCoachNames = (coaches || []).map(c => c.name).filter(Boolean)
     }
 
-    const pendingQ = supabase.from('members').select('*').eq('status', 'pending').order('created_at', { ascending: false })
-    const activeQ  = supabase.from('members').select('*').neq('status', 'pending').order('full_name')
+    const pendingQ = supabase.from('members').select('*').eq('status', 'pending').is('deleted_at', null).order('created_at', { ascending: false })
+    const activeQ  = supabase.from('members').select('*').neq('status', 'pending').is('deleted_at', null).order('full_name')
 
     const [{ data: pendingData }, { data, error }] = await Promise.all([pendingQ, activeQ])
     if (error) console.error('fetchAthletes error:', error)
@@ -134,7 +136,57 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   async function deleteAthlete(id) {
     if (!window.confirm('למחוק את המתאמן לצמיתות?')) return
     await supabase.from('members').delete().eq('id', id)
+    setSelectedIds(prev => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev); next.delete(id); return next
+    })
     fetchAthletes()
+  }
+
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll(ids) {
+    setSelectedIds(prev => {
+      const allSelected = ids.length > 0 && ids.every(id => prev.has(id))
+      if (allSelected) {
+        const next = new Set(prev)
+        ids.forEach(id => next.delete(id))
+        return next
+      }
+      const next = new Set(prev)
+      ids.forEach(id => next.add(id))
+      return next
+    })
+  }
+
+  function clearSelection() { setSelectedIds(new Set()) }
+
+  async function bulkDeleteAthletes() {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    if (!window.confirm(`למחוק ${ids.length} מתאמנים לצמיתות? הפעולה לא הפיכה.`)) return
+    setBulkDeleting(true)
+    try {
+      // הטריגר ב-DB הופך DELETE ראשון ל-soft-delete (deleted_at=now()).
+      // שליחה שנייה של DELETE על אותן שורות תמחק אותן פיזית.
+      // לצורך ה-UI מספיקה הראשונה — ה-fetch מסנן deleted_at IS NULL.
+      const CHUNK = 200
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const part = ids.slice(i, i + CHUNK)
+        const { error } = await supabase.from('members').delete().in('id', part)
+        if (error) { console.error('bulk delete error:', error); alert('שגיאה במחיקה: ' + error.message); break }
+      }
+      clearSelection()
+      await fetchAthletes()
+    } finally {
+      setBulkDeleting(false)
+    }
   }
 
   async function approvePending(id, subType) {
@@ -431,6 +483,46 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
               )}
             </div>
 
+            {/* סרגל בחירה מרובה */}
+            {!loading && finalList.length > 0 && (() => {
+              const visibleIds = finalList.map(a => a.id)
+              const allSelected = visibleIds.every(id => selectedIds.has(id))
+              const selCount = selectedIds.size
+              return (
+                <div className="flex items-center justify-between bg-gray-50 border rounded-lg px-3 py-2">
+                  <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={() => toggleSelectAll(visibleIds)}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                    <span>{allSelected ? 'נקה בחירה' : 'בחר הכל ברשימה'}</span>
+                  </label>
+                  {selCount > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">{selCount} נבחרו</span>
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        className="text-xs text-gray-500 hover:underline"
+                      >
+                        בטל
+                      </button>
+                      <button
+                        type="button"
+                        onClick={bulkDeleteAthletes}
+                        disabled={bulkDeleting}
+                        className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 disabled:opacity-60"
+                      >
+                        {bulkDeleting ? 'מוחק...' : `🗑 מחק ${selCount}`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
             {/* הרשימה */}
             {loading ? (
               <p className="text-center text-gray-400 py-8">טוען מתאמנים...</p>
@@ -444,18 +536,28 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                 {finalList.map(a => {
                   const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
                   const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
+                  const checked = selectedIds.has(a.id)
                   return (
-                    <li key={a.id} className="px-4 py-3 flex items-center justify-between">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
-                          {!a.active && <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 rounded">לא פעיל</span>}
+                    <li key={a.id} className={`px-4 py-3 flex items-center justify-between gap-3 ${checked ? 'bg-blue-50' : ''}`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleSelect(a.id)}
+                          className="w-4 h-4 accent-blue-600 shrink-0"
+                          aria-label={`בחר את ${a.full_name}`}
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
+                            {!a.active && <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 rounded">לא פעיל</span>}
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
+                            {a.phone && <span> · {a.phone}</span>}
+                            {bnames && <span> · 📍 {bnames}</span>}
+                          </p>
                         </div>
-                        <p className="text-xs text-gray-400">
-                          {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
-                          {a.phone && <span> · {a.phone}</span>}
-                          {bnames && <span> · 📍 {bnames}</span>}
-                        </p>
                       </div>
                       <div className="flex gap-3 shrink-0">
                         <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>

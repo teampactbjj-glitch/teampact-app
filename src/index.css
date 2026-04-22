@@ -5,3 +5,9 @@
 * { direction: rtl; }
 body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; }
 #root { min-height: 100vh; }
+
+/* Safe area for PWA — prevents header from hiding behind phone status bar */
+.safe-area-header {
+  padding-top: calc(1rem + env(safe-area-inset-top));
+  padding-bottom: 1rem;
+}

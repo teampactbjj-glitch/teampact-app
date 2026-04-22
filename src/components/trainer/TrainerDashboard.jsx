@@ -183,7 +183,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
           >✕</span>
         </button>
       )}
-      <header className="bg-blue-700 text-white px-6 py-4 flex items-center justify-between shadow">
+      <header className="bg-blue-700 text-white px-6 shadow safe-area-header">
         <div className="flex items-center gap-3">
           <span className="text-2xl">🥋</span>
           <div>
@@ -196,7 +196,6 @@ export default function TrainerDashboard({ profile, isAdmin }) {
             <p className="text-blue-200 text-xs mt-0.5">{isAdmin ? 'מנהל מערכת' : 'מאמן'}: {profile?.full_name}</p>
           </div>
         </div>
-        <button onClick={() => supabase.auth.signOut()} className="text-blue-200 hover:text-white text-sm">יציאה</button>
       </header>
 
       <main className="p-4 max-w-3xl mx-auto pb-24">

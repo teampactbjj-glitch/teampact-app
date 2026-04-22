@@ -996,7 +996,7 @@ export default function AthleteDashboard({ profile }) {
 
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
-      <header className="bg-gradient-to-br from-gray-900 via-gray-800 to-red-900 text-white px-5 py-4 shadow-lg">
+      <header className="bg-gradient-to-br from-gray-900 via-gray-800 to-red-900 text-white px-5 shadow-lg safe-area-header">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center shadow-md">

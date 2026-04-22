@@ -25,6 +25,7 @@ const EMPTY_FORM = {
 export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null, stackedLayout = false, extraTop = null }) {
   const [athletes, setAthletes] = useState([])
   const [pendingAthletes, setPendingAthletes] = useState([])
+  const [pendingDeletions, setPendingDeletions] = useState([])
   const [branches, setBranches] = useState([])
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
@@ -78,10 +79,11 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       myCoachNames = (coaches || []).map(c => c.name).filter(Boolean)
     }
 
-    const pendingQ = supabase.from('members').select('*').eq('status', 'pending').is('deleted_at', null).order('created_at', { ascending: false })
-    const activeQ  = supabase.from('members').select('*').neq('status', 'pending').is('deleted_at', null).order('full_name')
+    const pendingQ     = supabase.from('members').select('*').eq('status', 'pending').is('deleted_at', null).order('created_at', { ascending: false })
+    const deletionReqQ = supabase.from('members').select('*').eq('status', 'pending_deletion').is('deleted_at', null).order('full_name')
+    const activeQ      = supabase.from('members').select('*').neq('status', 'pending').neq('status', 'pending_deletion').is('deleted_at', null).order('full_name')
 
-    const [{ data: pendingData }, { data, error }] = await Promise.all([pendingQ, activeQ])
+    const [{ data: pendingData }, { data: deletionData }, { data, error }] = await Promise.all([pendingQ, deletionReqQ, activeQ])
     if (error) console.error('fetchAthletes error:', error)
 
     const matchesAllowed = (m) => {
@@ -101,6 +103,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
     }
 
     setPendingAthletes((pendingData || []).filter(m => matchesAllowed(m) && matchesPendingCoach(m)))
+    setPendingDeletions((deletionData || []).filter(matchesAllowed))
     setAthletes((data || []).filter(matchesAllowed))
     setLoading(false)
   }
@@ -134,12 +137,40 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   }
 
   async function deleteAthlete(id) {
-    if (!window.confirm('למחוק את המתאמן לצמיתות?')) return
-    await supabase.from('members').delete().eq('id', id)
+    if (isAdmin) {
+      if (!window.confirm('למחוק את המתאמן לצמיתות?')) return
+      const { error } = await supabase.from('members').delete().eq('id', id)
+      if (error) { alert('שגיאה במחיקה: ' + error.message); return }
+    } else {
+      if (!window.confirm('לשלוח בקשת מחיקה למנהל?')) return
+      const { error } = await supabase.from('members').update({ status: 'pending_deletion' }).eq('id', id)
+      if (error) { alert('שגיאה בשליחת הבקשה: ' + error.message); return }
+    }
     setSelectedIds(prev => {
       if (!prev.has(id)) return prev
       const next = new Set(prev); next.delete(id); return next
     })
+    fetchAthletes()
+  }
+
+  async function approveDeletion(id) {
+    if (!window.confirm('לאשר מחיקה? המתאמן יימחק לצמיתות. הפעולה לא הפיכה.')) return
+    const { error } = await supabase.from('members').delete().eq('id', id)
+    if (error) { alert('שגיאה במחיקה: ' + error.message); return }
+    fetchAthletes()
+  }
+
+  async function rejectDeletion(id) {
+    if (!window.confirm('לדחות את בקשת המחיקה?')) return
+    const { error } = await supabase.from('members').update({ status: 'approved' }).eq('id', id)
+    if (error) { alert('שגיאה: ' + error.message); return }
+    fetchAthletes()
+  }
+
+  async function cancelDeletionRequest(id) {
+    if (!window.confirm('לבטל את בקשת המחיקה?')) return
+    const { error } = await supabase.from('members').update({ status: 'approved' }).eq('id', id)
+    if (error) { alert('שגיאה: ' + error.message); return }
     fetchAthletes()
   }
 
@@ -170,22 +201,40 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   async function bulkDeleteAthletes() {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return
-    if (!window.confirm(`למחוק ${ids.length} מתאמנים לצמיתות? הפעולה לא הפיכה.`)) return
-    setBulkDeleting(true)
-    try {
-      // הטריגר ב-DB הופך DELETE ראשון ל-soft-delete (deleted_at=now()).
-      // שליחה שנייה של DELETE על אותן שורות תמחק אותן פיזית.
-      // לצורך ה-UI מספיקה הראשונה — ה-fetch מסנן deleted_at IS NULL.
-      const CHUNK = 200
-      for (let i = 0; i < ids.length; i += CHUNK) {
-        const part = ids.slice(i, i + CHUNK)
-        const { error } = await supabase.from('members').delete().in('id', part)
-        if (error) { console.error('bulk delete error:', error); alert('שגיאה במחיקה: ' + error.message); break }
+
+    if (isAdmin) {
+      // אישור דו-שלבי למנהל למניעת מחיקה בטעות
+      if (!window.confirm(`אתה עומד למחוק ${ids.length} מתאמנים לצמיתות. להמשיך?`)) return
+      if (ids.length >= 5 && !window.confirm(`אישור סופי: מחיקה של ${ids.length} מתאמנים. הפעולה לא הפיכה.`)) return
+      setBulkDeleting(true)
+      try {
+        const CHUNK = 200
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const part = ids.slice(i, i + CHUNK)
+          const { error } = await supabase.from('members').delete().in('id', part)
+          if (error) { console.error('bulk delete error:', error); alert('שגיאה במחיקה: ' + error.message); break }
+        }
+        clearSelection()
+        await fetchAthletes()
+      } finally {
+        setBulkDeleting(false)
       }
-      clearSelection()
-      await fetchAthletes()
-    } finally {
-      setBulkDeleting(false)
+    } else {
+      // מאמן: שליחת בקשות מחיקה למנהל (לא מחיקה ישירה)
+      if (!window.confirm(`לשלוח ${ids.length} בקשות מחיקה למנהל?`)) return
+      setBulkDeleting(true)
+      try {
+        const CHUNK = 200
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const part = ids.slice(i, i + CHUNK)
+          const { error } = await supabase.from('members').update({ status: 'pending_deletion' }).in('id', part)
+          if (error) { console.error('bulk request error:', error); alert('שגיאה בשליחת הבקשות: ' + error.message); break }
+        }
+        clearSelection()
+        await fetchAthletes()
+      } finally {
+        setBulkDeleting(false)
+      }
     }
   }
 
@@ -412,6 +461,53 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
         )
       )}
 
+      {/* סקשן בקשות מחיקה — גלוי למנהל (אישור/דחיה) ולמאמן (ביטול בקשה שלו) */}
+      {pendingDeletions.length > 0 && (stackedLayout || subTab === 'active') && (
+        <div className="space-y-2">
+          <h3 className="font-bold text-red-800 text-sm flex items-center gap-2">
+            🗑 בקשות מחיקה ({pendingDeletions.length})
+            {isAdmin && <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-normal">טיפול מנהל</span>}
+          </h3>
+          <ul className="bg-white rounded-xl border border-red-200 shadow-sm divide-y overflow-hidden">
+            {pendingDeletions.map(a => {
+              const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+              const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
+              return (
+                <li key={a.id} className="px-4 py-3 flex items-center justify-between gap-3 bg-red-50/40">
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
+                    <p className="text-xs text-gray-500">
+                      {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
+                      {a.phone && <span> · {a.phone}</span>}
+                      {bnames && <span> · 📍 {bnames}</span>}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    {isAdmin ? (
+                      <>
+                        <button
+                          onClick={() => approveDeletion(a.id)}
+                          className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700"
+                        >אשר מחיקה</button>
+                        <button
+                          onClick={() => rejectDeletion(a.id)}
+                          className="text-xs border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-50"
+                        >דחה</button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => cancelDeletionRequest(a.id)}
+                        className="text-xs border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-50"
+                      >בטל בקשה</button>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+
       {(stackedLayout || subTab === 'active') && (() => {
         // ספירה לכל סניף (לפני פילטר הסניף אבל אחרי חיפוש)
         const bySearch = athletes.filter(a =>
@@ -515,7 +611,9 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                         disabled={bulkDeleting}
                         className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 disabled:opacity-60"
                       >
-                        {bulkDeleting ? 'מוחק...' : `🗑 מחק ${selCount}`}
+                        {bulkDeleting
+                          ? (isAdmin ? 'מוחק...' : 'שולח...')
+                          : (isAdmin ? `🗑 מחק ${selCount}` : `📩 בקש מחיקת ${selCount}`)}
                       </button>
                     </div>
                   )}
@@ -561,7 +659,9 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                       </div>
                       <div className="flex gap-3 shrink-0">
                         <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>
-                        <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">מחק</button>
+                        <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">
+                          {isAdmin ? 'מחק' : 'בקש מחיקה'}
+                        </button>
                       </div>
                     </li>
                   )

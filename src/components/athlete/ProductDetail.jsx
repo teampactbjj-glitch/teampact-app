@@ -17,16 +17,43 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
     : []
   const hasOptions = options.length > 0
 
+  const sizes = Array.isArray(product.available_sizes) ? product.available_sizes.filter(Boolean) : []
+  const colors = Array.isArray(product.available_colors) ? product.available_colors.filter(Boolean) : []
+  const hasSizes = sizes.length > 0
+  const hasColors = colors.length > 0
+
   // ברירת מחדל: האפשרות המומלצת (⭐) אם יש, אחרת הראשונה
   const [selectedOption, setSelectedOption] = useState(
     hasOptions ? (options.find(o => o.is_featured) || options[0]) : null
   )
+  const [selectedSize, setSelectedSize] = useState(null)    // חובה לבחור אם hasSizes
+  const [selectedColor, setSelectedColor] = useState(null)  // חובה לבחור אם hasColors
+  const [validationError, setValidationError] = useState('')
 
   const features = Array.isArray(product.features)
     ? product.features.filter(f => f && f.trim())
     : []
 
   const displayPrice = selectedOption?.price ?? product.price
+
+  // בדיקת תקינות לפני שליחה - חובה לבחור מידה/צבע אם המוצר מצריך
+  function handleOrderClick() {
+    // אם כבר הוזמן - לחיצה = ביטול (לא צריך בדיקת מידה)
+    if (alreadyOrdered) {
+      onOrder(product, selectedOption, null, null)
+      return
+    }
+    if (hasSizes && !selectedSize) {
+      setValidationError('יש לבחור מידה')
+      return
+    }
+    if (hasColors && !selectedColor) {
+      setValidationError('יש לבחור צבע')
+      return
+    }
+    setValidationError('')
+    onOrder(product, selectedOption, selectedSize, selectedColor)
+  }
 
   return (
     <div className="space-y-4 pb-6">
@@ -97,6 +124,68 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
         </div>
       )}
 
+      {/* בחירת מידה */}
+      {hasSizes && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold text-sm text-gray-800">📏 בחר מידה</h3>
+            {selectedSize && (
+              <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedSize}</span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {sizes.map(size => {
+              const isSelected = selectedSize === size
+              return (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => { setSelectedSize(size); setValidationError('') }}
+                  className={`min-w-[52px] py-2 px-3 rounded-xl border-2 text-sm font-bold transition ${
+                    isSelected
+                      ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                  }`}
+                >
+                  {size}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* בחירת צבע */}
+      {hasColors && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold text-sm text-gray-800">🎨 בחר צבע</h3>
+            {selectedColor && (
+              <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedColor}</span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {colors.map(color => {
+              const isSelected = selectedColor === color
+              return (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => { setSelectedColor(color); setValidationError('') }}
+                  className={`py-2 px-4 rounded-xl border-2 text-sm font-bold transition ${
+                    isSelected
+                      ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                  }`}
+                >
+                  {color}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* אפשרויות רכישה */}
       {hasOptions && (
         <div>
@@ -153,6 +242,28 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
 
       {/* סרגל הזמנה */}
       <div className="pt-2 border-t">
+        {/* סיכום בחירות */}
+        {!alreadyOrdered && (hasSizes || hasColors || hasOptions) && (
+          <div className="mb-3 p-2.5 bg-gray-50 rounded-xl text-xs text-gray-600 space-y-0.5">
+            {hasOptions && selectedOption && (
+              <div>📦 אפשרות: <span className="font-bold text-gray-800">{selectedOption.name}</span></div>
+            )}
+            {hasSizes && (
+              <div>📏 מידה: <span className="font-bold text-gray-800">{selectedSize || '— לא נבחר'}</span></div>
+            )}
+            {hasColors && (
+              <div>🎨 צבע: <span className="font-bold text-gray-800">{selectedColor || '— לא נבחר'}</span></div>
+            )}
+          </div>
+        )}
+
+        {/* הודעת שגיאה */}
+        {validationError && !alreadyOrdered && (
+          <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 text-center font-bold">
+            ⚠️ {validationError}
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-3 mb-2">
           <div className="text-sm text-gray-600">סה"כ לתשלום</div>
           {displayPrice != null && (
@@ -160,7 +271,7 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
           )}
         </div>
         <button
-          onClick={() => onOrder(product, selectedOption)}
+          onClick={handleOrderClick}
           disabled={ordering}
           className={`w-full py-3 rounded-xl text-sm font-bold transition disabled:opacity-50 ${
             alreadyOrdered

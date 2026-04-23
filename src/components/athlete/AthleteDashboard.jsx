@@ -501,8 +501,8 @@ function ShopTab({ profile, member, allAnnouncements }) {
       })
   }, [profile?.id, products.length])
 
-  // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם option)
-  async function handleOrder(item, selectedOption = null) {
+  // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם אפשרות/מידה/צבע)
+  async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null) {
     if (ordered.has(item.id)) {
       if (!confirm(`לבטל את ההזמנה של "${item.title}"?`)) return
       setOrderingId(item.id)
@@ -516,17 +516,27 @@ function ShopTab({ profile, member, allAnnouncements }) {
       return
     }
     setOrderingId(item.id)
-    // בונים את payload - אם יש אפשרות נבחרת, שומרים אותה ב-notes וב-unit_price
+    // בונים את payload - שומרים את האפשרות, המידה והצבע
     const payload = {
       product_name: item.title,
       athlete_id: profile?.id || null,
       athlete_name: athleteName,
       status: 'pending',
     }
-    if (selectedOption) {
-      payload.notes = `אפשרות: ${selectedOption.name || ''}${selectedOption.note ? ' · ' + selectedOption.note : ''}`
-      payload.unit_price = selectedOption.price ?? null
-      payload.total_price = selectedOption.price ?? null
+    // מידה וצבע כעמודות נפרדות (יש columns ב-DB)
+    if (selectedSize) payload.selected_size = selectedSize
+    if (selectedColor) payload.selected_color = selectedColor
+    // מרכיבים notes מפורט - כולל אפשרות, מידה, צבע
+    const noteParts = []
+    if (selectedOption?.name) noteParts.push(`אפשרות: ${selectedOption.name}`)
+    if (selectedSize) noteParts.push(`מידה: ${selectedSize}`)
+    if (selectedColor) noteParts.push(`צבע: ${selectedColor}`)
+    if (selectedOption?.note) noteParts.push(selectedOption.note)
+    if (noteParts.length) payload.notes = noteParts.join(' · ')
+    // מחיר
+    if (selectedOption?.price != null) {
+      payload.unit_price = selectedOption.price
+      payload.total_price = selectedOption.price
     } else if (item.price != null) {
       payload.unit_price = item.price
       payload.total_price = item.price
@@ -535,14 +545,15 @@ function ShopTab({ profile, member, allAnnouncements }) {
     if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
     else {
       setOrdered(prev => new Set([...prev, item.id]))
-      const pushBody = selectedOption
-        ? `${athleteName} הזמין: ${item.title} (${selectedOption.name})`
-        : `${athleteName} הזמין: ${item.title}`
+      const bodyParts = [`${athleteName} הזמין: ${item.title}`]
+      if (selectedOption?.name) bodyParts.push(`(${selectedOption.name})`)
+      if (selectedSize) bodyParts.push(`מידה ${selectedSize}`)
+      if (selectedColor) bodyParts.push(`צבע ${selectedColor}`)
       allTrainerUserIds()
         .then(ids => notifyPush({
           userIds: ids,
           title: 'הזמנה חדשה מהחנות',
-          body: pushBody,
+          body: bodyParts.join(' · '),
           url: '/#shop',
           tag: `order:${Date.now()}`,
         }))
@@ -562,8 +573,8 @@ function ShopTab({ profile, member, allAnnouncements }) {
       <ProductDetail
         product={selectedProduct}
         onBack={() => setSelectedProductId(null)}
-        onOrder={async (product, option) => {
-          await handleOrder(product, option)
+        onOrder={async (product, option, size, color) => {
+          await handleOrder(product, option, size, color)
           // לאחר הזמנה/ביטול מוצלחים - נשארים בדף הפירוט (כדי שהמתאמן יראה את הסטטוס המתעדכן)
         }}
         alreadyOrdered={ordered.has(selectedProduct.id)}

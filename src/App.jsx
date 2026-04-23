@@ -11,6 +11,7 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [memberStatus, setMemberStatus] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
 
   if (window.location.pathname === '/register') return <RegisterPage />
 
@@ -19,9 +20,25 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setSession(session)
     })
-    // רישום service worker ל-PWA
+    // רישום service worker ל-PWA + זיהוי עדכון אוטומטי
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(err => console.warn('SW register failed', err))
+      const hadControllerOnLoad = !!navigator.serviceWorker.controller
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(reg => {
+          // בדיקת עדכון כל 60 שניות + בכל הפעלה חוזרת של הטאב
+          const poll = () => { reg.update().catch(() => {}) }
+          const intervalId = setInterval(poll, 60 * 1000)
+          const onVis = () => { if (document.visibilityState === 'visible') poll() }
+          document.addEventListener('visibilitychange', onVis)
+          window.addEventListener('focus', poll)
+        })
+        .catch(err => console.warn('SW register failed', err))
+
+      // כשה-SW החדש השתלט — מציגים באנר "עדכון זמין"
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadControllerOnLoad) return // התקנה ראשונה — לא נחשב כעדכון
+        setUpdateAvailable(true)
+      })
     }
     return () => subscription.unsubscribe()
   }, [])
@@ -87,15 +104,34 @@ export default function App() {
     return () => { cancelled = true; clearInterval(interval) }
   }, [memberStatus, session?.user?.id])
 
-  if (!session) return <AthleteLogin />
+  const UpdateBanner = () => updateAvailable ? (
+    <div
+      dir="rtl"
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 99999, paddingTop: 'env(safe-area-inset-top)' }}
+      className="bg-emerald-600 text-white shadow-lg"
+    >
+      <div className="max-w-3xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
+        <span className="text-sm font-bold flex items-center gap-2">
+          <span className="text-lg">🔄</span>
+          <span>עדכון חדש זמין</span>
+        </span>
+        <button
+          onClick={() => window.location.reload()}
+          className="bg-white text-emerald-700 font-black px-4 py-1.5 rounded-lg text-sm hover:bg-emerald-50"
+        >טען מחדש</button>
+      </div>
+    </div>
+  ) : null
+
+  if (!session) return (<><UpdateBanner /><AthleteLogin /></>)
 
   if (loadingProfile) return (
-    <div className="min-h-screen flex items-center justify-center">
+    <><UpdateBanner /><div className="min-h-screen flex items-center justify-center">
       <p className="text-gray-400">טוען...</p>
-    </div>
+    </div></>
   )
 
-  if (profile?.role === 'trainer') return <TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} />
-  if (memberStatus === 'pending') return <PendingApprovalScreen />
-  return <AthleteDashboard profile={profile} />
+  if (profile?.role === 'trainer') return (<><UpdateBanner /><TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} /></>)
+  if (memberStatus === 'pending') return (<><UpdateBanner /><PendingApprovalScreen /></>)
+  return (<><UpdateBanner /><AthleteDashboard profile={profile} /></>)
 }

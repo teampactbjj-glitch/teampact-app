@@ -1,4 +1,7 @@
 // TeamPact service worker
+// חשוב: לכל release חדש — יש לעדכן את המחרוזת למטה כדי להכריח את הדפדפן לזהות גרסה חדשה.
+const SW_VERSION = '2026-04-24-reports-v1'
+self.SW_VERSION = SW_VERSION
 
 self.addEventListener('install', () => {
   self.skipWaiting()
@@ -6,6 +9,13 @@ self.addEventListener('install', () => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
+})
+
+// אפשרות לשלוח הודעה ידנית לדלג על waiting
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
 })
 
 self.addEventListener('push', (event) => {

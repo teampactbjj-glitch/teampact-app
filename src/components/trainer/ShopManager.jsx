@@ -396,26 +396,78 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                   <div className="space-y-3 pt-2">
                     {/* מידות זמינות */}
                     <div>
-                      <label className="text-xs text-gray-600 block mb-1">מידות זמינות (מופרדות בפסיק)</label>
+                      <label className="text-xs text-gray-600 block mb-1">
+                        מידות זמינות - הקלד מידה ולחץ Enter (או פסיק)
+                      </label>
+                      <div className="flex flex-wrap gap-1 mb-1 min-h-[28px]">
+                        {form.available_sizes.map((size, idx) => (
+                          <span key={idx} className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 rounded-full px-2 py-0.5 text-xs">
+                            {size}
+                            <button type="button" className="text-blue-600 hover:text-red-500 font-bold"
+                              onClick={() => setForm(p => ({ ...p, available_sizes: p.available_sizes.filter((_, i) => i !== idx) }))}>×</button>
+                          </span>
+                        ))}
+                      </div>
                       <input className="w-full border rounded-lg px-3 py-1.5 text-sm"
-                        placeholder="A0, A1, A2, A3, A4"
-                        value={form.available_sizes.join(', ')}
-                        onChange={e => setForm(p => ({
-                          ...p,
-                          available_sizes: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                        }))} />
+                        placeholder="לדוגמה: A1 ואז Enter"
+                        onKeyDown={e => {
+                          // Enter, Tab, או כל סוג של פסיק/רווח מוסיפים תג
+                          if (['Enter', 'Tab', ',', '،', '、'].includes(e.key) || (e.key === ' ' && e.target.value.trim())) {
+                            e.preventDefault()
+                            const val = e.target.value.trim()
+                            if (val && !form.available_sizes.includes(val)) {
+                              setForm(p => ({ ...p, available_sizes: [...p.available_sizes, val] }))
+                            }
+                            e.target.value = ''
+                          } else if (e.key === 'Backspace' && !e.target.value && form.available_sizes.length) {
+                            setForm(p => ({ ...p, available_sizes: p.available_sizes.slice(0, -1) }))
+                          }
+                        }}
+                        onBlur={e => {
+                          // גם כשיוצאים מהשדה - להוסיף מה שכתוב
+                          const val = e.target.value.trim()
+                          if (val && !form.available_sizes.includes(val)) {
+                            setForm(p => ({ ...p, available_sizes: [...p.available_sizes, val] }))
+                          }
+                          e.target.value = ''
+                        }} />
                     </div>
 
                     {/* צבעים זמינים */}
                     <div>
-                      <label className="text-xs text-gray-600 block mb-1">צבעים זמינים (מופרדים בפסיק)</label>
+                      <label className="text-xs text-gray-600 block mb-1">
+                        צבעים זמינים - הקלד צבע ולחץ Enter
+                      </label>
+                      <div className="flex flex-wrap gap-1 mb-1 min-h-[28px]">
+                        {form.available_colors.map((color, idx) => (
+                          <span key={idx} className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 rounded-full px-2 py-0.5 text-xs">
+                            {color}
+                            <button type="button" className="text-purple-600 hover:text-red-500 font-bold"
+                              onClick={() => setForm(p => ({ ...p, available_colors: p.available_colors.filter((_, i) => i !== idx) }))}>×</button>
+                          </span>
+                        ))}
+                      </div>
                       <input className="w-full border rounded-lg px-3 py-1.5 text-sm"
-                        placeholder="שחור, לבן, כחול"
-                        value={form.available_colors.join(', ')}
-                        onChange={e => setForm(p => ({
-                          ...p,
-                          available_colors: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                        }))} />
+                        placeholder="לדוגמה: שחור ואז Enter"
+                        onKeyDown={e => {
+                          if (['Enter', 'Tab', ',', '،', '、'].includes(e.key)) {
+                            e.preventDefault()
+                            const val = e.target.value.trim()
+                            if (val && !form.available_colors.includes(val)) {
+                              setForm(p => ({ ...p, available_colors: [...p.available_colors, val] }))
+                            }
+                            e.target.value = ''
+                          } else if (e.key === 'Backspace' && !e.target.value && form.available_colors.length) {
+                            setForm(p => ({ ...p, available_colors: p.available_colors.slice(0, -1) }))
+                          }
+                        }}
+                        onBlur={e => {
+                          const val = e.target.value.trim()
+                          if (val && !form.available_colors.includes(val)) {
+                            setForm(p => ({ ...p, available_colors: [...p.available_colors, val] }))
+                          }
+                          e.target.value = ''
+                        }} />
                     </div>
 
                     <button type="button" onClick={generateVariantsFromMatrix}

@@ -36,9 +36,10 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   async function fetchAll() {
     setLoading(true)
     // מאמן רגיל (לא אדמין) רואה רק מוצרים — לא מושכים בקשות הזמנה בכלל
+    // חשוב: מסננים deleted_at is null בצד הלקוח כי במצב אדמין ה-RLS לא מסנן soft-deleted
     if (!isAdmin) {
       const { data: prods } = await supabase
-        .from('announcements').select('*').eq('type', 'product').order('created_at', { ascending: false })
+        .from('announcements').select('*').eq('type', 'product').is('deleted_at', null).order('created_at', { ascending: false })
       setProducts(prods || [])
       setOrders([])
       onOrdersChange?.(0)
@@ -46,8 +47,8 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       return
     }
     const [{ data: prods }, { data: ords1 }, { data: ords2 }] = await Promise.all([
-      supabase.from('announcements').select('*').eq('type', 'product').order('created_at', { ascending: false }),
-      supabase.from('product_orders').select('*, members(full_name, phone)').order('created_at', { ascending: false }),
+      supabase.from('announcements').select('*').eq('type', 'product').is('deleted_at', null).order('created_at', { ascending: false }),
+      supabase.from('product_orders').select('*, members(full_name, phone)').is('deleted_at', null).order('created_at', { ascending: false }),
       supabase.from('product_requests').select('*').order('created_at', { ascending: false }),
     ])
     setProducts(prods || [])
@@ -70,7 +71,11 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   }
 
   async function deleteProduct(id) {
-    await supabase.from('announcements').delete().eq('id', id)
+    const { error } = await supabase.from('announcements').delete().eq('id', id)
+    if (error) {
+      alert('שגיאה במחיקת המוצר: ' + error.message)
+      return
+    }
     setProducts(prev => prev.filter(p => p.id !== id))
   }
 
@@ -125,7 +130,11 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
   async function deleteOrder(order) {
     const table = order._source === 'request' ? 'product_requests' : 'product_orders'
-    await supabase.from(table).delete().eq('id', order.id)
+    const { error } = await supabase.from(table).delete().eq('id', order.id)
+    if (error) {
+      alert('שגיאה במחיקת הבקשה: ' + error.message)
+      return
+    }
     setOrders(prev => prev.filter(o => o.id !== order.id))
     const pending = orders.filter(o => o.id !== order.id && o.status === 'pending').length
     onOrdersChange?.(pending)

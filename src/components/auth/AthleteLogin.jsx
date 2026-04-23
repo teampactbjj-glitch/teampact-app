@@ -70,6 +70,10 @@ export default function AthleteLogin() {
             className="block w-full py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition">
             עדיין לא רשום? הרשמה כאן
           </a>
+          <a href="https://www.teampact.co.il" target="_blank" rel="noopener noreferrer"
+            className="block mt-4 text-xs text-gray-500 hover:text-red-600 transition">
+            🌐 בקרו באתר המועדון — teampact.co.il
+          </a>
         </div>
       </div>
       </div>

@@ -96,6 +96,14 @@ export default function TrainerProfile({ profile, isAdmin }) {
         className="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-semibold hover:bg-red-100">
         🚪 התנתק
       </button>
+
+      {/* קישור לאתר המועדון */}
+      <div className="text-center pt-2 pb-4">
+        <a href="https://www.teampact.co.il" target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm text-emerald-700 hover:text-emerald-800 hover:underline font-medium">
+          🌐 בקרו באתר המועדון — teampact.co.il
+        </a>
+      </div>
     </div>
   )
 }

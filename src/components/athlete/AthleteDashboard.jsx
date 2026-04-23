@@ -596,7 +596,11 @@ function ShopTab({ profile, member, allAnnouncements }) {
                 onClick={() => setSelectedProductId(item.id)}
                 className="w-full text-right bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition"
               >
-                {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" />}
+                {item.image_url && (
+                  <div className="aspect-[3/4] w-full overflow-hidden rounded-xl">
+                    <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
+                  </div>
+                )}
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">

@@ -6,6 +6,7 @@ import EnablePushBanner from '../EnablePushBanner'
 import { isStandalone } from '../../lib/platform'
 import { notifyPush } from '../../lib/notifyPush'
 import { allTrainerUserIds } from '../../lib/notifyTargets'
+import ProductDetail from './ProductDetail'
 
 const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const SUBSCRIPTION_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -481,6 +482,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
     try { return new Set(JSON.parse(localStorage.getItem(storageKey) || '[]')) } catch { return new Set() }
   })
   const [orderingId, setOrderingId] = useState(null)
+  const [selectedProductId, setSelectedProductId] = useState(null)  // איזה מוצר פתוח בדף פירוט
 
   useEffect(() => {
     if (!storageKey) return
@@ -499,7 +501,8 @@ function ShopTab({ profile, member, allAnnouncements }) {
       })
   }, [profile?.id, products.length])
 
-  async function handleOrder(item) {
+  // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם option)
+  async function handleOrder(item, selectedOption = null) {
     if (ordered.has(item.id)) {
       if (!confirm(`לבטל את ההזמנה של "${item.title}"?`)) return
       setOrderingId(item.id)
@@ -513,20 +516,33 @@ function ShopTab({ profile, member, allAnnouncements }) {
       return
     }
     setOrderingId(item.id)
-    const { error } = await supabase.from('product_requests').insert({
+    // בונים את payload - אם יש אפשרות נבחרת, שומרים אותה ב-notes וב-unit_price
+    const payload = {
       product_name: item.title,
       athlete_id: profile?.id || null,
       athlete_name: athleteName,
       status: 'pending',
-    })
+    }
+    if (selectedOption) {
+      payload.notes = `אפשרות: ${selectedOption.name || ''}${selectedOption.note ? ' · ' + selectedOption.note : ''}`
+      payload.unit_price = selectedOption.price ?? null
+      payload.total_price = selectedOption.price ?? null
+    } else if (item.price != null) {
+      payload.unit_price = item.price
+      payload.total_price = item.price
+    }
+    const { error } = await supabase.from('product_requests').insert(payload)
     if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
     else {
       setOrdered(prev => new Set([...prev, item.id]))
+      const pushBody = selectedOption
+        ? `${athleteName} הזמין: ${item.title} (${selectedOption.name})`
+        : `${athleteName} הזמין: ${item.title}`
       allTrainerUserIds()
         .then(ids => notifyPush({
           userIds: ids,
           title: 'הזמנה חדשה מהחנות',
-          body: `${athleteName} הזמין: ${item.title}`,
+          body: pushBody,
           url: '/#shop',
           tag: `order:${Date.now()}`,
         }))
@@ -539,6 +555,23 @@ function ShopTab({ profile, member, allAnnouncements }) {
     return <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">🛍️</div><p>אין מוצרים בחנות כרגע</p></div>
   }
 
+  // אם יש מוצר נבחר - מציגים את דף הפירוט במקום רשימת המוצרים
+  const selectedProduct = selectedProductId ? products.find(p => p.id === selectedProductId) : null
+  if (selectedProduct) {
+    return (
+      <ProductDetail
+        product={selectedProduct}
+        onBack={() => setSelectedProductId(null)}
+        onOrder={async (product, option) => {
+          await handleOrder(product, option)
+          // לאחר הזמנה/ביטול מוצלחים - נשארים בדף הפירוט (כדי שהמתאמן יראה את הסטטוס המתעדכן)
+        }}
+        alreadyOrdered={ordered.has(selectedProduct.id)}
+        ordering={orderingId === selectedProduct.id}
+      />
+    )
+  }
+
   return (
     <div className="space-y-6">
       {products.length > 0 && (
@@ -546,7 +579,12 @@ function ShopTab({ profile, member, allAnnouncements }) {
           <h3 className="font-bold text-gray-700 text-sm mb-3">🛒 מוצרים</h3>
           <div className="space-y-3">
             {products.map(item => (
-              <div key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSelectedProductId(item.id)}
+                className="w-full text-right bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition"
+              >
                 {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" />}
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-2">
@@ -556,12 +594,16 @@ function ShopTab({ profile, member, allAnnouncements }) {
                     </div>
                     {item.price != null && <span className="text-lg font-bold text-emerald-600 flex-shrink-0">₪{item.price}</span>}
                   </div>
-                  <button onClick={() => handleOrder(item)} disabled={orderingId === item.id}
-                    className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${ordered.has(item.id) ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
-                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הוזמן — יתקבל באימון (לחץ לביטול)' : 'לפרטים ורכישה'}
-                  </button>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    {ordered.has(item.id) ? (
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">✓ הוזמן</span>
+                    ) : (
+                      <span className="text-xs text-emerald-600">לחץ לפרטים ורכישה ←</span>
+                    )}
+                    <span className="text-xs text-gray-400">→</span>
+                  </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>

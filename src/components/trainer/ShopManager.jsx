@@ -4,6 +4,48 @@ import { supabase } from '../../lib/supabase'
 const STATUS_LABELS = { pending: 'ממתין', done: 'טופל' }
 const STATUS_COLORS = { pending: 'bg-orange-100 text-orange-700', done: 'bg-green-100 text-green-700' }
 
+// מפתח לשמירת טיוטה של מוצר חדש ב-localStorage. משותף לכל המאמנים במכשיר הזה.
+const DRAFT_KEY = 'teampact_product_draft_v1'
+
+function readDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeDraft(form, variants) {
+  try {
+    // שומר רק אם יש בכלל משהו שכתוב (כדי לא להציק בטיוטה ריקה)
+    const hasContent =
+      (form.title && form.title.trim()) ||
+      (form.content && form.content.trim()) ||
+      (form.description_long && form.description_long.trim()) ||
+      (form.price && String(form.price).trim()) ||
+      (form.image_url && form.image_url.trim()) ||
+      (Array.isArray(form.features) && form.features.some(f => f && f.trim())) ||
+      (Array.isArray(form.available_sizes) && form.available_sizes.length > 0) ||
+      (Array.isArray(form.available_colors) && form.available_colors.length > 0) ||
+      (Array.isArray(form.purchase_options) && form.purchase_options.some(o => o && (o.name || o.price)))
+    if (!hasContent) {
+      localStorage.removeItem(DRAFT_KEY)
+      return
+    }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ form, variants, savedAt: Date.now() }))
+  } catch {
+    // מתעלמים - localStorage מלא/חסום
+  }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY) } catch {}
+}
+
 export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId = null }) {
   const [products, setProducts] = useState([])
   const [orders, setOrders] = useState([])
@@ -20,10 +62,27 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     has_variants: false,    // האם יש מידות/צבעים
     available_sizes: [],    // ['A0','A1','A2','A3','A4']
     available_colors: [],   // ['שחור','לבן']
+    purchase_options: [],   // אפשרויות רכישה: [{name, price, note, is_featured}]
   })
   const [variants, setVariants] = useState([])  // [{size, color, stock, price_override, sku, active}]
   const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [hasDraft, setHasDraft] = useState(false)  // האם יש טיוטה שמורה ב-localStorage
+
+  // בדיקה בעת טעינה ראשונית - האם יש טיוטה לא שמורה של מוצר חדש?
+  useEffect(() => {
+    const draft = readDraft()
+    if (draft && draft.form && draft.form.title !== undefined) {
+      setHasDraft(true)
+    }
+  }, [])
+
+  // שמירה אוטומטית של הטיוטה כשהטופס פתוח למוצר חדש (לא עריכה)
+  useEffect(() => {
+    if (showForm && !editingId) {
+      writeDraft(form, variants)
+    }
+  }, [form, variants, showForm, editingId])
 
   async function openEdit(product) {
     setEditingId(product.id)
@@ -37,6 +96,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       has_variants: !!product.has_variants,
       available_sizes: product.available_sizes || [],
       available_colors: product.available_colors || [],
+      purchase_options: Array.isArray(product.purchase_options) ? product.purchase_options : [],
     })
     // טוען וריאנטים קיימים
     const { data: vars } = await supabase
@@ -48,14 +108,42 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     setShowForm(true)
   }
 
-  function openAdd() {
+  function openAdd(restoreDraft = false) {
     setEditingId(null)
+    if (restoreDraft) {
+      const draft = readDraft()
+      if (draft && draft.form) {
+        // שחזור עם ברירות מחדל להגנה מפני שדות חסרים
+        setForm({
+          title: draft.form.title || '',
+          content: draft.form.content || '',
+          description_long: draft.form.description_long || '',
+          price: draft.form.price || '',
+          image_url: draft.form.image_url || '',
+          features: Array.isArray(draft.form.features) ? draft.form.features : [],
+          has_variants: !!draft.form.has_variants,
+          available_sizes: Array.isArray(draft.form.available_sizes) ? draft.form.available_sizes : [],
+          available_colors: Array.isArray(draft.form.available_colors) ? draft.form.available_colors : [],
+          purchase_options: Array.isArray(draft.form.purchase_options) ? draft.form.purchase_options : [],
+        })
+        setVariants(Array.isArray(draft.variants) ? draft.variants : [])
+        setShowForm(true)
+        setHasDraft(false)  // לא להציע שחזור שוב אחרי שכבר שחזרו
+        return
+      }
+    }
     setForm({
       title: '', content: '', description_long: '', price: '', image_url: '',
       features: [], has_variants: false, available_sizes: [], available_colors: [],
+      purchase_options: [],
     })
     setVariants([])
     setShowForm(true)
+  }
+
+  function discardDraft() {
+    clearDraft()
+    setHasDraft(false)
   }
 
   useEffect(() => { fetchAll() }, [])
@@ -141,6 +229,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       content: form.content,
       description_long: form.description_long || null,
       type: 'product',
+      status: 'approved',           // חשוב: ברירת מחדל ב-DB היא 'pending' וזה מסתיר מתצוגת המתאמן
       price: form.price ? parseFloat(form.price) : null,
       image_url: form.image_url || null,
       trainer_id: trainerId || null,
@@ -148,6 +237,16 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       has_variants: !!form.has_variants,
       available_sizes: form.available_sizes || [],
       available_colors: form.available_colors || [],
+      purchase_options: Array.isArray(form.purchase_options)
+        ? form.purchase_options
+            .filter(o => o && (o.name || o.price))
+            .map(o => ({
+              name: o.name || '',
+              price: o.price !== '' && o.price != null ? parseFloat(o.price) : null,
+              note: o.note || '',
+              is_featured: !!o.is_featured,
+            }))
+        : [],
     }
 
     let productId = editingId
@@ -196,10 +295,13 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     setForm({
       title: '', content: '', description_long: '', price: '', image_url: '',
       features: [], has_variants: false, available_sizes: [], available_colors: [],
+      purchase_options: [],
     })
     setVariants([])
     setEditingId(null)
     setShowForm(false)
+    clearDraft()         // ניקוי טיוטה אחרי שמירה מוצלחת
+    setHasDraft(false)
     fetchAll()
   }
 
@@ -306,9 +408,32 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
       {tab === 'products' && (
         <div className="space-y-4">
+          {/* באנר שחזור טיוטה - מוצג רק אם יש טיוטה שמורה והטופס סגור */}
+          {isAdmin && hasDraft && !showForm && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="text-xl flex-shrink-0">📝</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-amber-900">יש לך טיוטה שמורה של מוצר חדש</p>
+                  <p className="text-xs text-amber-700 truncate">לא סיימת למלא את הטופס בפעם הקודמת - רוצה להמשיך מאיפה שהפסקת?</p>
+                </div>
+              </div>
+              <div className="flex gap-1 flex-shrink-0">
+                <button onClick={() => openAdd(true)}
+                  className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg font-bold whitespace-nowrap">
+                  המשך
+                </button>
+                <button onClick={discardDraft}
+                  className="text-xs bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 px-2 py-1.5 rounded-lg whitespace-nowrap">
+                  מחק
+                </button>
+              </div>
+            </div>
+          )}
+
           {isAdmin && (
             <div className="flex justify-end">
-              <button onClick={() => showForm ? setShowForm(false) : openAdd()}
+              <button onClick={() => showForm ? setShowForm(false) : openAdd(false)}
                 className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
                 {showForm ? 'ביטול' : '+ הוסף מוצר'}
               </button>
@@ -382,6 +507,75 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                 )}
                 <input className="w-full border rounded-lg px-3 py-2 text-xs text-gray-500" placeholder="או קישור חיצוני (אופציונלי)"
                   value={form.image_url} onChange={e => setForm(p => ({ ...p, image_url: e.target.value }))} />
+              </div>
+
+              {/* אפשרויות רכישה (לדוגמה: סט נו-גי = מכנס + ראשגארד בהנחה) */}
+              <div className="space-y-2 bg-amber-50 rounded-lg p-3 border border-amber-200">
+                <div className="flex items-start justify-between gap-2">
+                  <h4 className="text-xs font-bold text-amber-900">
+                    💰 אפשרויות רכישה (אופציונלי)
+                  </h4>
+                  <span className="text-[10px] text-amber-700">
+                    לדוגמה: "מכנס בלבד", "ראשגארד בלבד", "סט מלא - 10% הנחה"
+                  </span>
+                </div>
+
+                {(form.purchase_options || []).map((opt, idx) => (
+                  <div key={idx} className="bg-white rounded-lg border border-amber-200 p-2 space-y-1.5">
+                    <div className="flex gap-1 items-center">
+                      <input
+                        className="flex-1 border rounded px-2 py-1 text-xs"
+                        placeholder="שם האפשרות (למשל: מכנס בלבד)"
+                        value={opt.name || ''}
+                        onChange={e => setForm(p => ({
+                          ...p,
+                          purchase_options: p.purchase_options.map((o, i) => i === idx ? { ...o, name: e.target.value } : o),
+                        }))} />
+                      <input
+                        type="number" step="0.01"
+                        className="w-20 border rounded px-2 py-1 text-xs"
+                        placeholder="₪ מחיר"
+                        value={opt.price || ''}
+                        onChange={e => setForm(p => ({
+                          ...p,
+                          purchase_options: p.purchase_options.map((o, i) => i === idx ? { ...o, price: e.target.value } : o),
+                        }))} />
+                      <button type="button" className="text-red-500 text-xs w-6"
+                        onClick={() => setForm(p => ({
+                          ...p,
+                          purchase_options: p.purchase_options.filter((_, i) => i !== idx),
+                        }))}>✕</button>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        className="flex-1 border rounded px-2 py-1 text-xs text-gray-600"
+                        placeholder="הערה/תיאור קצר (למשל: חיסכון של 10%)"
+                        value={opt.note || ''}
+                        onChange={e => setForm(p => ({
+                          ...p,
+                          purchase_options: p.purchase_options.map((o, i) => i === idx ? { ...o, note: e.target.value } : o),
+                        }))} />
+                      <label className="flex items-center gap-1 text-[10px] text-amber-800 whitespace-nowrap">
+                        <input type="checkbox"
+                          checked={!!opt.is_featured}
+                          onChange={e => setForm(p => ({
+                            ...p,
+                            purchase_options: p.purchase_options.map((o, i) => i === idx ? { ...o, is_featured: e.target.checked } : o),
+                          }))} />
+                        ⭐ מומלץ
+                      </label>
+                    </div>
+                  </div>
+                ))}
+
+                <button type="button"
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-white py-1.5 rounded-lg text-xs font-bold"
+                  onClick={() => setForm(p => ({
+                    ...p,
+                    purchase_options: [...(p.purchase_options || []), { name: '', price: '', note: '', is_featured: false }],
+                  }))}>
+                  + הוסף אפשרות רכישה
+                </button>
               </div>
 
               {/* וריאנטים - מידות וצבעים */}

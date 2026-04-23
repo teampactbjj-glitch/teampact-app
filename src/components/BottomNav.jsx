@@ -1,8 +1,9 @@
-export default function BottomNav({ activeTab, onTabChange, isTrainer, pendingCount = 0, leadsCount = 0, ordersCount = 0, announcementsCount = 0, scheduleCount = 0 }) {
+export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin = false, pendingCount = 0, leadsCount = 0, ordersCount = 0, announcementsCount = 0, scheduleCount = 0 }) {
   const tabs = isTrainer
     ? [
         { id: 'schedule',      icon: '📅', label: 'לו״ז' },
         { id: 'athletes',      icon: '👥', label: 'מתאמנים' },
+        ...(isAdmin ? [{ id: 'reports', icon: '📊', label: 'דוחות' }] : []),
         { id: 'shop',          icon: '🛒', label: 'חנות' },
         { id: 'announcements', icon: '📢', label: 'הודעות' },
         { id: 'profile',       icon: '👤', label: 'פרופיל' },

@@ -5,6 +5,7 @@ import AnnouncementsManager from './AnnouncementsManager'
 import LeadsManager from './LeadsManager'
 import ProfileChangeRequests from './ProfileChangeRequests'
 import ShopManager from './ShopManager'
+import ReportsManager from './ReportsManager'
 import TrainerProfile from './TrainerProfile'
 import BottomNav from '../BottomNav'
 import InstallBanner from '../InstallBanner'
@@ -77,7 +78,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
 
   // hash → tab (מאפשר ניווט מהתראת push)
   useEffect(() => {
-    const TAB_HASHES = ['schedule', 'athletes', 'shop', 'announcements', 'profile']
+    const TAB_HASHES = ['schedule', 'athletes', 'reports', 'shop', 'announcements', 'profile']
     function syncFromHash() {
       const h = (window.location.hash || '').replace('#', '')
       if (TAB_HASHES.includes(h)) setActiveTab(h)
@@ -262,6 +263,10 @@ export default function TrainerDashboard({ profile, isAdmin }) {
           </div>
         )}
 
+        {activeTab === 'reports' && isAdmin && (
+          <ReportsManager isAdmin={isAdmin} />
+        )}
+
         {activeTab === 'shop' && (
           <ShopManager isAdmin={isAdmin} trainerId={profile?.id} onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />
         )}
@@ -275,6 +280,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         isTrainer={true}
+        isAdmin={isAdmin}
         leadsCount={leadsCount + athleteDeletionCount}
         ordersCount={ordersCount}
         pendingCount={requestsCount}

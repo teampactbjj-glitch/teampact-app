@@ -10,24 +10,51 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   const [tab, setTab] = useState(isAdmin ? 'orders' : 'products')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  const [form, setForm] = useState({ title: '', content: '', price: '', image_url: '' })
+  const [form, setForm] = useState({
+    title: '',
+    content: '',
+    description_long: '',
+    price: '',
+    image_url: '',
+    features: [],           // רשימת תכונות (bullets)
+    has_variants: false,    // האם יש מידות/צבעים
+    available_sizes: [],    // ['A0','A1','A2','A3','A4']
+    available_colors: [],   // ['שחור','לבן']
+  })
+  const [variants, setVariants] = useState([])  // [{size, color, stock, price_override, sku, active}]
   const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  function openEdit(product) {
+  async function openEdit(product) {
     setEditingId(product.id)
     setForm({
       title: product.title || '',
       content: product.content || '',
+      description_long: product.description_long || '',
       price: product.price != null ? String(product.price) : '',
       image_url: product.image_url || '',
+      features: Array.isArray(product.features) ? product.features : [],
+      has_variants: !!product.has_variants,
+      available_sizes: product.available_sizes || [],
+      available_colors: product.available_colors || [],
     })
+    // טוען וריאנטים קיימים
+    const { data: vars } = await supabase
+      .from('product_variants')
+      .select('*')
+      .eq('product_id', product.id)
+      .order('created_at', { ascending: true })
+    setVariants(vars || [])
     setShowForm(true)
   }
 
   function openAdd() {
     setEditingId(null)
-    setForm({ title: '', content: '', price: '', image_url: '' })
+    setForm({
+      title: '', content: '', description_long: '', price: '', image_url: '',
+      features: [], has_variants: false, available_sizes: [], available_colors: [],
+    })
+    setVariants([])
     setShowForm(true)
   }
 
@@ -71,12 +98,20 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   }
 
   async function deleteProduct(id) {
-    const { error } = await supabase.from('announcements').delete().eq('id', id)
+    // אבחון מלא: מחזירים את הרשומה שנמחקה. אם לא חזרה רשומה - המחיקה לא עברה (בד"כ RLS).
+    const { data, error } = await supabase.from('announcements').delete().eq('id', id).select()
+    console.log('[deleteProduct]', { id, data, error })
     if (error) {
       alert('שגיאה במחיקת המוצר: ' + error.message)
       return
     }
+    if (!data || data.length === 0) {
+      alert('המחיקה לא בוצעה - ייתכן שאין לך הרשאת מחיקה (RLS). בדוק את מדיניות ההרשאות ב-Supabase.')
+      return
+    }
+    // לאחר מחיקה מוצלחת - מרעננים מהשרת כדי להיות 100% מסונכרנים (במקום רק לסנן state מקומי)
     setProducts(prev => prev.filter(p => p.id !== id))
+    fetchAll()
   }
 
   async function uploadImage(file) {
@@ -104,20 +139,84 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     const payload = {
       title: form.title,
       content: form.content,
+      description_long: form.description_long || null,
       type: 'product',
       price: form.price ? parseFloat(form.price) : null,
       image_url: form.image_url || null,
       trainer_id: trainerId || null,
+      features: form.features || [],
+      has_variants: !!form.has_variants,
+      available_sizes: form.available_sizes || [],
+      available_colors: form.available_colors || [],
     }
+
+    let productId = editingId
     if (editingId) {
-      await supabase.from('announcements').update(payload).eq('id', editingId)
+      const { error } = await supabase.from('announcements').update(payload).eq('id', editingId)
+      if (error) { alert('שגיאה בעדכון המוצר: ' + error.message); return }
     } else {
-      await supabase.from('announcements').insert(payload)
+      const { data, error } = await supabase.from('announcements').insert(payload).select().single()
+      if (error) { alert('שגיאה ביצירת המוצר: ' + error.message); return }
+      productId = data.id
     }
-    setForm({ title: '', content: '', price: '', image_url: '' })
+
+    // סנכרון וריאנטים (רק אם המוצר תומך בוריאנטים)
+    if (form.has_variants && productId) {
+      // מוחקים וריאנטים קיימים לא ברשימה
+      const keepIds = variants.filter(v => v.id).map(v => v.id)
+      if (editingId && keepIds.length > 0) {
+        await supabase.from('product_variants').delete()
+          .eq('product_id', productId).not('id', 'in', `(${keepIds.join(',')})`)
+      } else if (editingId) {
+        await supabase.from('product_variants').delete().eq('product_id', productId)
+      }
+
+      // upsert לכל וריאנט
+      for (const v of variants) {
+        const row = {
+          product_id: productId,
+          size: v.size || null,
+          color: v.color || null,
+          sku: v.sku || null,
+          stock: parseInt(v.stock) || 0,
+          price_override: v.price_override ? parseFloat(v.price_override) : null,
+          active: v.active !== false,
+        }
+        if (v.id) {
+          await supabase.from('product_variants').update(row).eq('id', v.id)
+        } else {
+          await supabase.from('product_variants').insert(row)
+        }
+      }
+    } else if (productId && editingId) {
+      // בוטלו הוריאנטים - מנקים אותם
+      await supabase.from('product_variants').delete().eq('product_id', productId)
+    }
+
+    setForm({
+      title: '', content: '', description_long: '', price: '', image_url: '',
+      features: [], has_variants: false, available_sizes: [], available_colors: [],
+    })
+    setVariants([])
     setEditingId(null)
     setShowForm(false)
     fetchAll()
+  }
+
+  // מחולל אוטומטית וריאנטים מכל השילובים של מידות × צבעים
+  function generateVariantsFromMatrix() {
+    const sizes = form.available_sizes.length ? form.available_sizes : [null]
+    const colors = form.available_colors.length ? form.available_colors : [null]
+    const newVariants = []
+    for (const size of sizes) {
+      for (const color of colors) {
+        // אם כבר קיים השילוב - לא להוסיף שוב
+        const exists = variants.find(v => (v.size || null) === size && (v.color || null) === color)
+        if (exists) { newVariants.push(exists); continue }
+        newVariants.push({ size, color, stock: 0, sku: '', price_override: '', active: true })
+      }
+    }
+    setVariants(newVariants)
   }
 
   async function markDone(order) {
@@ -130,9 +229,14 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
   async function deleteOrder(order) {
     const table = order._source === 'request' ? 'product_requests' : 'product_orders'
-    const { error } = await supabase.from(table).delete().eq('id', order.id)
+    const { data, error } = await supabase.from(table).delete().eq('id', order.id).select()
+    console.log('[deleteOrder]', { id: order.id, table, data, error })
     if (error) {
       alert('שגיאה במחיקת הבקשה: ' + error.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      alert('המחיקה לא בוצעה - ייתכן שאין הרשאת מחיקה (RLS) על טבלת ' + table)
       return
     }
     setOrders(prev => prev.filter(o => o.id !== order.id))
@@ -212,16 +316,52 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
           )}
 
           {showForm && (
-            <div className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
-              <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="שם המוצר"
-                value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required />
-              <textarea className="w-full border rounded-lg px-3 py-2 text-sm resize-none" rows={2}
-                placeholder="תיאור..." value={form.content}
-                onChange={e => setForm(p => ({ ...p, content: e.target.value }))} />
-              <input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="מחיר ₪"
-                value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
+            <div className="bg-white border rounded-xl p-4 space-y-4 shadow-sm">
+              {/* פרטים בסיסיים */}
               <div className="space-y-2">
-                <label className="text-xs text-gray-500">תמונה</label>
+                <h4 className="text-xs font-bold text-gray-600 border-b pb-1">פרטים בסיסיים</h4>
+                <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="שם המוצר *"
+                  value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} required />
+                <textarea className="w-full border rounded-lg px-3 py-2 text-sm resize-none" rows={2}
+                  placeholder="תיאור קצר (שורה-שתיים)" value={form.content}
+                  onChange={e => setForm(p => ({ ...p, content: e.target.value }))} />
+                <input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="מחיר בסיס ₪"
+                  value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
+              </div>
+
+              {/* תיאור מלא */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-gray-600 border-b pb-1">תיאור מלא (יוצג בדף המוצר)</h4>
+                <textarea className="w-full border rounded-lg px-3 py-2 text-sm resize-none" rows={5}
+                  placeholder="פירוט מלא - חומרים, גזרה, איכות התפרים, שימוש מומלץ, הדגשים של המותג..."
+                  value={form.description_long}
+                  onChange={e => setForm(p => ({ ...p, description_long: e.target.value }))} />
+              </div>
+
+              {/* תכונות בולטות (features/bullets) */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-gray-600 border-b pb-1">תכונות בולטות (יוצגו כרשימה)</h4>
+                {form.features.map((feat, idx) => (
+                  <div key={idx} className="flex gap-2 items-center">
+                    <span className="text-gray-400">•</span>
+                    <input className="flex-1 border rounded-lg px-3 py-1.5 text-sm"
+                      placeholder="לדוגמה: תפרים מחוזקים, כיס נסתר, בד נושם"
+                      value={feat}
+                      onChange={e => setForm(p => {
+                        const next = [...p.features]; next[idx] = e.target.value
+                        return { ...p, features: next }
+                      })} />
+                    <button type="button" className="text-red-500 text-xs"
+                      onClick={() => setForm(p => ({ ...p, features: p.features.filter((_, i) => i !== idx) }))}>✕</button>
+                  </div>
+                ))}
+                <button type="button" className="text-xs text-blue-600"
+                  onClick={() => setForm(p => ({ ...p, features: [...p.features, ''] }))}>+ הוסף תכונה</button>
+              </div>
+
+              {/* תמונה */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-gray-600 border-b pb-1">תמונה</h4>
                 <div className="flex gap-2 items-center">
                   <input type="file" accept="image/*"
                     onChange={async e => {
@@ -243,8 +383,90 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                 <input className="w-full border rounded-lg px-3 py-2 text-xs text-gray-500" placeholder="או קישור חיצוני (אופציונלי)"
                   value={form.image_url} onChange={e => setForm(p => ({ ...p, image_url: e.target.value }))} />
               </div>
-              <div className="flex gap-2">
-                <button onClick={handleSubmit} disabled={uploading} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm disabled:opacity-50">שמור</button>
+
+              {/* וריאנטים - מידות וצבעים */}
+              <div className="space-y-2 bg-blue-50 rounded-lg p-3 border border-blue-100">
+                <label className="flex items-center gap-2 text-sm font-bold text-blue-900">
+                  <input type="checkbox" checked={form.has_variants}
+                    onChange={e => setForm(p => ({ ...p, has_variants: e.target.checked }))} />
+                  למוצר יש מידות / צבעים (וריאנטים)
+                </label>
+
+                {form.has_variants && (
+                  <div className="space-y-3 pt-2">
+                    {/* מידות זמינות */}
+                    <div>
+                      <label className="text-xs text-gray-600 block mb-1">מידות זמינות (מופרדות בפסיק)</label>
+                      <input className="w-full border rounded-lg px-3 py-1.5 text-sm"
+                        placeholder="A0, A1, A2, A3, A4"
+                        value={form.available_sizes.join(', ')}
+                        onChange={e => setForm(p => ({
+                          ...p,
+                          available_sizes: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                        }))} />
+                    </div>
+
+                    {/* צבעים זמינים */}
+                    <div>
+                      <label className="text-xs text-gray-600 block mb-1">צבעים זמינים (מופרדים בפסיק)</label>
+                      <input className="w-full border rounded-lg px-3 py-1.5 text-sm"
+                        placeholder="שחור, לבן, כחול"
+                        value={form.available_colors.join(', ')}
+                        onChange={e => setForm(p => ({
+                          ...p,
+                          available_colors: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                        }))} />
+                    </div>
+
+                    <button type="button" onClick={generateVariantsFromMatrix}
+                      className="w-full bg-blue-600 text-white py-1.5 rounded-lg text-xs">
+                      🔄 צור מטריצת וריאנטים (מידה × צבע)
+                    </button>
+
+                    {/* טבלת וריאנטים */}
+                    {variants.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="grid grid-cols-[auto_auto_1fr_1fr_auto] gap-1 text-[10px] font-bold text-gray-500 px-1">
+                          <span className="w-14">מידה</span>
+                          <span className="w-14">צבע</span>
+                          <span>מלאי</span>
+                          <span>מחיר מיוחד (אופ')</span>
+                          <span className="w-6"></span>
+                        </div>
+                        {variants.map((v, idx) => (
+                          <div key={idx} className="grid grid-cols-[auto_auto_1fr_1fr_auto] gap-1 items-center">
+                            <input className="w-14 border rounded px-1 py-1 text-xs" placeholder="מידה"
+                              value={v.size || ''}
+                              onChange={e => setVariants(prev => prev.map((x, i) => i === idx ? { ...x, size: e.target.value } : x))} />
+                            <input className="w-14 border rounded px-1 py-1 text-xs" placeholder="צבע"
+                              value={v.color || ''}
+                              onChange={e => setVariants(prev => prev.map((x, i) => i === idx ? { ...x, color: e.target.value } : x))} />
+                            <input type="number" className="border rounded px-1 py-1 text-xs" placeholder="0"
+                              value={v.stock || 0}
+                              onChange={e => setVariants(prev => prev.map((x, i) => i === idx ? { ...x, stock: e.target.value } : x))} />
+                            <input type="number" step="0.01" className="border rounded px-1 py-1 text-xs" placeholder="="
+                              value={v.price_override || ''}
+                              onChange={e => setVariants(prev => prev.map((x, i) => i === idx ? { ...x, price_override: e.target.value } : x))} />
+                            <button type="button" className="text-red-500 text-xs w-6"
+                              onClick={() => setVariants(prev => prev.filter((_, i) => i !== idx))}>✕</button>
+                          </div>
+                        ))}
+                        <button type="button" className="text-xs text-blue-600 mt-1"
+                          onClick={() => setVariants(prev => [...prev, { size: '', color: '', stock: 0, active: true }])}>
+                          + הוסף וריאנט ידנית
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* כפתורי שמירה */}
+              <div className="flex gap-2 pt-2 border-t">
+                <button onClick={handleSubmit} disabled={uploading}
+                  className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm disabled:opacity-50 font-bold">
+                  💾 שמור מוצר
+                </button>
                 <button onClick={() => setShowForm(false)} className="flex-1 border py-2 rounded-lg text-sm">ביטול</button>
               </div>
             </div>

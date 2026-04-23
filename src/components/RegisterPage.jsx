@@ -180,6 +180,13 @@ export default function RegisterPage() {
             <span>ממתין לאישור... הדף יתעדכן אוטומטית</span>
           </div>
           <a href="/" className="block mt-2 text-sm text-blue-600 underline">כבר אושרת? לחץ כאן להיכנס</a>
+          <div className="pt-4 mt-4 border-t border-gray-100">
+            <p className="text-xs text-gray-500 mb-2">בינתיים — הכירו אותנו טוב יותר</p>
+            <a href="https://www.teampact.co.il" target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800 hover:underline">
+              🌐 לאתר המועדון — teampact.co.il
+            </a>
+          </div>
         </div>
         <InstallBanner />
       </div>
@@ -346,6 +353,14 @@ export default function RegisterPage() {
         >
           {loading ? 'שולח...' : 'שלח בקשת הצטרפות'}
         </button>
+
+        {/* קישור לאתר המועדון — למי שרוצה להכיר לפני הרשמה */}
+        <div className="text-center pt-2 border-t border-gray-100">
+          <a href="https://www.teampact.co.il" target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-emerald-700 transition pt-3">
+            🌐 רוצים להכיר אותנו קודם? לאתר המועדון
+          </a>
+        </div>
       </div>
       </div>
     </div>

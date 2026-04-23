@@ -94,41 +94,36 @@ export default function ReportsManager({ isAdmin }) {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const [rangeDays, setRangeDays] = useState(30)  // תקופה לבחינת נרשמים חדשים
-  const [churnDays, setChurnDays] = useState(30)  // סף "נטישה" לפי חוסר check-in
+  const [churnDays, setChurnDays] = useState(30)  // תקופה לבחינת "נטישה" (ביטול מנוי)
   const [branchFilter, setBranchFilter] = useState('all')
 
   const [members, setMembers] = useState([])
   const [coaches, setCoaches] = useState([])
   const [classes, setClasses] = useState([]) // משמש גם כקבוצות (לפי המודל הקיים)
   const [branches, setBranches] = useState([])
-  const [checkins, setCheckins] = useState([])
 
-  useEffect(() => { if (isAdmin) fetchAll() }, [isAdmin, churnDays])
+  useEffect(() => { if (isAdmin) fetchAll() }, [isAdmin])
 
   async function fetchAll() {
     setLoading(true)
     setErr('')
     try {
-      const sinceChurn = daysAgoISO(churnDays)
-      const [mRes, cRes, clsRes, bRes, chkRes] = await Promise.all([
+      const [mRes, cRes, clsRes, bRes] = await Promise.all([
         supabase
           .from('members')
           .select('id, full_name, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at'),
         supabase.from('coaches').select('id, name, branch_id'),
         supabase.from('classes').select('id, name, class_type, coach_id, branch_id, day_of_week, start_time'),
         supabase.from('branches').select('id, name'),
-        supabase.from('checkins').select('athlete_id, checked_in_at').gte('checked_in_at', sinceChurn),
       ])
       if (mRes.error)   throw mRes.error
       if (cRes.error)   throw cRes.error
       if (clsRes.error) throw clsRes.error
       if (bRes.error)   throw bRes.error
-      // checkins ייתכן ולא קיימת בשימוש — לא נפיל את הדוח אם יש שגיאה
       setMembers(mRes.data || [])
       setCoaches(cRes.data || [])
       setClasses(clsRes.data || [])
       setBranches(bRes.data || [])
-      setCheckins(chkRes.error ? [] : (chkRes.data || []))
     } catch (e) {
       console.error('fetchAll reports error:', e)
       setErr(e.message || 'שגיאה בטעינת הדוחות')
@@ -226,82 +221,76 @@ export default function ReportsManager({ isAdmin }) {
     })
   }, [filteredMembers, rangeDays])
 
-  // 4) נטישה (churn) — מתאמנים ללא check-in ב-churnDays ימים האחרונים
-  // churn% = (כמה מתוך הפעילים ללא check-in) / (סך פעילים)
+  // 4) נטישה (churn) — מתאמנים שבוטל להם המנוי (deleted_at בתוך חלון הזמן)
+  // churn% = מבוטלים בתקופה / (פעילים + מבוטלים בתקופה)
   const { churnByCoach, churnByGroup, totalChurned, totalActiveBase } = useMemo(() => {
-    const lastCheckin = new Map() // athlete_id -> latest timestamp
-    checkins.forEach(c => {
-      const t = new Date(c.checked_in_at).getTime()
-      if (!lastCheckin.has(c.athlete_id) || lastCheckin.get(c.athlete_id) < t) {
-        lastCheckin.set(c.athlete_id, t)
-      }
-    })
     const cutoff = Date.now() - churnDays * DAY_MS
 
-    // מתאמנים פעילים שלא נכחו (= אין check-in כלל בטווח, או אחרון לפני cutoff)
-    const churned = activeMembers.filter(m => {
-      const last = lastCheckin.get(m.id) || 0
-      return last < cutoff
+    const coachNameOf = (m) => {
+      if (m.coach_id && coachById.has(m.coach_id)) return coachById.get(m.coach_id).name
+      if (m.requested_coach_name) return m.requested_coach_name
+      if (m.requested_coach_names?.length) return m.requested_coach_names[0]
+      return 'ללא מאמן / unlimited'
+    }
+
+    const groupNamesOf = (m) => {
+      const gids = (m.group_ids && m.group_ids.length) ? m.group_ids : (m.group_id ? [m.group_id] : [])
+      return gids.map(gid => classById.get(gid)?.name).filter(Boolean)
+    }
+
+    // מתאמנים שבוטלו בתקופה — deleted_at קיים ונמצא בתוך החלון
+    const churned = filteredMembers.filter(m => {
+      if (!m.deleted_at) return false
+      return new Date(m.deleted_at).getTime() >= cutoff
     })
 
-    // נטישה לפי מאמן
-    const coachAgg = new Map() // name -> {active, churned}
+    // סיכום לפי מאמן
+    const coachAgg = new Map()
     activeMembers.forEach(m => {
-      let name = null
-      if (m.coach_id && coachById.has(m.coach_id)) name = coachById.get(m.coach_id).name
-      else if (m.requested_coach_name) name = m.requested_coach_name
-      else if (m.requested_coach_names?.length) name = m.requested_coach_names[0]
-      if (!name) name = 'ללא מאמן / unlimited'
+      const name = coachNameOf(m)
       if (!coachAgg.has(name)) coachAgg.set(name, { active: 0, churned: 0 })
       coachAgg.get(name).active++
     })
     churned.forEach(m => {
-      let name = null
-      if (m.coach_id && coachById.has(m.coach_id)) name = coachById.get(m.coach_id).name
-      else if (m.requested_coach_name) name = m.requested_coach_name
-      else if (m.requested_coach_names?.length) name = m.requested_coach_names[0]
-      if (!name) name = 'ללא מאמן / unlimited'
+      const name = coachNameOf(m)
       if (!coachAgg.has(name)) coachAgg.set(name, { active: 0, churned: 0 })
       coachAgg.get(name).churned++
     })
 
-    // נטישה לפי קבוצה
+    // סיכום לפי קבוצה
     const grpAgg = new Map()
-    const addGroups = (m, key) => {
-      const gids = (m.group_ids && m.group_ids.length) ? m.group_ids : (m.group_id ? [m.group_id] : [])
-      gids.forEach(gid => {
-        const cls = classById.get(gid)
-        const gname = cls?.name || 'ללא קבוצה'
+    activeMembers.forEach(m => {
+      groupNamesOf(m).forEach(gname => {
         if (!grpAgg.has(gname)) grpAgg.set(gname, { active: 0, churned: 0 })
-        grpAgg.get(gname)[key]++
+        grpAgg.get(gname).active++
       })
+    })
+    churned.forEach(m => {
+      const names = groupNamesOf(m)
+      const finalNames = names.length ? names : ['ללא קבוצה']
+      finalNames.forEach(gname => {
+        if (!grpAgg.has(gname)) grpAgg.set(gname, { active: 0, churned: 0 })
+        grpAgg.get(gname).churned++
+      })
+    })
+
+    const toRow = ([name, { active, churned }]) => {
+      const base = active + churned
+      return { name, active, churned, pct: base > 0 ? Math.round((churned / base) * 100) : 0 }
     }
-    activeMembers.forEach(m => addGroups(m, 'active'))
-    churned.forEach(m => addGroups(m, 'churned'))
 
-    const coachRows = Array.from(coachAgg.entries())
-      .map(([name, { active, churned }]) => ({
-        name, active, churned,
-        pct: active > 0 ? Math.round((churned / active) * 100) : 0,
-      }))
-      .filter(r => r.active > 0)
-      .sort((a, b) => b.pct - a.pct)
-
-    const groupRows = Array.from(grpAgg.entries())
-      .map(([name, { active, churned }]) => ({
-        name, active, churned,
-        pct: active > 0 ? Math.round((churned / active) * 100) : 0,
-      }))
-      .filter(r => r.active > 0)
-      .sort((a, b) => b.pct - a.pct)
+    const coachRows = Array.from(coachAgg.entries()).map(toRow)
+      .filter(r => r.active + r.churned > 0).sort((a, b) => b.pct - a.pct)
+    const groupRows = Array.from(grpAgg.entries()).map(toRow)
+      .filter(r => r.active + r.churned > 0).sort((a, b) => b.pct - a.pct)
 
     return {
       churnByCoach: coachRows,
       churnByGroup: groupRows,
       totalChurned: churned.length,
-      totalActiveBase: activeMembers.length,
+      totalActiveBase: activeMembers.length + churned.length,
     }
-  }, [activeMembers, checkins, churnDays, coachById, classById])
+  }, [activeMembers, filteredMembers, churnDays, coachById, classById])
 
   if (!isAdmin) {
     return (
@@ -360,7 +349,7 @@ export default function ReportsManager({ isAdmin }) {
         <StatCard label="מתאמנים פעילים" value={totalActive} tone="blue" />
         <StatCard label={`נרשמים חדשים (${rangeDays} ימים)`} value={newMembers.length} tone="green" />
         <StatCard label="ממתינים לאישור" value={totalPending} tone="orange" />
-        <StatCard label={`% נטישה (${churnDays} ימים)`} value={`${churnPctTotal}%`} sub={`${totalChurned} מתוך ${totalActiveBase}`} tone="red" />
+        <StatCard label={`% נטישה (${churnDays} ימים)`} value={`${churnPctTotal}%`} sub={`${totalChurned} ביטולים מתוך ${totalActiveBase}`} tone="red" />
       </div>
 
       {/* בורר טווח נרשמים חדשים */}
@@ -373,8 +362,8 @@ export default function ReportsManager({ isAdmin }) {
           >{d} ימים</button>
         ))}
         <span className="mx-2 text-gray-300">|</span>
-        <span className="text-xs text-gray-600">סף נטישה (ימים ללא check-in):</span>
-        {[14, 30, 60, 90].map(d => (
+        <span className="text-xs text-gray-600">תקופת נטישה (ימים אחורה):</span>
+        {[30, 60, 90, 180].map(d => (
           <button key={d}
             onClick={() => setChurnDays(d)}
             className={`text-xs px-3 py-1.5 rounded-lg font-bold ${churnDays === d ? 'bg-rose-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
@@ -452,9 +441,9 @@ export default function ReportsManager({ isAdmin }) {
 
       {/* נטישה לפי מאמן */}
       <SectionCard
-        title={`% נטישה לפי מאמן (ללא נוכחות ${churnDays}+ ימים)`}
+        title={`% נטישה לפי מאמן (ביטולי מנוי ב-${churnDays} ימים האחרונים)`}
         icon="📉"
-        footer={checkins.length === 0 ? '⚠️ לא נמצאו רישומי check-in — הנתונים מחייבים שימוש פעיל במערכת הנוכחות.' : undefined}
+        footer={totalChurned === 0 ? '✅ לא היו ביטולי מנוי בתקופה זו.' : undefined}
       >
         {churnByCoach.length === 0 ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
@@ -474,7 +463,7 @@ export default function ReportsManager({ isAdmin }) {
 
       {/* נטישה לפי קבוצה */}
       <SectionCard
-        title={`% נטישה לפי קבוצה (ללא נוכחות ${churnDays}+ ימים)`}
+        title={`% נטישה לפי קבוצה (ביטולי מנוי ב-${churnDays} ימים האחרונים)`}
         icon="👥"
       >
         {churnByGroup.length === 0 ? (

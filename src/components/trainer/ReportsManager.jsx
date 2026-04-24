@@ -101,6 +101,7 @@ export default function ReportsManager({ isAdmin }) {
   const [coaches, setCoaches] = useState([])
   const [classes, setClasses] = useState([]) // משמש גם כקבוצות (לפי המודל הקיים)
   const [branches, setBranches] = useState([])
+  const [checkins, setCheckins] = useState([]) // נוכחויות — לצורך דוחות מבוססי נוכחות בפועל
 
   useEffect(() => { if (isAdmin) fetchAll() }, [isAdmin])
 
@@ -108,22 +109,25 @@ export default function ReportsManager({ isAdmin }) {
     setLoading(true)
     setErr('')
     try {
-      const [mRes, cRes, clsRes, bRes] = await Promise.all([
+      const [mRes, cRes, clsRes, bRes, chkRes] = await Promise.all([
         supabase
           .from('members')
           .select('id, full_name, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at'),
         supabase.from('coaches').select('id, name, branch_id'),
         supabase.from('classes').select('id, name, class_type, coach_id, branch_id, day_of_week, start_time'),
         supabase.from('branches').select('id, name'),
+        supabase.from('checkins').select('class_id, athlete_id, status, checked_in_at').eq('status', 'present'),
       ])
       if (mRes.error)   throw mRes.error
       if (cRes.error)   throw cRes.error
       if (clsRes.error) throw clsRes.error
       if (bRes.error)   throw bRes.error
+      if (chkRes.error) console.error('checkins fetch error:', chkRes.error)
       setMembers(mRes.data || [])
       setCoaches(cRes.data || [])
       setClasses(clsRes.data || [])
       setBranches(bRes.data || [])
+      setCheckins(chkRes.data || [])
     } catch (e) {
       console.error('fetchAll reports error:', e)
       setErr(e.message || 'שגיאה בטעינת הדוחות')
@@ -187,29 +191,42 @@ export default function ReportsManager({ isAdmin }) {
       .sort((a, b) => b.count - a.count)
   }, [activeMembers, coaches, coachById])
 
-  // 2) כמות מתאמנים לפי תחום (BJJ / Muay Thai / MMA / אחר)
-  // מתבסס על שמות הקבוצות/שיעורים ששויכו למתאמן
+  // מפת class_id → תחום (מבוסס class_type אם מפורש, אחרת שם השיעור)
+  const disciplineByClassId = useMemo(() => {
+    const m = new Map()
+    classes.forEach(cls => {
+      const explicit = (cls.class_type || '').toLowerCase()
+      if (explicit && explicit !== 'regular') {
+        const fromExplicit = detectDiscipline(explicit)
+        if (fromExplicit !== 'אחר') { m.set(cls.id, fromExplicit); return }
+      }
+      m.set(cls.id, detectDiscipline(cls.name || ''))
+    })
+    return m
+  }, [classes])
+
+  // סט מתאמנים פעילים (לצורך סינון סניף של נוכחויות)
+  const activeMemberIds = useMemo(() => new Set(activeMembers.map(m => m.id)), [activeMembers])
+
+  // 2) כמות מתאמנים לפי תחום — מבוסס נוכחות בפועל (checkins עם status='present')
+  // סופר מתאמן אחד לכל תחום שהגיע אליו לפחות פעם אחת.
   const byDiscipline = useMemo(() => {
     const counts = { BJJ: 0, 'Muay Thai': 0, MMA: 0, 'ילדים': 0, 'אחר': 0 }
-    activeMembers.forEach(m => {
-      const gids = (m.group_ids && m.group_ids.length) ? m.group_ids : (m.group_id ? [m.group_id] : [])
-      const disciplinesForMember = new Set()
-      gids.forEach(gid => {
-        const cls = classById.get(gid)
-        if (!cls) return
-        // מעדיפים class_type אם הוא מפורש, אחרת מזהים לפי שם
-        const explicit = (cls.class_type || '').toLowerCase()
-        if (explicit && explicit !== 'regular') {
-          const fromExplicit = detectDiscipline(explicit)
-          if (fromExplicit !== 'אחר') { disciplinesForMember.add(fromExplicit); return }
-        }
-        disciplinesForMember.add(detectDiscipline(cls.name || ''))
-      })
-      if (disciplinesForMember.size === 0) disciplinesForMember.add('אחר')
-      disciplinesForMember.forEach(d => { counts[d] = (counts[d] || 0) + 1 })
+    // מפה: מתאמן → סט תחומים אליהם הגיע
+    const disciplinesPerMember = new Map()
+    checkins.forEach(c => {
+      if (!c.athlete_id || !c.class_id) return
+      if (!activeMemberIds.has(c.athlete_id)) return // רק מתאמנים פעילים
+      const disc = disciplineByClassId.get(c.class_id)
+      if (!disc) return
+      if (!disciplinesPerMember.has(c.athlete_id)) disciplinesPerMember.set(c.athlete_id, new Set())
+      disciplinesPerMember.get(c.athlete_id).add(disc)
+    })
+    disciplinesPerMember.forEach(discSet => {
+      discSet.forEach(d => { counts[d] = (counts[d] || 0) + 1 })
     })
     return DISCIPLINE_ORDER.map(d => ({ name: d, count: counts[d] || 0 }))
-  }, [activeMembers, classById])
+  }, [checkins, disciplineByClassId, activeMemberIds])
 
   // 3) נרשמים חדשים (לפי created_at בטווח הזמן שנבחר) — ללא soft-deleted
   const newMembers = useMemo(() => {
@@ -382,8 +399,8 @@ export default function ReportsManager({ isAdmin }) {
         )}
       </SectionCard>
 
-      {/* מתאמנים לפי תחום */}
-      <SectionCard title="מתאמנים לפי תחום לחימה" icon="🥊" footer="התחום מזוהה אוטומטית לפי שם הקבוצה/שיעור">
+      {/* מתאמנים לפי תחום — מבוסס נוכחות בפועל */}
+      <SectionCard title="מתאמנים לפי תחום לחימה" icon="🥊" footer="ספירה מבוססת על נוכחות בפועל (סימון ✓ נוכח באימון). התחום מזוהה אוטומטית לפי שם השיעור.">
         {byDiscipline.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
         ) : (
@@ -397,7 +414,7 @@ export default function ReportsManager({ isAdmin }) {
             />
           ))
         )}
-        <p className="text-xs text-gray-500 mt-2">* מתאמן המשתתף במספר תחומים נספר בכל אחד מהם.</p>
+        <p className="text-xs text-gray-500 mt-2">* מתאמן שהיה באימונים במספר תחומים נספר בכל אחד מהם.</p>
       </SectionCard>
 
       {/* נרשמים חדשים */}

@@ -167,14 +167,11 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       supabase.from('product_requests').select('*').order('created_at', { ascending: false }),
     ])
     setProducts(prods || [])
-    // מיזוג: orders (הישן) + requests (החדש)
+    // מיזוג: orders (הישן) + requests (החדש) - שומר את כל הפרטים (מידה, צבע, מחיר, הערות)
     const merged = [
       ...(ords1 || []).map(o => ({ ...o, _source: 'order' })),
       ...(ords2 || []).map(o => ({
-        id: o.id,
-        product_name: o.product_name,
-        status: o.status,
-        created_at: o.created_at,
+        ...o,  // שומר את כל השדות: selected_size, selected_color, notes, unit_price, total_price, quantity
         members: { full_name: o.athlete_name, phone: null },
         _source: 'request',
       })),
@@ -384,6 +381,43 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                       <span className="font-medium">{order.members?.full_name || order.member_name || 'לא ידוע'}</span>
                       {order.members?.phone && <span className="text-gray-400"> · {order.members.phone}</span>}
                     </p>
+                    {/* באדג'ים של מידה/צבע/כמות */}
+                    {(order.selected_size || order.selected_color || (order.quantity && order.quantity > 1)) && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {order.selected_size && (
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">
+                            📏 מידה: {order.selected_size}
+                          </span>
+                        )}
+                        {order.selected_color && (
+                          <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-medium">
+                            🎨 צבע: {order.selected_color}
+                          </span>
+                        )}
+                        {order.quantity > 1 && (
+                          <span className="text-xs bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full font-medium">
+                            × {order.quantity}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {/* הערות (אפשרות רכישה + פרטים נוספים) */}
+                    {order.notes && (
+                      <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded-lg px-2 py-1 leading-relaxed">
+                        💬 {order.notes}
+                      </p>
+                    )}
+                    {/* מחיר */}
+                    {(order.total_price != null || order.unit_price != null) && (
+                      <p className="text-sm font-bold text-emerald-600 mt-2">
+                        💰 ₪{order.total_price ?? order.unit_price}
+                        {order.quantity > 1 && order.unit_price && (
+                          <span className="text-xs text-gray-400 font-normal mr-1">
+                            (₪{order.unit_price} × {order.quantity})
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                   {isAdmin && (
                     <div className="flex gap-2 flex-shrink-0 items-center">

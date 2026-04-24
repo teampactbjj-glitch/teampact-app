@@ -913,7 +913,13 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         const data = classData[cls.id]
         const isOpen = expanded === cls.id
         const presentCount = data?.checkedIds?.size ?? 0
-        const totalCount = data?.members?.length ?? 0
+        // הספירה הכוללת: מתאמנים קבועים + נרשמים שבועיים (ללא כפילויות)
+        const totalCount = (() => {
+          if (!data) return 0
+          const ids = new Set((data.members || []).map(m => m.id))
+          ;(data.weeklyRegistrants || []).forEach(r => ids.add(r.id))
+          return ids.size
+        })()
 
         return (
           <div key={cls.id} className={`bg-white rounded-xl shadow-sm overflow-hidden border ${cls.status === 'pending' ? 'border-amber-300 ring-1 ring-amber-200' : ''} ${cls.deletion_requested_at ? 'border-rose-300 ring-1 ring-rose-200' : ''}`}>
@@ -994,91 +1000,96 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                   <p className="text-sm text-gray-400 text-center py-2">טוען...</p>
                 ) : (
                   <>
-                    {/* נרשמו לשבוע זה (class_registrations) */}
-                    {(data.weeklyRegistrants?.length || 0) > 0 && (
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                        <p className="text-xs font-bold text-red-900 mb-2">🙋 נרשמו לשיעור זה השבוע ({data.weeklyRegistrants.length})</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {data.weeklyRegistrants.map(r => (
-                            <span key={r.id} className="text-xs bg-white border border-red-200 text-red-800 px-2 py-1 rounded-full font-medium">
-                              {r.full_name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    {/* רשימת משתתפים מאוחדת: מתאמנים קבועים + נרשמים שבועיים */}
+                    {(() => {
+                      const permanentIds = new Set((data.members || []).map(m => m.id))
+                      const weeklyOnly = (data.weeklyRegistrants || []).filter(r => !permanentIds.has(r.id))
+                      const combined = [
+                        ...(data.members || []).map(m => ({ ...m, _source: 'permanent' })),
+                        ...weeklyOnly.map(r => ({ ...r, _source: 'weekly' })),
+                      ]
 
-                    {/* Registered members list */}
-                    {data.members.length === 0 ? (
-                      <p className="text-sm text-gray-400 text-center py-4">אין מתאמנים רשומים לשיעור זה</p>
-                    ) : (
-                      <ul className="divide-y">
-                        {data.members.map(member => {
-                          const membershipType = member.membership_type || member.subscription_type
-                          const limit = WEEKLY_LIMITS[membershipType] ?? 2
-                          const weekCount = data.weeklyCount[member.id] || 0
-                          const isPresent = data.checkedIds.has(member.id)
-                          const isAbsent = data.absentIds.has(member.id)
-                          const isOverLimit = limit !== Infinity && weekCount >= limit && !isPresent
-                          const key = `${cls.id}_${member.id}`
-                          const busy = actionLoading[key]
+                      if (combined.length === 0) {
+                        return <p className="text-sm text-gray-400 text-center py-4">אין מתאמנים רשומים לשיעור זה</p>
+                      }
 
-                          return (
-                            <li key={member.id} className="py-3">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <p className="text-sm font-medium text-gray-800">{member.full_name}</p>
-                                    {isOverLimit && (
-                                      <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
-                                        ⚠️ חרג ממנוי ({weekCount}/{limit})
-                                      </span>
+                      return (
+                        <ul className="divide-y border border-gray-100 rounded-lg overflow-hidden bg-white">
+                          {combined.map(member => {
+                            const membershipType = member.membership_type || member.subscription_type
+                            const limit = WEEKLY_LIMITS[membershipType] ?? 2
+                            const weekCount = data.weeklyCount[member.id] || 0
+                            const isPresent = data.checkedIds.has(member.id)
+                            const isAbsent = data.absentIds.has(member.id)
+                            const isOverLimit = limit !== Infinity && weekCount >= limit && !isPresent
+                            const key = `${cls.id}_${member.id}`
+                            const busy = actionLoading[key]
+                            const isWeekly = member._source === 'weekly'
+
+                            return (
+                              <li key={member.id} className="py-3 px-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <p className="text-sm font-medium text-gray-800">{member.full_name}</p>
+                                      {isWeekly && (
+                                        <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+                                          🙋 נרשם השבוע
+                                        </span>
+                                      )}
+                                      {isOverLimit && (
+                                        <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+                                          ⚠️ חרג ממנוי ({weekCount}/{limit})
+                                        </span>
+                                      )}
+                                    </div>
+                                    {!isWeekly && (
+                                      <p className="text-xs text-gray-400 mt-0.5">
+                                        {membershipType === '2x_week' ? '2× שבוע'
+                                          : membershipType === '4x_week' ? '4× שבוע'
+                                          : membershipType === 'unlimited' ? 'ללא הגבלה'
+                                          : membershipType || '—'}
+                                        {limit !== Infinity && ` · ${weekCount}/${limit} השבוע`}
+                                      </p>
                                     )}
                                   </div>
-                                  <p className="text-xs text-gray-400 mt-0.5">
-                                    {membershipType === '2x_week' ? '2× שבוע'
-                                      : membershipType === '4x_week' ? '4× שבוע'
-                                      : membershipType === 'unlimited' ? 'ללא הגבלה'
-                                      : membershipType || '—'}
-                                    {limit !== Infinity && ` · ${weekCount}/${limit} השבוע`}
-                                  </p>
-                                </div>
 
-                                <div className="flex gap-1.5 shrink-0">
-                                  {/* נוכח button */}
-                                  <button
-                                    onClick={() => markPresent(cls.id, member.id, membershipType)}
-                                    disabled={busy}
-                                    title="סמן נוכח"
-                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition disabled:opacity-40 ${
-                                      isPresent
-                                        ? 'bg-green-500 text-white shadow-sm'
-                                        : 'bg-gray-100 text-gray-500 hover:bg-green-100 hover:text-green-700'
-                                    }`}
-                                  >
-                                    {busy ? '...' : '✓ נוכח'}
-                                  </button>
+                                  <div className="flex gap-1.5 shrink-0">
+                                    {/* נוכח button */}
+                                    <button
+                                      onClick={() => markPresent(cls.id, member.id, membershipType)}
+                                      disabled={busy}
+                                      title="סמן נוכח"
+                                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition disabled:opacity-40 ${
+                                        isPresent
+                                          ? 'bg-green-500 text-white shadow-sm'
+                                          : 'bg-gray-100 text-gray-500 hover:bg-green-100 hover:text-green-700'
+                                      }`}
+                                    >
+                                      {busy ? '...' : '✓ נוכח'}
+                                    </button>
 
-                                  {/* נעדר button */}
-                                  <button
-                                    onClick={() => markAbsent(cls.id, member.id)}
-                                    disabled={busy}
-                                    title="סמן נעדר"
-                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition disabled:opacity-40 ${
-                                      isAbsent
-                                        ? 'bg-red-500 text-white shadow-sm'
-                                        : 'bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600'
-                                    }`}
-                                  >
-                                    {busy ? '...' : '✕ נעדר'}
-                                  </button>
+                                    {/* נעדר button */}
+                                    <button
+                                      onClick={() => markAbsent(cls.id, member.id)}
+                                      disabled={busy}
+                                      title="סמן נעדר"
+                                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition disabled:opacity-40 ${
+                                        isAbsent
+                                          ? 'bg-red-500 text-white shadow-sm'
+                                          : 'bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600'
+                                      }`}
+                                    >
+                                      {busy ? '...' : '✕ נעדר'}
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    )}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )
+                    })()}
 
                     {/* Visitor / walk-in section */}
                     <div className={`pt-2 ${data.members.length > 0 ? 'border-t' : ''}`}>

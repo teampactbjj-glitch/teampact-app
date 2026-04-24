@@ -652,57 +652,143 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                                   : o),
                               }))}>✕</button>
                           </div>
-                          {/* מידות של הרכיב */}
+                          {/* מידות של הרכיב - tags עם Enter */}
                           <div>
                             <label className="text-[10px] text-gray-600 block mb-0.5">
-                              📏 מידות (מופרדות בפסיק - למשל: S,M,L,XL)
+                              📏 מידות - הקלד מידה ולחץ Enter
                             </label>
-                            <input
-                              className="w-full border rounded px-2 py-1 text-xs"
-                              placeholder="S,M,L,XL"
-                              defaultValue={Array.isArray(comp.sizes) ? comp.sizes.join(',') : ''}
-                              onBlur={e => {
-                                const sizes = e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                                setForm(p => ({
-                                  ...p,
-                                  purchase_options: p.purchase_options.map((o, i) => i === idx
-                                    ? { ...o, components: o.components.map((c, ci) => ci === compIdx ? { ...c, sizes } : c) }
-                                    : o),
-                                }))
-                              }} />
                             {Array.isArray(comp.sizes) && comp.sizes.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
+                              <div className="flex flex-wrap gap-1 mb-1">
                                 {comp.sizes.map((s, si) => (
-                                  <span key={si} className="text-[10px] bg-blue-100 text-blue-800 rounded-full px-2 py-0.5">{s}</span>
+                                  <span key={si} className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 rounded-full px-2 py-0.5 text-[10px]">
+                                    {s}
+                                    <button type="button" className="text-blue-600 hover:text-red-500 font-bold"
+                                      onClick={() => setForm(p => ({
+                                        ...p,
+                                        purchase_options: p.purchase_options.map((o, i) => i === idx
+                                          ? { ...o, components: o.components.map((c, ci) => ci === compIdx
+                                              ? { ...c, sizes: (c.sizes || []).filter((_, sj) => sj !== si) }
+                                              : c) }
+                                          : o),
+                                      }))}>×</button>
+                                  </span>
                                 ))}
                               </div>
                             )}
-                          </div>
-                          {/* צבעים של הרכיב */}
-                          <div>
-                            <label className="text-[10px] text-gray-600 block mb-0.5">
-                              🎨 צבעים (מופרדים בפסיק - למשל: שחור,לבן,כחול)
-                            </label>
                             <input
                               className="w-full border rounded px-2 py-1 text-xs"
-                              placeholder="שחור,לבן,כחול"
-                              defaultValue={Array.isArray(comp.colors) ? comp.colors.join(',') : ''}
+                              placeholder="לדוגמה: M ואז Enter"
+                              onKeyDown={e => {
+                                if (['Enter', 'Tab', ',', '،', '、'].includes(e.key)) {
+                                  e.preventDefault()
+                                  const val = e.target.value.trim()
+                                  const existing = Array.isArray(comp.sizes) ? comp.sizes : []
+                                  if (val && !existing.includes(val)) {
+                                    setForm(p => ({
+                                      ...p,
+                                      purchase_options: p.purchase_options.map((o, i) => i === idx
+                                        ? { ...o, components: o.components.map((c, ci) => ci === compIdx
+                                            ? { ...c, sizes: [...(c.sizes || []), val] }
+                                            : c) }
+                                        : o),
+                                    }))
+                                  }
+                                  e.target.value = ''
+                                } else if (e.key === 'Backspace' && !e.target.value && Array.isArray(comp.sizes) && comp.sizes.length) {
+                                  setForm(p => ({
+                                    ...p,
+                                    purchase_options: p.purchase_options.map((o, i) => i === idx
+                                      ? { ...o, components: o.components.map((c, ci) => ci === compIdx
+                                          ? { ...c, sizes: c.sizes.slice(0, -1) }
+                                          : c) }
+                                      : o),
+                                  }))
+                                }
+                              }}
                               onBlur={e => {
-                                const colors = e.target.value.split(',').map(c => c.trim()).filter(Boolean)
-                                setForm(p => ({
-                                  ...p,
-                                  purchase_options: p.purchase_options.map((o, i) => i === idx
-                                    ? { ...o, components: o.components.map((c, ci) => ci === compIdx ? { ...c, colors } : c) }
-                                    : o),
-                                }))
+                                const val = e.target.value.trim()
+                                const existing = Array.isArray(comp.sizes) ? comp.sizes : []
+                                if (val && !existing.includes(val)) {
+                                  setForm(p => ({
+                                    ...p,
+                                    purchase_options: p.purchase_options.map((o, i) => i === idx
+                                      ? { ...o, components: o.components.map((c, ci) => ci === compIdx
+                                          ? { ...c, sizes: [...(c.sizes || []), val] }
+                                          : c) }
+                                      : o),
+                                  }))
+                                }
+                                e.target.value = ''
                               }} />
+                          </div>
+                          {/* צבעים של הרכיב - tags עם Enter */}
+                          <div>
+                            <label className="text-[10px] text-gray-600 block mb-0.5">
+                              🎨 צבעים - הקלד צבע ולחץ Enter
+                            </label>
                             {Array.isArray(comp.colors) && comp.colors.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {comp.colors.map((c, ci) => (
-                                  <span key={ci} className="text-[10px] bg-purple-100 text-purple-800 rounded-full px-2 py-0.5">{c}</span>
+                              <div className="flex flex-wrap gap-1 mb-1">
+                                {comp.colors.map((cl, ci) => (
+                                  <span key={ci} className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 rounded-full px-2 py-0.5 text-[10px]">
+                                    {cl}
+                                    <button type="button" className="text-purple-600 hover:text-red-500 font-bold"
+                                      onClick={() => setForm(p => ({
+                                        ...p,
+                                        purchase_options: p.purchase_options.map((o, i) => i === idx
+                                          ? { ...o, components: o.components.map((c, cidx2) => cidx2 === compIdx
+                                              ? { ...c, colors: (c.colors || []).filter((_, cj) => cj !== ci) }
+                                              : c) }
+                                          : o),
+                                      }))}>×</button>
+                                  </span>
                                 ))}
                               </div>
                             )}
+                            <input
+                              className="w-full border rounded px-2 py-1 text-xs"
+                              placeholder="לדוגמה: שחור ואז Enter"
+                              onKeyDown={e => {
+                                if (['Enter', 'Tab', ',', '،', '、'].includes(e.key)) {
+                                  e.preventDefault()
+                                  const val = e.target.value.trim()
+                                  const existing = Array.isArray(comp.colors) ? comp.colors : []
+                                  if (val && !existing.includes(val)) {
+                                    setForm(p => ({
+                                      ...p,
+                                      purchase_options: p.purchase_options.map((o, i) => i === idx
+                                        ? { ...o, components: o.components.map((c, cidx2) => cidx2 === compIdx
+                                            ? { ...c, colors: [...(c.colors || []), val] }
+                                            : c) }
+                                        : o),
+                                    }))
+                                  }
+                                  e.target.value = ''
+                                } else if (e.key === 'Backspace' && !e.target.value && Array.isArray(comp.colors) && comp.colors.length) {
+                                  setForm(p => ({
+                                    ...p,
+                                    purchase_options: p.purchase_options.map((o, i) => i === idx
+                                      ? { ...o, components: o.components.map((c, cidx2) => cidx2 === compIdx
+                                          ? { ...c, colors: c.colors.slice(0, -1) }
+                                          : c) }
+                                      : o),
+                                  }))
+                                }
+                              }}
+                              onBlur={e => {
+                                const val = e.target.value.trim()
+                                const existing = Array.isArray(comp.colors) ? comp.colors : []
+                                if (val && !existing.includes(val)) {
+                                  setForm(p => ({
+                                    ...p,
+                                    purchase_options: p.purchase_options.map((o, i) => i === idx
+                                      ? { ...o, components: o.components.map((c, cidx2) => cidx2 === compIdx
+                                          ? { ...c, colors: [...(c.colors || []), val] }
+                                          : c) }
+                                      : o),
+                                  }))
+                                }
+                                e.target.value = ''
+                              }} />
                           </div>
                         </div>
                       ))}

@@ -316,10 +316,28 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     setRegCountsByClass(prev => ({ ...prev, [classId]: weeklyRegistrants.length }))
   }
 
-  async function markPresent(classId, memberId, membershipType) {
-    const key = `${classId}_${memberId}`
-    setActionLoading(p => ({ ...p, [key]: true }))
+  // ============================================================
+  // Optimistic updates — מעדכנים את ה-UI מיד, כותבים ל-DB ברקע
+  // ללא "טוען..." וללא re-fetch מלא של השיעור.
+  // במקרה של כשל — מתחזרים למצב הקודם ומציגים שגיאה.
+  // ============================================================
+  async function markPresent(classId, memberId /* , membershipType */) {
+    // שמור מצב קודם לצורך rollback במקרה של כשל
+    const prevSnapshot = classData[classId]
 
+    // עדכון אופטימי: הוסף ל-checkedIds, הסר מ-absentIds, והעלה מונה שבועי ב-1 (אם לא היה present כבר)
+    setClassData(p => {
+      const d = p[classId]
+      if (!d) return p
+      const wasPresent = d.checkedIds.has(memberId)
+      const newChecked = new Set(d.checkedIds); newChecked.add(memberId)
+      const newAbsent = new Set(d.absentIds); newAbsent.delete(memberId)
+      const newWeekly = { ...d.weeklyCount }
+      if (!wasPresent) newWeekly[memberId] = (newWeekly[memberId] || 0) + 1
+      return { ...p, [classId]: { ...d, checkedIds: newChecked, absentIds: newAbsent, weeklyCount: newWeekly } }
+    })
+
+    // כתיבה ל-DB ברקע
     const dayStart = startOfDay(selectedDate)
     const { error: delErr } = await supabase.from('checkins').delete()
       .eq('class_id', classId).eq('athlete_id', memberId)
@@ -335,16 +353,26 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     })
     if (insErr) {
       console.error('markPresent insert error:', insErr)
+      // Rollback למצב הקודם
+      setClassData(p => ({ ...p, [classId]: prevSnapshot }))
       alert('שגיאה בסימון נוכחות:\n' + (insErr.message || JSON.stringify(insErr)))
     }
-
-    setActionLoading(p => ({ ...p, [key]: false }))
-    fetchClassDetails(classId)
   }
 
   async function markAbsent(classId, memberId) {
-    const key = `${classId}_${memberId}`
-    setActionLoading(p => ({ ...p, [key]: true }))
+    const prevSnapshot = classData[classId]
+
+    // עדכון אופטימי: הוסף ל-absentIds, הסר מ-checkedIds, הורד מונה שבועי ב-1 (אם היה present)
+    setClassData(p => {
+      const d = p[classId]
+      if (!d) return p
+      const wasPresent = d.checkedIds.has(memberId)
+      const newChecked = new Set(d.checkedIds); newChecked.delete(memberId)
+      const newAbsent = new Set(d.absentIds); newAbsent.add(memberId)
+      const newWeekly = { ...d.weeklyCount }
+      if (wasPresent && newWeekly[memberId]) newWeekly[memberId] = Math.max(0, newWeekly[memberId] - 1)
+      return { ...p, [classId]: { ...d, checkedIds: newChecked, absentIds: newAbsent, weeklyCount: newWeekly } }
+    })
 
     const dayStart = startOfDay(selectedDate)
     const { error: delErr } = await supabase.from('checkins').delete()
@@ -361,11 +389,9 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     })
     if (insErr) {
       console.error('markAbsent insert error:', insErr)
+      setClassData(p => ({ ...p, [classId]: prevSnapshot }))
       alert('שגיאה בסימון היעדרות:\n' + (insErr.message || JSON.stringify(insErr)))
     }
-
-    setActionLoading(p => ({ ...p, [key]: false }))
-    fetchClassDetails(classId)
   }
 
   async function addNewVisitor(classId, branchId, name) {

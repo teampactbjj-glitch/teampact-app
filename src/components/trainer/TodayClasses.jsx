@@ -7,12 +7,13 @@ const WEEKLY_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 const DAYS_HE_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
-// שיעורי "מזרן פתוח" / ספארינג חופשי — פתוחים לכל המנויים, לא נספרים במכסה השבועית
+// שיעורי "מזרן/מזרון פתוח" / ספארינג חופשי — פתוחים לכל המנויים, לא נספרים במכסה השבועית
 function isOpenMatClass(cls) {
   if (!cls) return false
   if ((cls.class_type || '').toLowerCase() === 'open_mat') return true
   const name = String(cls.name || cls.title || '').toLowerCase()
-  if (/מזרן\s*פתוח/.test(name)) return true
+  // תומך בשתי הצורות: "מזרן פתוח" ו"מזרון פתוח"
+  if (/מזרו?ן\s*פתוח/.test(name)) return true
   if (/ספארינג/.test(name)) return true
   if (/open[- ]?mat/.test(name)) return true
   return false

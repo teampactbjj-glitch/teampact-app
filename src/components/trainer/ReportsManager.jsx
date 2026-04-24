@@ -95,6 +95,7 @@ export default function ReportsManager({ isAdmin }) {
   const [err, setErr] = useState('')
   const [rangeDays, setRangeDays] = useState(30)  // תקופה לבחינת נרשמים חדשים
   const [churnDays, setChurnDays] = useState(30)  // תקופה לבחינת "נטישה" (ביטול מנוי)
+  const [attendanceDays, setAttendanceDays] = useState(30)  // תקופה לדוחות מבוססי נוכחות (לפי מאמן/תחום)
   const [branchFilter, setBranchFilter] = useState('all')
 
   const [members, setMembers] = useState([])
@@ -169,7 +170,16 @@ export default function ReportsManager({ isAdmin }) {
     )
   }, [filteredMembers])
 
-  // 1) כמות מתאמנים לפי מאמן — מבוסס נוכחות בפועל (checkins)
+  // Checkins מסוננים לפי טווח הזמן של דוחות הנוכחות
+  const filteredCheckins = useMemo(() => {
+    const since = Date.now() - attendanceDays * DAY_MS
+    return checkins.filter(c => {
+      if (!c.checked_in_at) return false
+      return new Date(c.checked_in_at).getTime() >= since
+    })
+  }, [checkins, attendanceDays])
+
+  // 1) כמות מתאמנים לפי מאמן — מבוסס נוכחות בפועל (checkins) בטווח הנבחר
   // סופר מתאמן אחד לכל מאמן שאצלו הוא התאמן לפחות פעם אחת.
   const byCoach = useMemo(() => {
     const counts = new Map()
@@ -177,7 +187,7 @@ export default function ReportsManager({ isAdmin }) {
     coaches.forEach(c => counts.set(c.name || '—', 0))
     // מפה: מתאמן → סט שמות מאמנים אצלם התאמן
     const coachesPerMember = new Map()
-    checkins.forEach(c => {
+    filteredCheckins.forEach(c => {
       if (!c.athlete_id || !c.class_id) return
       if (!activeMemberIds.has(c.athlete_id)) return
       const cls = classById.get(c.class_id)
@@ -196,7 +206,7 @@ export default function ReportsManager({ isAdmin }) {
     return Array.from(counts.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count)
-  }, [checkins, coaches, coachById, classById, activeMemberIds])
+  }, [filteredCheckins, coaches, coachById, classById, activeMemberIds])
 
   // מפת class_id → תחום (מבוסס class_type אם מפורש, אחרת שם השיעור)
   const disciplineByClassId = useMemo(() => {
@@ -215,13 +225,13 @@ export default function ReportsManager({ isAdmin }) {
   // סט מתאמנים פעילים (לצורך סינון סניף של נוכחויות)
   const activeMemberIds = useMemo(() => new Set(activeMembers.map(m => m.id)), [activeMembers])
 
-  // 2) כמות מתאמנים לפי תחום — מבוסס נוכחות בפועל (checkins עם status='present')
+  // 2) כמות מתאמנים לפי תחום — מבוסס נוכחות בפועל (checkins עם status='present') בטווח הנבחר
   // סופר מתאמן אחד לכל תחום שהגיע אליו לפחות פעם אחת.
   const byDiscipline = useMemo(() => {
     const counts = { BJJ: 0, 'Muay Thai': 0, MMA: 0, 'ילדים': 0, 'אחר': 0 }
     // מפה: מתאמן → סט תחומים אליהם הגיע
     const disciplinesPerMember = new Map()
-    checkins.forEach(c => {
+    filteredCheckins.forEach(c => {
       if (!c.athlete_id || !c.class_id) return
       if (!activeMemberIds.has(c.athlete_id)) return // רק מתאמנים פעילים
       const disc = disciplineByClassId.get(c.class_id)
@@ -233,7 +243,7 @@ export default function ReportsManager({ isAdmin }) {
       discSet.forEach(d => { counts[d] = (counts[d] || 0) + 1 })
     })
     return DISCIPLINE_ORDER.map(d => ({ name: d, count: counts[d] || 0 }))
-  }, [checkins, disciplineByClassId, activeMemberIds])
+  }, [filteredCheckins, disciplineByClassId, activeMemberIds])
 
   // 3) נרשמים חדשים (לפי created_at בטווח הזמן שנבחר) — ללא soft-deleted
   const newMembers = useMemo(() => {
@@ -395,8 +405,19 @@ export default function ReportsManager({ isAdmin }) {
         ))}
       </div>
 
+      {/* סלייד טווח לדוחות מבוססי נוכחות (לפי מאמן / לפי תחום) */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-3 flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-600 font-semibold">טווח זמן לדוחות נוכחות (לפי מאמן / לפי תחום):</span>
+        {[7, 30, 90, 180].map(d => (
+          <button key={d}
+            onClick={() => setAttendanceDays(d)}
+            className={`text-xs px-3 py-1.5 rounded-lg font-bold ${attendanceDays === d ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+          >{d} ימים</button>
+        ))}
+      </div>
+
       {/* מתאמנים לפי מאמן — מבוסס נוכחות בפועל */}
-      <SectionCard title="מתאמנים לפי מאמן" icon="🥋" footer={`ספירה מבוססת על נוכחות בפועל · סה״כ ${totalActive} מתאמנים פעילים · מתאמן שהיה אצל מספר מאמנים נספר אצל כל אחד.`}>
+      <SectionCard title="מתאמנים לפי מאמן" icon="🥋" footer={`ספירה מבוססת על נוכחות בפועל ב-${attendanceDays} הימים האחרונים · מתאמן שהיה אצל מספר מאמנים נספר אצל כל אחד.`}>
         {byCoach.length === 0 ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
         ) : (
@@ -407,7 +428,7 @@ export default function ReportsManager({ isAdmin }) {
       </SectionCard>
 
       {/* מתאמנים לפי תחום — מבוסס נוכחות בפועל */}
-      <SectionCard title="מתאמנים לפי תחום לחימה" icon="🥊" footer="ספירה מבוססת על נוכחות בפועל (סימון ✓ נוכח באימון). התחום מזוהה אוטומטית לפי שם השיעור.">
+      <SectionCard title="מתאמנים לפי תחום לחימה" icon="🥊" footer={`ספירה מבוססת על נוכחות בפועל (סימון ✓ נוכח) ב-${attendanceDays} הימים האחרונים. התחום מזוהה אוטומטית לפי שם השיעור.`}>
         {byDiscipline.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
         ) : (

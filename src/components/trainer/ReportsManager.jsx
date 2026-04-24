@@ -183,6 +183,23 @@ export default function ReportsManager({ isAdmin }) {
     })
   }, [checkins, periodDays])
 
+  // סט מתאמנים פעילים (לצורך סינון נוכחויות)
+  const activeMemberIds = useMemo(() => new Set(activeMembers.map(m => m.id)), [activeMembers])
+
+  // מפת class_id → תחום (מבוסס class_type אם מפורש, אחרת שם השיעור)
+  const disciplineByClassId = useMemo(() => {
+    const m = new Map()
+    classes.forEach(cls => {
+      const explicit = (cls.class_type || '').toLowerCase()
+      if (explicit && explicit !== 'regular') {
+        const fromExplicit = detectDiscipline(explicit)
+        if (fromExplicit !== 'אחר') { m.set(cls.id, fromExplicit); return }
+      }
+      m.set(cls.id, detectDiscipline(cls.name || ''))
+    })
+    return m
+  }, [classes])
+
   // 1) כמות מתאמנים לפי מאמן — מבוסס נוכחות בפועל (checkins) בטווח הנבחר
   // מחזיר: שם, מתאמנים ייחודיים, וסה"כ אימונים (ספירת כל ה-checkins).
   const byCoach = useMemo(() => {
@@ -207,23 +224,6 @@ export default function ReportsManager({ isAdmin }) {
       .map(([name, set]) => ({ name, count: set.size, sessions: sessions.get(name) || 0 }))
       .sort((a, b) => b.count - a.count)
   }, [filteredCheckins, coaches, coachById, classById, activeMemberIds])
-
-  // מפת class_id → תחום (מבוסס class_type אם מפורש, אחרת שם השיעור)
-  const disciplineByClassId = useMemo(() => {
-    const m = new Map()
-    classes.forEach(cls => {
-      const explicit = (cls.class_type || '').toLowerCase()
-      if (explicit && explicit !== 'regular') {
-        const fromExplicit = detectDiscipline(explicit)
-        if (fromExplicit !== 'אחר') { m.set(cls.id, fromExplicit); return }
-      }
-      m.set(cls.id, detectDiscipline(cls.name || ''))
-    })
-    return m
-  }, [classes])
-
-  // סט מתאמנים פעילים (לצורך סינון סניף של נוכחויות)
-  const activeMemberIds = useMemo(() => new Set(activeMembers.map(m => m.id)), [activeMembers])
 
   // 2) כמות מתאמנים לפי תחום — מבוסס נוכחות בפועל (checkins) בטווח הנבחר
   // מחזיר: תחום, מתאמנים ייחודיים, וסה"כ אימונים.

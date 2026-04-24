@@ -169,27 +169,34 @@ export default function ReportsManager({ isAdmin }) {
     )
   }, [filteredMembers])
 
-  // 1) כמות מתאמנים לפי מאמן
+  // 1) כמות מתאמנים לפי מאמן — מבוסס נוכחות בפועל (checkins)
+  // סופר מתאמן אחד לכל מאמן שאצלו הוא התאמן לפחות פעם אחת.
   const byCoach = useMemo(() => {
     const counts = new Map()
     // אתחול כל המאמנים כדי להראות גם מאמנים ללא מתאמנים
     coaches.forEach(c => counts.set(c.name || '—', 0))
-    activeMembers.forEach(m => {
-      let name = null
-      if (m.coach_id && coachById.has(m.coach_id)) {
-        name = coachById.get(m.coach_id).name
-      } else if (m.requested_coach_name) {
-        name = m.requested_coach_name
-      } else if (m.requested_coach_names?.length) {
-        name = m.requested_coach_names[0]
+    // מפה: מתאמן → סט שמות מאמנים אצלם התאמן
+    const coachesPerMember = new Map()
+    checkins.forEach(c => {
+      if (!c.athlete_id || !c.class_id) return
+      if (!activeMemberIds.has(c.athlete_id)) return
+      const cls = classById.get(c.class_id)
+      if (!cls) return
+      let coachName = null
+      if (cls.coach_id && coachById.has(cls.coach_id)) {
+        coachName = coachById.get(cls.coach_id).name
       }
-      if (!name) name = 'ללא מאמן / unlimited'
-      counts.set(name, (counts.get(name) || 0) + 1)
+      if (!coachName) coachName = 'ללא מאמן'
+      if (!coachesPerMember.has(c.athlete_id)) coachesPerMember.set(c.athlete_id, new Set())
+      coachesPerMember.get(c.athlete_id).add(coachName)
+    })
+    coachesPerMember.forEach(nameSet => {
+      nameSet.forEach(name => counts.set(name, (counts.get(name) || 0) + 1))
     })
     return Array.from(counts.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count)
-  }, [activeMembers, coaches, coachById])
+  }, [checkins, coaches, coachById, classById, activeMemberIds])
 
   // מפת class_id → תחום (מבוסס class_type אם מפורש, אחרת שם השיעור)
   const disciplineByClassId = useMemo(() => {
@@ -388,8 +395,8 @@ export default function ReportsManager({ isAdmin }) {
         ))}
       </div>
 
-      {/* מתאמנים לפי מאמן */}
-      <SectionCard title="מתאמנים לפי מאמן" icon="🥋" footer={`סה״כ ${totalActive} מתאמנים פעילים`}>
+      {/* מתאמנים לפי מאמן — מבוסס נוכחות בפועל */}
+      <SectionCard title="מתאמנים לפי מאמן" icon="🥋" footer={`ספירה מבוססת על נוכחות בפועל · סה״כ ${totalActive} מתאמנים פעילים · מתאמן שהיה אצל מספר מאמנים נספר אצל כל אחד.`}>
         {byCoach.length === 0 ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
         ) : (

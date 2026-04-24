@@ -7,6 +7,17 @@ const WEEKLY_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 const DAYS_HE_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
+// שיעורי "מזרן פתוח" / ספארינג חופשי — פתוחים לכל המנויים, לא נספרים במכסה השבועית
+function isOpenMatClass(cls) {
+  if (!cls) return false
+  if ((cls.class_type || '').toLowerCase() === 'open_mat') return true
+  const name = String(cls.name || cls.title || '').toLowerCase()
+  if (/מזרן\s*פתוח/.test(name)) return true
+  if (/ספארינג/.test(name)) return true
+  if (/open[- ]?mat/.test(name)) return true
+  return false
+}
+
 function formatTime(timeStr) {
   return timeStr ? timeStr.slice(0, 5) : ''
 }
@@ -289,14 +300,18 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
 
     // 3. Weekly checkin counts per member (for over-limit detection)
     // כולל גם מתאמנים קבועים וגם נרשמים שבועיים
+    // שיעורי "מזרן פתוח"/ספארינג לא נספרים במכסה (פתוחים לכל המנויים).
     const { weekStart, weekEnd } = getWeekRange(selectedDate)
     const memberIds = members.map(m => m.id)
     const allAthleteIds = Array.from(new Set([...memberIds, ...regMemberIds]))
     let weeklyCount = {}
     if (allAthleteIds.length > 0) {
+      const openMatClassIds = new Set(
+        (classes || []).filter(isOpenMatClass).map(c => c.id)
+      )
       const { data: weekChks, error: wErr } = await supabase
         .from('checkins')
-        .select('athlete_id')
+        .select('athlete_id, class_id')
         .in('athlete_id', allAthleteIds)
         .gte('checked_in_at', weekStart)
         .lte('checked_in_at', weekEnd)
@@ -304,6 +319,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
 
       if (wErr) console.error('weekly checkins error:', wErr)
       ;(weekChks || []).forEach(c => {
+        if (openMatClassIds.has(c.class_id)) return // מזרן פתוח — לא נספר
         weeklyCount[c.athlete_id] = (weeklyCount[c.athlete_id] || 0) + 1
       })
     }
@@ -324,8 +340,11 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   async function markPresent(classId, memberId /* , membershipType */) {
     // שמור מצב קודם לצורך rollback במקרה של כשל
     const prevSnapshot = classData[classId]
+    const cls = (classes || []).find(c => c.id === classId)
+    const openMat = isOpenMatClass(cls)
 
-    // עדכון אופטימי: הוסף ל-checkedIds, הסר מ-absentIds, והעלה מונה שבועי ב-1 (אם לא היה present כבר)
+    // עדכון אופטימי: הוסף ל-checkedIds, הסר מ-absentIds, והעלה מונה שבועי ב-1 (אם לא היה present כבר).
+    // שיעור "מזרן פתוח" לא נספר במכסה.
     setClassData(p => {
       const d = p[classId]
       if (!d) return p
@@ -333,7 +352,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       const newChecked = new Set(d.checkedIds); newChecked.add(memberId)
       const newAbsent = new Set(d.absentIds); newAbsent.delete(memberId)
       const newWeekly = { ...d.weeklyCount }
-      if (!wasPresent) newWeekly[memberId] = (newWeekly[memberId] || 0) + 1
+      if (!wasPresent && !openMat) newWeekly[memberId] = (newWeekly[memberId] || 0) + 1
       return { ...p, [classId]: { ...d, checkedIds: newChecked, absentIds: newAbsent, weeklyCount: newWeekly } }
     })
 
@@ -361,8 +380,10 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
 
   async function markAbsent(classId, memberId) {
     const prevSnapshot = classData[classId]
+    const cls = (classes || []).find(c => c.id === classId)
+    const openMat = isOpenMatClass(cls)
 
-    // עדכון אופטימי: הוסף ל-absentIds, הסר מ-checkedIds, הורד מונה שבועי ב-1 (אם היה present)
+    // עדכון אופטימי: הוסף ל-absentIds, הסר מ-checkedIds, הורד מונה שבועי ב-1 (אם היה present ולא מזרן פתוח)
     setClassData(p => {
       const d = p[classId]
       if (!d) return p
@@ -370,7 +391,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       const newChecked = new Set(d.checkedIds); newChecked.delete(memberId)
       const newAbsent = new Set(d.absentIds); newAbsent.add(memberId)
       const newWeekly = { ...d.weeklyCount }
-      if (wasPresent && newWeekly[memberId]) newWeekly[memberId] = Math.max(0, newWeekly[memberId] - 1)
+      if (wasPresent && !openMat && newWeekly[memberId]) newWeekly[memberId] = Math.max(0, newWeekly[memberId] - 1)
       return { ...p, [classId]: { ...d, checkedIds: newChecked, absentIds: newAbsent, weeklyCount: newWeekly } }
     })
 
@@ -953,6 +974,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         const data = classData[cls.id]
         const isOpen = expanded === cls.id
         const presentCount = data?.checkedIds?.size ?? 0
+        const openMat = isOpenMatClass(cls)
         // הספירה הכוללת: מתאמנים קבועים + נרשמים שבועיים (ללא כפילויות)
         const totalCount = (() => {
           if (!data) return 0
@@ -1003,13 +1025,18 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
               className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition"
             >
               <div className="text-right">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-semibold text-gray-800">
                     {cls.name || cls.title}{cls.coachName ? ` · ${cls.coachName}` : ''}
                   </p>
                   {cls.branchName && (
                     <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
                       {cls.branchName}
+                    </span>
+                  )}
+                  {openMat && (
+                    <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap" title="שיעור פתוח לכל מנוי — לא נספר במכסה השבועית">
+                      🎯 מזרן פתוח · לא נספר במכסה
                     </span>
                   )}
                 </div>
@@ -1061,7 +1088,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                             const weekCount = data.weeklyCount[member.id] || 0
                             const isPresent = data.checkedIds.has(member.id)
                             const isAbsent = data.absentIds.has(member.id)
-                            const isOverLimit = limit !== Infinity && weekCount >= limit && !isPresent
+                            // מזרן פתוח: אין חריגה ממכסה כי השיעור לא נספר
+                            const isOverLimit = !openMat && limit !== Infinity && weekCount >= limit && !isPresent
                             const key = `${cls.id}_${member.id}`
                             const busy = actionLoading[key]
                             const isWeekly = member._source === 'weekly'

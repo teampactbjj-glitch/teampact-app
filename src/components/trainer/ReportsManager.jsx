@@ -252,21 +252,31 @@ export default function ReportsManager({ isAdmin }) {
   }, [filteredMembers, periodDays])
 
   // 4) נטישה (churn) — מתאמנים שבוטל להם המנוי (deleted_at בתוך חלון הזמן)
-  // churn% = מבוטלים בתקופה / (פעילים + מבוטלים בתקופה)
+  // מבוסס נוכחות בפועל (checkins): שיוך מאמן/קבוצה לפי היכן שהמתאמן התאמן בפועל,
+  // לא לפי coach_id הפורמלי בפרופיל. עקבי לדוחות האחרים.
   const { churnByCoach, churnByGroup, totalChurned, totalActiveBase } = useMemo(() => {
     const cutoff = Date.now() - periodDays * DAY_MS
 
-    const coachNameOf = (m) => {
-      if (m.coach_id && coachById.has(m.coach_id)) return coachById.get(m.coach_id).name
-      if (m.requested_coach_name) return m.requested_coach_name
-      if (m.requested_coach_names?.length) return m.requested_coach_names[0]
-      return 'ללא מאמן / unlimited'
-    }
-
-    const groupNamesOf = (m) => {
-      const gids = (m.group_ids && m.group_ids.length) ? m.group_ids : (m.group_id ? [m.group_id] : [])
-      return gids.map(gid => classById.get(gid)?.name).filter(Boolean)
-    }
+    // מבנים עזר: מתאמן → סט מאמנים וקבוצות שבהם התאמן בפועל (לפי כל היסטוריית ה-checkins)
+    const coachesByMember = new Map()
+    const groupsByMember = new Map()
+    checkins.forEach(c => {
+      if (!c.athlete_id || !c.class_id) return
+      const cls = classById.get(c.class_id)
+      if (!cls) return
+      // מאמן לפי הקלאס
+      let coachName = null
+      if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
+      if (!coachName) coachName = 'ללא מאמן'
+      if (!coachesByMember.has(c.athlete_id)) coachesByMember.set(c.athlete_id, new Set())
+      coachesByMember.get(c.athlete_id).add(coachName)
+      // קבוצה לפי שם הקלאס
+      const gname = cls.name
+      if (gname) {
+        if (!groupsByMember.has(c.athlete_id)) groupsByMember.set(c.athlete_id, new Set())
+        groupsByMember.get(c.athlete_id).add(gname)
+      }
+    })
 
     // מתאמנים שבוטלו בתקופה — deleted_at קיים ונמצא בתוך החלון
     const churned = filteredMembers.filter(m => {
@@ -274,35 +284,41 @@ export default function ReportsManager({ isAdmin }) {
       return new Date(m.deleted_at).getTime() >= cutoff
     })
 
-    // סיכום לפי מאמן
+    // סיכום לפי מאמן (אילו מאמנים אצלם המתאמן אימן בפועל)
     const coachAgg = new Map()
-    activeMembers.forEach(m => {
-      const name = coachNameOf(m)
-      if (!coachAgg.has(name)) coachAgg.set(name, { active: 0, churned: 0 })
-      coachAgg.get(name).active++
-    })
-    churned.forEach(m => {
-      const name = coachNameOf(m)
-      if (!coachAgg.has(name)) coachAgg.set(name, { active: 0, churned: 0 })
-      coachAgg.get(name).churned++
-    })
+    const addToCoachAgg = (memberId, key) => {
+      const coachSet = coachesByMember.get(memberId)
+      if (!coachSet || coachSet.size === 0) {
+        const name = 'ללא מאמן'
+        if (!coachAgg.has(name)) coachAgg.set(name, { active: 0, churned: 0 })
+        coachAgg.get(name)[key]++
+        return
+      }
+      coachSet.forEach(name => {
+        if (!coachAgg.has(name)) coachAgg.set(name, { active: 0, churned: 0 })
+        coachAgg.get(name)[key]++
+      })
+    }
+    activeMembers.forEach(m => addToCoachAgg(m.id, 'active'))
+    churned.forEach(m => addToCoachAgg(m.id, 'churned'))
 
-    // סיכום לפי קבוצה
+    // סיכום לפי קבוצה (אילו קבוצות/שיעורים המתאמן אימן בהם בפועל)
     const grpAgg = new Map()
-    activeMembers.forEach(m => {
-      groupNamesOf(m).forEach(gname => {
-        if (!grpAgg.has(gname)) grpAgg.set(gname, { active: 0, churned: 0 })
-        grpAgg.get(gname).active++
+    const addToGrpAgg = (memberId, key) => {
+      const grpSet = groupsByMember.get(memberId)
+      if (!grpSet || grpSet.size === 0) {
+        const name = 'ללא קבוצה'
+        if (!grpAgg.has(name)) grpAgg.set(name, { active: 0, churned: 0 })
+        grpAgg.get(name)[key]++
+        return
+      }
+      grpSet.forEach(name => {
+        if (!grpAgg.has(name)) grpAgg.set(name, { active: 0, churned: 0 })
+        grpAgg.get(name)[key]++
       })
-    })
-    churned.forEach(m => {
-      const names = groupNamesOf(m)
-      const finalNames = names.length ? names : ['ללא קבוצה']
-      finalNames.forEach(gname => {
-        if (!grpAgg.has(gname)) grpAgg.set(gname, { active: 0, churned: 0 })
-        grpAgg.get(gname).churned++
-      })
-    })
+    }
+    activeMembers.forEach(m => addToGrpAgg(m.id, 'active'))
+    churned.forEach(m => addToGrpAgg(m.id, 'churned'))
 
     const toRow = ([name, { active, churned }]) => {
       const base = active + churned
@@ -320,7 +336,7 @@ export default function ReportsManager({ isAdmin }) {
       totalChurned: churned.length,
       totalActiveBase: activeMembers.length + churned.length,
     }
-  }, [activeMembers, filteredMembers, periodDays, coachById, classById])
+  }, [activeMembers, filteredMembers, periodDays, coachById, classById, checkins])
 
   if (!isAdmin) {
     return (

@@ -242,6 +242,16 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
               price: o.price !== '' && o.price != null ? parseFloat(o.price) : null,
               note: o.note || '',
               is_featured: !!o.is_featured,
+              // שמירת רכיבי וריאציה (לחבילות עם מידה/צבע פר פריט)
+              components: Array.isArray(o.components)
+                ? o.components
+                    .filter(c => c && c.name)
+                    .map(c => ({
+                      name: c.name || '',
+                      sizes: Array.isArray(c.sizes) ? c.sizes.filter(Boolean) : [],
+                      colors: Array.isArray(c.colors) ? c.colors.filter(Boolean) : [],
+                    }))
+                : [],
             }))
         : [],
     }
@@ -598,6 +608,104 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                           }))} />
                         ⭐ מומלץ
                       </label>
+                    </div>
+
+                    {/* 🧩 רכיבי וריאציה (Components) - לבחירת מידה/צבע פר פריט בחבילה */}
+                    <div className="mt-2 pt-2 border-t border-amber-200 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold text-emerald-800">
+                          🧩 רכיבים (לחבילות - מידה/צבע לכל פריט)
+                        </span>
+                        <button type="button"
+                          className="text-[10px] bg-emerald-500 hover:bg-emerald-600 text-white px-2 py-0.5 rounded font-bold"
+                          onClick={() => setForm(p => ({
+                            ...p,
+                            purchase_options: p.purchase_options.map((o, i) => i === idx
+                              ? { ...o, components: [...(o.components || []), { name: '', sizes: [], colors: [] }] }
+                              : o),
+                          }))}>
+                          + הוסף רכיב
+                        </button>
+                      </div>
+
+                      {(opt.components || []).map((comp, compIdx) => (
+                        <div key={compIdx} className="bg-emerald-50 border border-emerald-200 rounded p-2 space-y-1">
+                          <div className="flex gap-1 items-center">
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-200 rounded-full w-5 h-5 flex items-center justify-center shrink-0">
+                              {compIdx + 1}
+                            </span>
+                            <input
+                              className="flex-1 border rounded px-2 py-1 text-xs"
+                              placeholder="שם הרכיב (למשל: מכנס, רשגארד, חליפה)"
+                              value={comp.name || ''}
+                              onChange={e => setForm(p => ({
+                                ...p,
+                                purchase_options: p.purchase_options.map((o, i) => i === idx
+                                  ? { ...o, components: o.components.map((c, ci) => ci === compIdx ? { ...c, name: e.target.value } : c) }
+                                  : o),
+                              }))} />
+                            <button type="button" className="text-red-500 text-xs w-5"
+                              onClick={() => setForm(p => ({
+                                ...p,
+                                purchase_options: p.purchase_options.map((o, i) => i === idx
+                                  ? { ...o, components: o.components.filter((_, ci) => ci !== compIdx) }
+                                  : o),
+                              }))}>✕</button>
+                          </div>
+                          {/* מידות של הרכיב */}
+                          <div>
+                            <label className="text-[10px] text-gray-600 block mb-0.5">
+                              📏 מידות (מופרדות בפסיק - למשל: S,M,L,XL)
+                            </label>
+                            <input
+                              className="w-full border rounded px-2 py-1 text-xs"
+                              placeholder="S,M,L,XL"
+                              defaultValue={Array.isArray(comp.sizes) ? comp.sizes.join(',') : ''}
+                              onBlur={e => {
+                                const sizes = e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                                setForm(p => ({
+                                  ...p,
+                                  purchase_options: p.purchase_options.map((o, i) => i === idx
+                                    ? { ...o, components: o.components.map((c, ci) => ci === compIdx ? { ...c, sizes } : c) }
+                                    : o),
+                                }))
+                              }} />
+                            {Array.isArray(comp.sizes) && comp.sizes.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {comp.sizes.map((s, si) => (
+                                  <span key={si} className="text-[10px] bg-blue-100 text-blue-800 rounded-full px-2 py-0.5">{s}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {/* צבעים של הרכיב */}
+                          <div>
+                            <label className="text-[10px] text-gray-600 block mb-0.5">
+                              🎨 צבעים (מופרדים בפסיק - למשל: שחור,לבן,כחול)
+                            </label>
+                            <input
+                              className="w-full border rounded px-2 py-1 text-xs"
+                              placeholder="שחור,לבן,כחול"
+                              defaultValue={Array.isArray(comp.colors) ? comp.colors.join(',') : ''}
+                              onBlur={e => {
+                                const colors = e.target.value.split(',').map(c => c.trim()).filter(Boolean)
+                                setForm(p => ({
+                                  ...p,
+                                  purchase_options: p.purchase_options.map((o, i) => i === idx
+                                    ? { ...o, components: o.components.map((c, ci) => ci === compIdx ? { ...c, colors } : c) }
+                                    : o),
+                                }))
+                              }} />
+                            {Array.isArray(comp.colors) && comp.colors.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {comp.colors.map((c, ci) => (
+                                  <span key={ci} className="text-[10px] bg-purple-100 text-purple-800 rounded-full px-2 py-0.5">{c}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}

@@ -264,25 +264,6 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       else checkedIds.add(c.athlete_id)
     })
 
-    // 3. Weekly checkin counts per member (for over-limit detection)
-    const { weekStart, weekEnd } = getWeekRange(selectedDate)
-    const memberIds = members.map(m => m.id)
-    let weeklyCount = {}
-    if (memberIds.length > 0) {
-      const { data: weekChks, error: wErr } = await supabase
-        .from('checkins')
-        .select('athlete_id')
-        .in('athlete_id', memberIds)
-        .gte('checked_in_at', weekStart)
-        .lte('checked_in_at', weekEnd)
-        .neq('status', 'absent')
-
-      if (wErr) console.error('weekly checkins error:', wErr)
-      ;(weekChks || []).forEach(c => {
-        weeklyCount[c.athlete_id] = (weeklyCount[c.athlete_id] || 0) + 1
-      })
-    }
-
     // 4. מי רשום שבועית (class_registrations) לשיעור הזה — שליפה דו-שלבית
     const weekStartStr = (() => {
       const d = startOfDay(selectedDate)
@@ -299,9 +280,32 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     let weeklyRegistrants = []
     if (regMemberIds.length > 0) {
       const { data: regMembers, error: rmErr } = await supabase
-        .from('members').select('id, full_name').in('id', regMemberIds)
+        .from('members')
+        .select('id, full_name, membership_type, subscription_type, group_name')
+        .in('id', regMemberIds)
       if (rmErr) console.error('weekly reg members error:', rmErr)
       weeklyRegistrants = regMembers || regMemberIds.map(id => ({ id, full_name: '(לא ידוע)' }))
+    }
+
+    // 3. Weekly checkin counts per member (for over-limit detection)
+    // כולל גם מתאמנים קבועים וגם נרשמים שבועיים
+    const { weekStart, weekEnd } = getWeekRange(selectedDate)
+    const memberIds = members.map(m => m.id)
+    const allAthleteIds = Array.from(new Set([...memberIds, ...regMemberIds]))
+    let weeklyCount = {}
+    if (allAthleteIds.length > 0) {
+      const { data: weekChks, error: wErr } = await supabase
+        .from('checkins')
+        .select('athlete_id')
+        .in('athlete_id', allAthleteIds)
+        .gte('checked_in_at', weekStart)
+        .lte('checked_in_at', weekEnd)
+        .neq('status', 'absent')
+
+      if (wErr) console.error('weekly checkins error:', wErr)
+      ;(weekChks || []).forEach(c => {
+        weeklyCount[c.athlete_id] = (weeklyCount[c.athlete_id] || 0) + 1
+      })
     }
 
     setClassData(prev => ({
@@ -317,17 +321,22 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     setActionLoading(p => ({ ...p, [key]: true }))
 
     const dayStart = startOfDay(selectedDate)
-    await supabase.from('checkins').delete()
+    const { error: delErr } = await supabase.from('checkins').delete()
       .eq('class_id', classId).eq('athlete_id', memberId)
       .gte('checked_in_at', dayStart.toISOString())
+    if (delErr) console.error('markPresent delete error:', delErr)
 
     const checkedAt = new Date(selectedDate); checkedAt.setHours(12, 0, 0, 0)
-    await supabase.from('checkins').insert({
+    const { error: insErr } = await supabase.from('checkins').insert({
       class_id: classId,
       athlete_id: memberId,
       status: 'present',
       checked_in_at: checkedAt.toISOString(),
     })
+    if (insErr) {
+      console.error('markPresent insert error:', insErr)
+      alert('שגיאה בסימון נוכחות:\n' + (insErr.message || JSON.stringify(insErr)))
+    }
 
     setActionLoading(p => ({ ...p, [key]: false }))
     fetchClassDetails(classId)
@@ -338,17 +347,22 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     setActionLoading(p => ({ ...p, [key]: true }))
 
     const dayStart = startOfDay(selectedDate)
-    await supabase.from('checkins').delete()
+    const { error: delErr } = await supabase.from('checkins').delete()
       .eq('class_id', classId).eq('athlete_id', memberId)
       .gte('checked_in_at', dayStart.toISOString())
+    if (delErr) console.error('markAbsent delete error:', delErr)
 
     const checkedAt = new Date(selectedDate); checkedAt.setHours(12, 0, 0, 0)
-    await supabase.from('checkins').insert({
+    const { error: insErr } = await supabase.from('checkins').insert({
       class_id: classId,
       athlete_id: memberId,
       status: 'absent',
       checked_in_at: checkedAt.toISOString(),
     })
+    if (insErr) {
+      console.error('markAbsent insert error:', insErr)
+      alert('שגיאה בסימון היעדרות:\n' + (insErr.message || JSON.stringify(insErr)))
+    }
 
     setActionLoading(p => ({ ...p, [key]: false }))
     fetchClassDetails(classId)
@@ -1043,15 +1057,13 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                                         </span>
                                       )}
                                     </div>
-                                    {!isWeekly && (
-                                      <p className="text-xs text-gray-400 mt-0.5">
-                                        {membershipType === '2x_week' ? '2× שבוע'
-                                          : membershipType === '4x_week' ? '4× שבוע'
-                                          : membershipType === 'unlimited' ? 'ללא הגבלה'
-                                          : membershipType || '—'}
-                                        {limit !== Infinity && ` · ${weekCount}/${limit} השבוע`}
-                                      </p>
-                                    )}
+                                    <p className="text-xs text-gray-400 mt-0.5">
+                                      {membershipType === '2x_week' ? '2× שבוע'
+                                        : membershipType === '4x_week' ? '4× שבוע'
+                                        : membershipType === 'unlimited' ? 'ללא הגבלה'
+                                        : membershipType || '—'}
+                                      {limit !== Infinity && ` · ${weekCount}/${limit} השבוע`}
+                                    </p>
                                   </div>
 
                                   <div className="flex gap-1.5 shrink-0">

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vercel:*)",
+      "Bash(npm run *)",
+      "Bash(git worktree *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git tag *)",
+      "Bash(grep -n \"^      }\\)}$\\\\|^    </div>$\\\\|^  \\)$\\\\|^}$\" /Users/dudibenzaken/teampact-app/src/components/trainer/TodayClasses.jsx)"
+    ]
+  }
+}

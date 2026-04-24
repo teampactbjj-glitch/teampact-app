@@ -31,7 +31,7 @@
 ### ✅ תיקון 3: גם `ProductRequests.jsx` עודכן להצגה מלאה
 הוספת badges של מידה/צבע/כמות + notes + מחיר למסך בקשות המוצרים.
 
-### 🟡 תיקון 4 (בתהליך - ה-push נתקע עקב lock file)
+### ✅ תיקון 4 (הושלם - commit f548965)
 **הקבצים:** `src/components/athlete/ProductDetail.jsx` + `src/components/athlete/AthleteDashboard.jsx`
 
 **הפיצ'ר החדש:** `variant_components` לכל `purchase_option`.
@@ -54,19 +54,29 @@
 - `AthleteDashboard.jsx` `handleOrder`: פרמטר חמישי `componentSelections`. מעדכן `notes` עם פירוט פר-רכיב (למשל "מכנס מידה M צבע שחור · רשגארד מידה L צבע לבן").
 - גוף ה-push notification כולל את כל הרכיבים.
 
-## ⚠️ My last pending task - לסיים את תיקון 4
+### ✅ תיקון 5 (הושלם - commit 45a0ad5): UI לניהול רכיבים
+`src/components/trainer/ShopManager.jsx` - הוספתי UI בטופס הוספה/עריכת מוצר:
+- בכל אפשרות רכישה (purchase_option) יש כפתור "+ הוסף רכיב"
+- לכל רכיב: שם + רשימת מידות (מופרדות בפסיק) + רשימת צבעים (מופרדים בפסיק)
+- ב-submit הקוד שומר את `components` בתוך כל option ב-DB
+- אם ה-option עם components נטען לעריכה - הנתונים נשמרים אוטומטית
 
-### שלב A - Push לגיטהאב (נתקע על lock file)
-```bash
-cd /Users/dudibenzaken/teampact-app
-rm -f .git/HEAD.lock
-git add src/components/athlete/ProductDetail.jsx src/components/athlete/AthleteDashboard.jsx
-git commit -m "הוספת תמיכה ברכיבי וריאציה - מידה וצבע פר רכיב בחבילה"
-git push origin main
-```
+## ⚠️ My last pending task
 
-### שלב B - עדכון המוצר "TeamPact תיק" ב-Supabase
-הרץ ב-SQL Editor:
+### המשימה שנותרה למשתמש - הגדרת רכיבים למוצר "TeamPact תיק"
+אחרי ש-Vercel יסיים לבנות (דקה-שתיים מ-commit 45a0ad5):
+1. כנס לממשק הניהול → חנות → ערוך "TeamPact תיק מועדון מקצועי"
+2. בכל אחת מ-2 אפשרויות הרכישה (תיק + חליפה, תיק + סט נו גי):
+   - לחץ "+ הוסף רכיב"
+   - הקלד שם הרכיב (חליפת גיו גיטסו / מכנס / רשגארד)
+   - הקלד מידות מופרדות בפסיק
+   - הקלד צבעים מופרדים בפסיק
+3. "תיק + סט נו גי" צריך 2 רכיבים (מכנס + רשגארד)
+4. שמור את המוצר
+5. בדוק כמתאמן שהבחירה עובדת
+
+### אופציה חלופית: SQL ישיר
+הרץ ב-Supabase SQL Editor:
 ```sql
 UPDATE announcements
 SET purchase_options = '[

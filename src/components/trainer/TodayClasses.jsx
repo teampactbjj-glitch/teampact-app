@@ -235,12 +235,37 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     })()
     const { data: regs, error: regsErr } = await supabase
       .from('class_registrations')
-      .select('class_id')
+      .select('class_id, athlete_id')
       .in('class_id', classIds)
       .eq('week_start', weekStartStr)
     if (regsErr) console.error('[trainer] class_registrations count error (check RLS!):', regsErr)
-    console.log('[trainer] weekly regs fetched:', { weekStart: weekStartStr, classIds: classIds.length, regsFound: regs?.length || 0 })
-    ;(regs || []).forEach(r => { regCounts[r.class_id] = (regCounts[r.class_id] || 0) + 1 })
+
+    // אוספים athlete_ids ייחודיים לכל class כדי למנוע ספירה כפולה
+    const regsByClass = {} // classId -> Set<athlete_id>
+    ;(regs || []).forEach(r => {
+      if (!r.athlete_id) return
+      if (!regsByClass[r.class_id]) regsByClass[r.class_id] = new Set()
+      regsByClass[r.class_id].add(r.athlete_id)
+    })
+
+    // מסננים IDs יתומים — כאלה שאין להם רשומה ב-members (נמחקו, או orphaned rows)
+    const allAthleteIds = Array.from(new Set((regs || []).map(r => r.athlete_id).filter(Boolean)))
+    let validIds = new Set(allAthleteIds)
+    if (allAthleteIds.length > 0) {
+      const { data: existing } = await supabase
+        .from('members').select('id').in('id', allAthleteIds)
+      if (existing) validIds = new Set(existing.map(m => m.id))
+    }
+
+    classIds.forEach(cid => {
+      const set = regsByClass[cid]
+      if (!set) { regCounts[cid] = 0; return }
+      // סופרים רק אלה שקיימים ב-members
+      let n = 0
+      set.forEach(aid => { if (validIds.has(aid)) n++ })
+      regCounts[cid] = n
+    })
+
     setMemberCounts(counts)
     setRegCountsByClass(regCounts)
   }
@@ -288,7 +313,10 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       .eq('class_id', classId)
       .eq('week_start', weekStartStr)
     if (regErr) console.error('class_registrations error:', regErr)
-    const regMemberIds = (regRows || []).map(r => r.athlete_id).filter(Boolean)
+    // דה-דופליקציה של athlete_id (למקרה של רשומות כפולות)
+    const regMemberIds = Array.from(new Set(
+      (regRows || []).map(r => r.athlete_id).filter(Boolean)
+    ))
     let weeklyRegistrants = []
     if (regMemberIds.length > 0) {
       const { data: regMembers, error: rmErr } = await supabase
@@ -296,7 +324,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         .select('id, full_name, membership_type, subscription_type, group_name')
         .in('id', regMemberIds)
       if (rmErr) console.error('weekly reg members error:', rmErr)
-      weeklyRegistrants = regMembers || regMemberIds.map(id => ({ id, full_name: '(לא ידוע)' }))
+      // רק מתאמנים שקיימים ב-members (מסנן IDs יתומים)
+      weeklyRegistrants = regMembers || []
     }
 
     // 3. Weekly checkin counts per member (for over-limit detection)

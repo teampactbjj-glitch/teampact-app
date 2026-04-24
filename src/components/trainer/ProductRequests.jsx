@@ -62,26 +62,70 @@ export default function ProductRequests({ onMarkedDone }) {
                 key={req.id}
                 className={`rounded-xl border shadow-sm px-4 py-3 transition ${isDone ? 'bg-gray-50 border-gray-200' : 'bg-white'}`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className={`font-medium ${isDone ? 'text-gray-400' : 'text-gray-800'}`}>{req.athlete_name}</p>
-                    <p className="text-sm text-gray-400 mt-0.5">
-                      {req.product_name}
-                      <span className="text-gray-300 mx-1">·</span>
-                      {new Date(req.created_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    {/* שורה 1: שם המתאמן + תאריך */}
+                    <div className="flex items-center justify-between gap-2">
+                      <p className={`font-bold ${isDone ? 'text-gray-400' : 'text-gray-800'}`}>{req.athlete_name}</p>
+                      <span className="text-xs text-gray-400 shrink-0">
+                        {new Date(req.created_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
+                      </span>
+                    </div>
+                    {/* שורה 2: שם המוצר */}
+                    <p className={`text-sm mt-1 ${isDone ? 'text-gray-400' : 'text-gray-700'}`}>
+                      📦 {req.product_name}
                     </p>
+                    {/* שורה 3: מידה + צבע + כמות - badges */}
+                    {(req.selected_size || req.selected_color || (req.quantity && req.quantity > 1)) && (
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {req.selected_size && (
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">
+                            📏 מידה: {req.selected_size}
+                          </span>
+                        )}
+                        {req.selected_color && (
+                          <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-medium">
+                            🎨 צבע: {req.selected_color}
+                          </span>
+                        )}
+                        {req.quantity && req.quantity > 1 && (
+                          <span className="text-xs bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full font-medium">
+                            × {req.quantity}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {/* שורה 4: הערות (אפשרות רכישה + פרטים נוספים) */}
+                    {req.notes && (
+                      <p className="text-xs text-gray-500 mt-1.5 bg-gray-50 rounded-lg px-2 py-1 leading-relaxed">
+                        💬 {req.notes}
+                      </p>
+                    )}
+                    {/* שורה 5: מחיר */}
+                    {(req.total_price != null || req.unit_price != null) && (
+                      <p className="text-sm font-bold text-emerald-600 mt-1.5">
+                        💰 ₪{req.total_price ?? req.unit_price}
+                        {req.quantity > 1 && req.unit_price && (
+                          <span className="text-xs text-gray-400 font-normal mr-1">
+                            (₪{req.unit_price} × {req.quantity})
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
-                  {isDone ? (
-                    <span className="text-xs text-gray-400 shrink-0">✓ נרכש</span>
-                  ) : (
-                    <button
-                      onClick={() => markDone(req.id)}
-                      disabled={markingId === req.id}
-                      className="shrink-0 text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50"
-                    >
-                      {markingId === req.id ? '...' : 'סמן כנרכש'}
-                    </button>
-                  )}
+                  <div className="shrink-0">
+                    {isDone ? (
+                      <span className="text-xs text-gray-400">✓ נרכש</span>
+                    ) : (
+                      <button
+                        onClick={() => markDone(req.id)}
+                        disabled={markingId === req.id}
+                        className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50"
+                      >
+                        {markingId === req.id ? '...' : 'סמן כנרכש'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </li>
             )

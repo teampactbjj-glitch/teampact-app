@@ -411,11 +411,15 @@ function AnnouncementsTab({ announcements, profile, member }) {
     if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
     else {
       setOrdered(prev => new Set([...prev, item.id]))
+      // בניית גוף התראה - גם לסמינרים נוסיף מחיר/תיאור אם קיימים
+      const bodyParts = [`${athleteName} הזמין: ${item.title}`]
+      if (item.price != null) bodyParts.push(`מחיר: ₪${item.price}`)
+      if (item.event_date) bodyParts.push(`תאריך: ${new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}`)
       allTrainerUserIds()
         .then(ids => notifyPush({
           userIds: ids,
-          title: 'הזמנה חדשה מהחנות',
-          body: `${athleteName} הזמין: ${item.title}`,
+          title: '🎓 הזמנה חדשה לסמינר',
+          body: bodyParts.join(' · '),
           url: '/#shop',
           tag: `order:${Date.now()}`,
         }))
@@ -545,15 +549,29 @@ function ShopTab({ profile, member, allAnnouncements }) {
     if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
     else {
       setOrdered(prev => new Set([...prev, item.id]))
+      // בניית גוף התראה מפורט - כולל מידה, צבע, אפשרות ומחיר
       const bodyParts = [`${athleteName} הזמין: ${item.title}`]
-      if (selectedOption?.name) bodyParts.push(`(${selectedOption.name})`)
-      if (selectedSize) bodyParts.push(`מידה ${selectedSize}`)
-      if (selectedColor) bodyParts.push(`צבע ${selectedColor}`)
+      if (selectedOption?.name) bodyParts.push(`אפשרות: ${selectedOption.name}`)
+      if (selectedSize) bodyParts.push(`מידה: ${selectedSize}`)
+      if (selectedColor) bodyParts.push(`צבע: ${selectedColor}`)
+      // מחיר - מעדיפים את מחיר האפשרות, אחרת מחיר המוצר
+      const priceToShow = selectedOption?.price != null ? selectedOption.price : item.price
+      if (priceToShow != null) bodyParts.push(`מחיר: ₪${priceToShow}`)
+      const finalBody = bodyParts.join(' · ')
+      // DEBUG: לוג לקונסול של המתאמן כדי לוודא שהמידה/צבע נשלחים
+      console.log('[order] notification payload:', {
+        title: '🛒 הזמנה חדשה מהחנות',
+        body: finalBody,
+        selectedOption,
+        selectedSize,
+        selectedColor,
+        priceToShow,
+      })
       allTrainerUserIds()
         .then(ids => notifyPush({
           userIds: ids,
-          title: 'הזמנה חדשה מהחנות',
-          body: bodyParts.join(' · '),
+          title: '🛒 הזמנה חדשה מהחנות',
+          body: finalBody,
           url: '/#shop',
           tag: `order:${Date.now()}`,
         }))

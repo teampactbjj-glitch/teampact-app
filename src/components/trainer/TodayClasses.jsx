@@ -606,20 +606,15 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   }
 
   async function approveClass(classId) {
-    // .select() מחזיר את השורות שעודכנו בפועל — מאפשר לזהות RLS שדוחה בשקט
-    const { data, error } = await supabase.from('classes')
+    const { error } = await supabase.from('classes')
       .update({ status: 'approved' })
       .eq('id', classId)
-      .select('id')
     if (error) { console.error('approveClass error:', error); alert('שגיאה באישור: ' + (error.message || '')); return }
-    if (!data || data.length === 0) {
-      alert('האישור לא בוצע — ייתכן בעיית הרשאות (RLS).')
-      return
-    }
     setPendingRequests(prev => prev.filter(r => r.id !== classId))
-    // refetch מפורש כדי שה-UI יסונכרן עם ה-DB ולא יסתמך רק על realtime
     await fetchPendingRequests()
     fetchDayClasses(selectedDate)
+    // עדכון מיידי של הבאדג' בטאב לו"ז (הקומפוננטת ההורה — TrainerDashboard)
+    onChange?.()
   }
 
   async function rejectClass(classId) {
@@ -640,6 +635,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     setPendingRequests(prev => prev.filter(r => r.id !== classId))
     await fetchPendingRequests()
     fetchDayClasses(selectedDate)
+    // עדכון מיידי של הבאדג' בטאב לו"ז (הקומפוננטת ההורה — TrainerDashboard)
+    onChange?.()
   }
 
   async function performHardDelete(cls) {

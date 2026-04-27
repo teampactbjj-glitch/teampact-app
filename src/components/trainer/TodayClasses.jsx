@@ -172,6 +172,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         .from('classes')
         .select('*, branches(name)')
         .eq('day_of_week', todayDow)
+        .is('deleted_at', null)  // לא להציג שיעורים שעברו soft-delete
         .order('branch_id')
         .order('start_time')
       if (error) console.error('fetchTodayClasses error:', error)
@@ -203,6 +204,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       .select('*')
       .in('coach_id', coachIds)
       .eq('day_of_week', todayDow)
+      .is('deleted_at', null)  // לא להציג שיעורים שעברו soft-delete (נדחו ע"י מנהל)
       .order('start_time')
 
     if (error) console.error('fetchTodayClasses error:', error)

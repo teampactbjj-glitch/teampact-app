@@ -1119,17 +1119,21 @@ export default function AthleteDashboard({ profile }) {
     } else {
       setRegistrations(p => new Set([...p, cls.id]))
       try {
-        const { error } = await supabase.from('class_registrations').insert({
-          class_id: cls.id, athlete_id: profile.id, week_start: weekStart
-        })
-        // PostgreSQL code 23505 = unique_violation — אם השורה כבר קיימת
-        // (UNIQUE constraint כלשהו) מתייחסים לזה כהצלחה ולא נופלים ל-rollback.
-        // ככה גם אם הצלחה קודמת לא עדכנה state (למשל המשתמש סגר את הטאב מיד),
-        // הניסיון השני "לרשום" אותו שיעור לא ייכשל ולא יקפיץ alert מטעה.
-        if (error && error.code !== '23505') throw error
+        // ה-UNIQUE constraint בפועל הוא class_registrations_athlete_id_class_id_key
+        // על (athlete_id, class_id) בלבד — בלי week_start.
+        // משמעות: יש שורה אחת לכל (אתלט, שיעור), ו-week_start מציין את השבוע
+        // הנוכחי שבו הוא רשום.
+        // לכן upsert עם UPDATE על קונפליקט: אם הוא רשום משבוע ישן, מעדכנים את
+        // week_start לשבוע הנוכחי ככה שהרישום מופיע בלוח של השבוע הזה.
+        // ignoreDuplicates: false (default) — מעדכן את השורה הקיימת.
+        const { error } = await supabase.from('class_registrations').upsert(
+          { class_id: cls.id, athlete_id: profile.id, week_start: weekStart },
+          { onConflict: 'athlete_id,class_id' }
+        )
+        if (error) throw error
       } catch (e) {
         console.error('register error:', e)
-        // rollback רק כשנכשל ממש (לא duplicate)
+        // rollback רק כשנכשל ממש
         setRegistrations(p => { const n = new Set(p); n.delete(cls.id); return n })
         alert('הרישום נכשל. נסה שוב.')
       }

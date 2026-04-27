@@ -27,6 +27,29 @@ export default function ClassSchedule({ profile, member }) {
     }
   }, [member?.branch_id])
 
+  // ריענון אוטומטי כשהטאב חוזר לפוקוס —
+  // פותר את המקרה שמתאמן נרשם, יוצא מהאפליקציה / מחליף טאב,
+  // ובינתיים יש פער בין ה-UI לבין מה שבאמת נשמר בשרת.
+  // ריענון שקט (בלי loading state) — מסנכרן רק את ה-registrations,
+  // את הלו"ז עצמו אין צורך לרענן בכל חזרה.
+  useEffect(() => {
+    if (!profile?.id) return
+    const onVis = async () => {
+      if (document.visibilityState !== 'visible') return
+      const { data, error } = await supabase
+        .from('class_registrations')
+        .select('class_id')
+        .eq('athlete_id', profile.id)
+      if (error) {
+        console.error('refresh registrations error:', error)
+        return
+      }
+      setRegisteredIds(new Set((data || []).map(r => r.class_id)))
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [profile?.id])
+
   async function fetchSchedule(branchId) {
     setLoading(true)
     console.log('fetchSchedule — branch_id:', branchId, 'athlete_id:', profile.id)
@@ -63,31 +86,46 @@ export default function ClassSchedule({ profile, member }) {
 
     setActionLoading(p => ({ ...p, [classId]: true }))
 
+    // Optimistic update: מעדכן UI לפני קריאה לשרת,
+    // עם rollback אם הבקשה נכשלה. כך גם אם המשתמש מחליף טאב/יוצא מיד אחרי לחיצה,
+    // ה-UI נשאר עקבי וה-visibilitychange מסנכרן עם השרת בחזרה.
     if (isRegistered) {
-      const { error } = await supabase
-        .from('class_registrations')
-        .delete()
-        .eq('athlete_id', profile.id)
-        .eq('class_id', classId)
-
-      if (error) {
-        console.error('unregister error:', error)
-      } else {
+      // remove optimistically
+      setRegisteredIds(prev => {
+        const next = new Set(prev)
+        next.delete(classId)
+        return next
+      })
+      try {
+        const { error } = await supabase
+          .from('class_registrations')
+          .delete()
+          .eq('athlete_id', profile.id)
+          .eq('class_id', classId)
+        if (error) throw error
+      } catch (e) {
+        console.error('unregister error:', e)
+        // rollback
+        setRegisteredIds(prev => new Set([...prev, classId]))
+        alert('ביטול הרישום נכשל. נסה שוב.')
+      }
+    } else {
+      // add optimistically
+      setRegisteredIds(prev => new Set([...prev, classId]))
+      try {
+        const { error } = await supabase
+          .from('class_registrations')
+          .insert({ athlete_id: profile.id, class_id: classId })
+        if (error) throw error
+      } catch (e) {
+        console.error('register error:', e)
+        // rollback
         setRegisteredIds(prev => {
           const next = new Set(prev)
           next.delete(classId)
           return next
         })
-      }
-    } else {
-      const { error } = await supabase
-        .from('class_registrations')
-        .insert({ athlete_id: profile.id, class_id: classId })
-
-      if (error) {
-        console.error('register error:', error)
-      } else {
-        setRegisteredIds(prev => new Set([...prev, classId]))
+        alert('הרישום נכשל. נסה שוב.')
       }
     }
 

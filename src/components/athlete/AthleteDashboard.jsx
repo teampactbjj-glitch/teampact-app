@@ -1025,7 +1025,15 @@ export default function AthleteDashboard({ profile }) {
     const ch = supabase.channel('announcements-athlete')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => fetchAnnouncements())
       .subscribe()
-    const onVis = () => { if (document.visibilityState === 'visible') fetchAnnouncements() }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        fetchAnnouncements()
+        // ריענון רישומים בכל פעם שהטאב חוזר לפוקוס —
+        // מבטיח שאם בקשת רישום נכשלה ברקע / בעוד הטאב היה מוקפא,
+        // ה-UI יוצג בהתאם למצב האמיתי בשרת.
+        fetchRegistrations()
+      }
+    }
     document.addEventListener('visibilitychange', onVis)
     return () => { supabase.removeChannel(ch); document.removeEventListener('visibilitychange', onVis) }
   }, [profile?.id])
@@ -1090,15 +1098,42 @@ export default function AthleteDashboard({ profile }) {
     if (!isRegistered && registrations.size >= limit && limit !== Infinity) {
       alert('הגעת למגבלת ' + limit + ' שיעורים שבועיים לפי המנוי שלך'); return
     }
+    // לכידת week_start פעם אחת — מונע race condition בגבול שבוע (חצות שבת/ראשון)
+    const weekStart = getWeekStart()
+
+    // Optimistic update: מעדכן UI מיד, לפני קריאה לשרת.
+    // כך אם המשתמש מחליף טאב/יוצא מיד אחרי לחיצה — ה-UI כבר נכון,
+    // וגם אם הבקשה נכשלת ברקע, ה-visibilitychange listener יסנכרן עם השרת.
     if (isRegistered) {
-      await supabase.from('class_registrations').delete()
-        .eq('class_id', cls.id).eq('athlete_id', profile.id).eq('week_start', getWeekStart())
       setRegistrations(p => { const n = new Set(p); n.delete(cls.id); return n })
+      try {
+        const { error } = await supabase.from('class_registrations').delete()
+          .eq('class_id', cls.id).eq('athlete_id', profile.id).eq('week_start', weekStart)
+        if (error) throw error
+      } catch (e) {
+        console.error('unregister error:', e)
+        // rollback — מחזיר את הרישום אם הביטול נכשל
+        setRegistrations(p => new Set([...p, cls.id]))
+        alert('ביטול הרישום נכשל. נסה שוב.')
+      }
     } else {
-      await supabase.from('class_registrations').insert({
-        class_id: cls.id, athlete_id: profile.id, week_start: getWeekStart()
-      })
       setRegistrations(p => new Set([...p, cls.id]))
+      try {
+        // upsert + ignoreDuplicates: אם השורה כבר קיימת (UNIQUE constraint על
+        // class_id+athlete_id+week_start) — מתייחסים לזה כהצלחה ולא כשגיאה.
+        // מונע את ה-409 הקודם שגרם ל-rollback מיותר ולהתראת "רישום נכשל" שגויה.
+        const { error } = await supabase.from('class_registrations').upsert(
+          { class_id: cls.id, athlete_id: profile.id, week_start: weekStart },
+          { onConflict: 'class_id,athlete_id,week_start', ignoreDuplicates: true }
+        )
+        // PostgreSQL code 23505 = unique_violation — מטפלים גם כאן ליתר ביטחון
+        if (error && error.code !== '23505') throw error
+      } catch (e) {
+        console.error('register error:', e)
+        // rollback — מסיר את הרישום אם הקריאה באמת נכשלה (לא רק duplicate)
+        setRegistrations(p => { const n = new Set(p); n.delete(cls.id); return n })
+        alert('הרישום נכשל. נסה שוב.')
+      }
     }
   }
 

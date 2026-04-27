@@ -605,17 +605,42 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   }
 
   async function approveClass(classId) {
-    const { error } = await supabase.from('classes').update({ status: 'approved' }).eq('id', classId)
-    if (error) { console.error('approveClass error:', error); alert('שגיאה באישור'); return }
+    // .select() מחזיר את השורות שעודכנו בפועל — מאפשר לזהות RLS שדוחה בשקט
+    const { data, error } = await supabase.from('classes')
+      .update({ status: 'approved' })
+      .eq('id', classId)
+      .select('id')
+    if (error) { console.error('approveClass error:', error); alert('שגיאה באישור: ' + (error.message || '')); return }
+    if (!data || data.length === 0) {
+      alert('האישור לא בוצע — ייתכן בעיית הרשאות (RLS).')
+      return
+    }
     setPendingRequests(prev => prev.filter(r => r.id !== classId))
+    // refetch מפורש כדי שה-UI יסונכרן עם ה-DB ולא יסתמך רק על realtime
+    await fetchPendingRequests()
     fetchDayClasses(selectedDate)
   }
 
   async function rejectClass(classId) {
     if (!confirm('למחוק את השיעור הממתין?')) return
-    const { error } = await supabase.from('classes').delete().eq('id', classId)
-    if (error) { console.error('rejectClass error:', error); alert('שגיאה במחיקה'); return }
+    // ניקוי תלויות לפני מחיקת השיעור — אחרת FK constraints יחסמו את ה-DELETE
+    // (אותה לוגיקה כמו performHardDelete שמשמש למחיקת שיעור רגיל ע"י אדמין)
+    await supabase.from('class_registrations').delete().eq('class_id', classId)
+    await supabase.from('member_classes').delete().eq('class_id', classId)
+    await supabase.from('checkins').delete().eq('class_id', classId)
+    // .select() מחזיר את מה שנמחק בפועל — אם ריק זה אומר שהמחיקה לא הצליחה
+    const { data, error } = await supabase.from('classes')
+      .delete()
+      .eq('id', classId)
+      .select('id')
+    if (error) { console.error('rejectClass error:', error); alert('שגיאה במחיקה: ' + (error.message || '')); return }
+    if (!data || data.length === 0) {
+      alert('המחיקה לא בוצעה — ייתכן בעיית הרשאות (RLS).')
+      return
+    }
     setPendingRequests(prev => prev.filter(r => r.id !== classId))
+    // refetch מפורש כדי שה-UI יסונכרן עם ה-DB
+    await fetchPendingRequests()
     fetchDayClasses(selectedDate)
   }
 

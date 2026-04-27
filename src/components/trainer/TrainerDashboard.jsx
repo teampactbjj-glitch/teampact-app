@@ -180,9 +180,11 @@ export default function TrainerDashboard({ profile, isAdmin }) {
 
     // שינויי לו״ז שמחכים לאישור המנהל (שיעור חדש שמאמן הוסיף + בקשות מחיקה)
     if (isAdmin) {
+      // .is('deleted_at', null) מחויב — אחרת שיעורים שנדחו (soft-delete) ימשיכו להיספר
+      // והבאדג' על טאב הלו"ז יראה מספר שכבר לא רלוונטי.
       const [addsRes, delsRes, athDelRes] = await Promise.all([
-        supabase.from('classes').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('classes').select('id', { count: 'exact', head: true }).not('deletion_requested_at', 'is', null),
+        supabase.from('classes').select('id', { count: 'exact', head: true }).eq('status', 'pending').is('deleted_at', null),
+        supabase.from('classes').select('id', { count: 'exact', head: true }).not('deletion_requested_at', 'is', null).is('deleted_at', null),
         supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'pending_deletion').is('deleted_at', null),
       ])
       const adds = addsRes.error ? 0 : (addsRes.count || 0)

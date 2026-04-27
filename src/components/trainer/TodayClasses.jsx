@@ -89,6 +89,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     const { data, error } = await supabase
       .from('classes')
       .select('*, branches(name)')
+      .is('deleted_at', null)  // לא להציג שיעורים שכבר נמחקו (soft-delete)
       .or('status.eq.pending,deletion_requested_at.not.is.null')
       .order('day_of_week')
       .order('start_time')
@@ -623,15 +624,17 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
 
   async function rejectClass(classId) {
     if (!confirm('למחוק את השיעור הממתין?')) return
-    // ניקוי תלויות לפני מחיקת השיעור — אחרת FK constraints יחסמו את ה-DELETE
-    // (אותה לוגיקה כמו performHardDelete שמשמש למחיקת שיעור רגיל ע"י אדמין)
+    // ניקוי תלויות (DELETE ישיר — אין על הטבלאות האלה soft-delete trigger)
     await supabase.from('class_registrations').delete().eq('class_id', classId)
     await supabase.from('member_classes').delete().eq('class_id', classId)
     await supabase.from('checkins').delete().eq('class_id', classId)
-    // .select() מחזיר את מה שנמחק בפועל — אם ריק זה אומר שהמחיקה לא הצליחה
+    // ⚠️ ב-DB יש trigger tr_soft_delete שממיר DELETE ל-UPDATE deleted_at,
+    // ולכן DELETE רגיל מחזיר 0 שורות בלי שגיאה והמשתמש חושב שזה לא עבד.
+    // לכן עושים UPDATE ישיר של deleted_at — תואם את הפילוסופיה של soft-delete.
     const { data, error } = await supabase.from('classes')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', classId)
+      .is('deleted_at', null)  // רק אם עדיין לא מחוק (idempotent)
       .select('id')
     if (error) { console.error('rejectClass error:', error); alert('שגיאה במחיקה: ' + (error.message || '')); return }
     if (!data || data.length === 0) {
@@ -639,7 +642,6 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       return
     }
     setPendingRequests(prev => prev.filter(r => r.id !== classId))
-    // refetch מפורש כדי שה-UI יסונכרן עם ה-DB
     await fetchPendingRequests()
     fetchDayClasses(selectedDate)
   }

@@ -628,19 +628,15 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     await supabase.from('class_registrations').delete().eq('class_id', classId)
     await supabase.from('member_classes').delete().eq('class_id', classId)
     await supabase.from('checkins').delete().eq('class_id', classId)
-    // ⚠️ ב-DB יש trigger tr_soft_delete שממיר DELETE ל-UPDATE deleted_at,
-    // ולכן DELETE רגיל מחזיר 0 שורות בלי שגיאה והמשתמש חושב שזה לא עבד.
-    // לכן עושים UPDATE ישיר של deleted_at — תואם את הפילוסופיה של soft-delete.
-    const { data, error } = await supabase.from('classes')
+    // ⚠️ ב-DB יש trigger tr_soft_delete שממיר DELETE ל-soft-delete (UPDATE deleted_at).
+    // לכן עושים UPDATE ישיר של deleted_at — תואם לפילוסופיית soft-delete.
+    // הערה: לא משתמשים ב-.select() אחרי ה-UPDATE כי ה-RLS על SELECT
+    // (במיגרציית soft_delete_rls) מסנן deleted_at IS NULL — אחרי ה-UPDATE
+    // השורה כבר לא נראית ב-SELECT, וזה היה גורם לזיהוי שגוי של "כשלון".
+    const { error } = await supabase.from('classes')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', classId)
-      .is('deleted_at', null)  // רק אם עדיין לא מחוק (idempotent)
-      .select('id')
     if (error) { console.error('rejectClass error:', error); alert('שגיאה במחיקה: ' + (error.message || '')); return }
-    if (!data || data.length === 0) {
-      alert('המחיקה לא בוצעה — ייתכן בעיית הרשאות (RLS).')
-      return
-    }
     setPendingRequests(prev => prev.filter(r => r.id !== classId))
     await fetchPendingRequests()
     fetchDayClasses(selectedDate)

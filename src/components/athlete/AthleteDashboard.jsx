@@ -77,16 +77,22 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
     return () => { cancelled = true }
   }, [selectedDate])
 
-  const branchIds = member?.branch_ids?.length
+  const allMemberBranchIds = member?.branch_ids?.length
     ? member.branch_ids
     : member?.branch_id ? [member.branch_id] : []
+  // סינון סניפים מוסתרים — מסתמך על branchesMap שכולל רק סניפים גלויים
+  const branchIds = Object.keys(branchesMap || {}).length > 0
+    ? allMemberBranchIds.filter(id => branchesMap[id])
+    : allMemberBranchIds
 
   useEffect(() => {
     async function load() {
       try {
         if (branchIds.length === 0) { setClasses([]); return }
         const { data, error } = await supabase.from('classes')
-          .select('*, branches(name)').in('branch_id', branchIds)
+          .select('*, branches!inner(name, hidden)')
+          .in('branch_id', branchIds)
+          .eq('branches.hidden', false)
           .or('status.eq.approved,status.is.null')
           .order('day_of_week').order('start_time')
         if (error) console.error('ScheduleTab classes error:', error)
@@ -99,7 +105,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
       }
     }
     load()
-  }, [member?.id, member?.branch_ids?.join(','), member?.branch_id])
+  }, [member?.id, member?.branch_ids?.join(','), member?.branch_id, Object.keys(branchesMap || {}).join(',')])
 
   const today = new Date(); today.setHours(0,0,0,0)
 
@@ -1039,7 +1045,9 @@ export default function AthleteDashboard({ profile }) {
   }, [profile?.id])
 
   async function fetchBranches() {
-    const { data } = await supabase.from('branches').select('id, name')
+    // טוען רק סניפים גלויים (hidden=false). סניפים מוסתרים לא יופיעו בתצוגה למתאמן
+    // גם אם המתאמן משויך אליהם.
+    const { data } = await supabase.from('branches').select('id, name').eq('hidden', false)
     const map = {}
     ;(data || []).forEach(b => { map[b.id] = b.name })
     setBranchesMap(map)

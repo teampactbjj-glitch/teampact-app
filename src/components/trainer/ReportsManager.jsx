@@ -107,6 +107,7 @@ export default function ReportsManager({ isAdmin }) {
   const [classes, setClasses] = useState([]) // משמש גם כקבוצות (לפי המודל הקיים)
   const [branches, setBranches] = useState([])
   const [checkins, setCheckins] = useState([]) // נוכחויות — לצורך דוחות מבוססי נוכחות בפועל
+  const [trialVisits, setTrialVisits] = useState([]) // ביקורי ניסיון אנונימיים (טבלה נפרדת)
 
   useEffect(() => { if (isAdmin) fetchAll() }, [isAdmin])
 
@@ -114,7 +115,7 @@ export default function ReportsManager({ isAdmin }) {
     setLoading(true)
     setErr('')
     try {
-      const [mRes, cRes, clsRes, bRes, chkRes] = await Promise.all([
+      const [mRes, cRes, clsRes, bRes, chkRes, tvRes] = await Promise.all([
         supabase
           .from('members')
           .select('id, full_name, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at'),
@@ -122,17 +123,23 @@ export default function ReportsManager({ isAdmin }) {
         supabase.from('classes').select('id, name, class_type, coach_id, branch_id, day_of_week, start_time'),
         supabase.from('branches').select('id, name'),
         supabase.from('checkins').select('class_id, athlete_id, status, checked_in_at').eq('status', 'present'),
+        supabase.from('trial_visits').select('id, class_id, visited_at, visitor_name'),
       ])
       if (mRes.error)   throw mRes.error
       if (cRes.error)   throw cRes.error
       if (clsRes.error) throw clsRes.error
       if (bRes.error)   throw bRes.error
       if (chkRes.error) console.error('checkins fetch error:', chkRes.error)
+      // אם הטבלה trial_visits עדיין לא הוקמה במיגרציה — לא לשבור את הדוחות.
+      if (tvRes.error && !/relation .*trial_visits/i.test(tvRes.error.message || '')) {
+        console.error('trial_visits fetch error:', tvRes.error)
+      }
       setMembers(mRes.data || [])
       setCoaches(cRes.data || [])
       setClasses(clsRes.data || [])
       setBranches(bRes.data || [])
       setCheckins(chkRes.data || [])
+      setTrialVisits(tvRes.data || [])
     } catch (e) {
       console.error('fetchAll reports error:', e)
       setErr(e.message || 'שגיאה בטעינת הדוחות')
@@ -240,6 +247,23 @@ export default function ReportsManager({ isAdmin }) {
     })
     return DISCIPLINE_ORDER.map(d => ({ name: d, count: membersPerDisc[d]?.size || 0, sessions: sessionsPerDisc[d] || 0 }))
   }, [filteredCheckins, disciplineByClassId, activeMemberIds])
+
+  // 2.5) שיעורי ניסיון לפי תחום לחימה — בטווח הנבחר.
+  // ספירה אנונימית של "ביקורי ניסיון" (טבלת trial_visits — מתאמני ניסיון
+  // שלא רשומים ב-members). דוח שיווקי: כמה ניסיונות BJJ/MMA/Muay Thai החודש.
+  const trialsByDiscipline = useMemo(() => {
+    const since = Date.now() - periodDays * DAY_MS
+    const counts = { BJJ: 0, 'Muay Thai': 0, MMA: 0, 'ילדים': 0, 'אחר': 0 }
+    let total = 0
+    trialVisits.forEach(tv => {
+      if (!tv.visited_at) return
+      if (new Date(tv.visited_at).getTime() < since) return
+      const disc = disciplineByClassId.get(tv.class_id) || 'אחר'
+      counts[disc] = (counts[disc] || 0) + 1
+      total++
+    })
+    return { rows: DISCIPLINE_ORDER.map(d => ({ name: d, count: counts[d] || 0 })), total }
+  }, [trialVisits, periodDays, disciplineByClassId])
 
   // 3) נרשמים חדשים (לפי created_at בטווח הזמן שנבחר) — ללא soft-deleted
   const newMembers = useMemo(() => {
@@ -421,7 +445,7 @@ export default function ReportsManager({ isAdmin }) {
       </SectionCard>
 
       {/* מתאמנים לפי תחום — מבוסס נוכחות בפועל */}
-      <SectionCard title="מתאמנים לפי תחום לחימה" icon="🥊" footer={`ספירה מבוססת על נוכחות בפועל (סימון ✓ נוכח) ב-${periodDays} הימים האחרונים. התחום מזוהה אוטומטית לפי שם השיעור.`}>
+      <SectionCard title="מתאמנים לפי תחום לחימה" icon="🥊" footer={`ספירה מבוססת על רישום בפועל לשיעורים ב-${periodDays} הימים האחרונים. התחום מזוהה אוטומטית לפי שם השיעור.`}>
         {byDiscipline.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
         ) : (
@@ -437,6 +461,27 @@ export default function ReportsManager({ isAdmin }) {
           ))
         )}
         <p className="text-xs text-gray-500 mt-2">* מתאמן שהיה באימונים במספר תחומים נספר בכל אחד מהם.</p>
+      </SectionCard>
+
+      {/* שיעורי ניסיון לפי תחום לחימה — דוח שיווקי */}
+      <SectionCard
+        title="שיעורי ניסיון לפי תחום לחימה"
+        icon="🆕"
+        footer={`סה״כ ${trialsByDiscipline.total} ביקורי ניסיון ב-${periodDays} הימים האחרונים. כולל מתאמני ניסיון אנונימיים שלא נרשמו במערכת.`}
+      >
+        {trialsByDiscipline.total === 0 ? (
+          <p className="text-sm text-gray-500">אין ביקורי ניסיון בתקופה זו.</p>
+        ) : (
+          trialsByDiscipline.rows.map(row => (
+            <BarRow
+              key={row.name}
+              label={row.name}
+              value={row.count}
+              max={trialsByDiscipline.rows.reduce((m, r) => Math.max(m, r.count), 0) || 1}
+              color={DISCIPLINE_COLORS[row.name]}
+            />
+          ))
+        )}
       </SectionCard>
 
       {/* נרשמים חדשים */}

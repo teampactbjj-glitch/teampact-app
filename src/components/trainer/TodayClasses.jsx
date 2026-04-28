@@ -68,11 +68,12 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   const [newClass, setNewClass] = useState({ name: '', coach_id: '', date: '', start_time: '', duration_minutes: 60 })
   const [addError, setAddError] = useState('')
   const [coaches, setCoaches] = useState([])
-  const [actionLoading, setActionLoading] = useState({}) // { `${classId}_${memberId}`: bool }
-  // Visitor search state per class
+  // Visitor search state per class — חיפוש "תלמיד רשום"
   const [visitorSearch, setVisitorSearch] = useState({}) // { classId: query }
   const [visitorResults, setVisitorResults] = useState({}) // { classId: [member] }
   const [visitorLoading, setVisitorLoading] = useState({}) // { classId: bool }
+  // טופס "הוסף מתאמן ניסיון" (אנונימי, לא נכנס ל-members)
+  const [trialForm, setTrialForm] = useState({}) // { classId: { name, phone } }
   const [branches, setBranches] = useState([])
   const [selectedBranch, setSelectedBranch] = useState('all')
   const [pendingRequests, setPendingRequests] = useState([])
@@ -359,132 +360,171 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       })
     }
 
+    // 5. ביקורי ניסיון לתאריך הנבחר (טבלת trial_visits — מתאמני ניסיון
+    //    שלא נמצאים ב-members כי הם לא מתאמני המועדון)
+    let trialVisits = []
+    {
+      const { data: tvRows, error: tvErr } = await supabase
+        .from('trial_visits')
+        .select('id, visitor_name, visitor_phone, visited_at, notes')
+        .eq('class_id', classId)
+        .gte('visited_at', dayStart.toISOString())
+        .lte('visited_at', dayEnd.toISOString())
+        .order('visited_at')
+      if (tvErr) {
+        // אם הטבלה עדיין לא נוצרה (טרם הריצה את המיגרציה) — לא נשבור את המסך.
+        if (!/relation .*trial_visits/i.test(tvErr.message || '')) {
+          console.error('trial_visits error:', tvErr)
+        }
+      }
+      trialVisits = tvRows || []
+    }
+
     setClassData(prev => ({
       ...prev,
-      [classId]: { members, checkedIds, absentIds, weeklyCount, weeklyRegistrants, loading: false },
+      [classId]: { members, checkedIds, absentIds, weeklyCount, weeklyRegistrants, trialVisits, loading: false },
     }))
     setMemberCounts(prev => ({ ...prev, [classId]: members.length }))
     setRegCountsByClass(prev => ({ ...prev, [classId]: weeklyRegistrants.length }))
   }
 
   // ============================================================
-  // Optimistic updates — מעדכנים את ה-UI מיד, כותבים ל-DB ברקע
-  // ללא "טוען..." וללא re-fetch מלא של השיעור.
-  // במקרה של כשל — מתחזרים למצב הקודם ומציגים שגיאה.
+  // הערה: בעבר היו פה markPresent / markAbsent עם optimistic updates.
+  // עברנו למודל "רישום = נוכחות" — checkin אוטומטי נכתב בעת רישום מתוך זרם
+  // ההרשמה של המתאמן (ClassSchedule.jsx, AthleteDashboard.handleRegister)
+  // וגם בעת הוספה ידנית ע"י המאמן (addRegisteredMember כאן). אין יותר לחיצות
+  // ידניות של "נוכח / נעדר" — מי שנרשם נחשב נוכח, ומאמן רק מסיר טעויות.
   // ============================================================
-  async function markPresent(classId, memberId /* , membershipType */) {
-    // שמור מצב קודם לצורך rollback במקרה של כשל
-    const prevSnapshot = classData[classId]
-    const cls = (classes || []).find(c => c.id === classId)
+
+  // הוספת תלמיד רשום של המועדון לשיעור — אקוויוולנט להרשמה עצמית של המתאמן.
+  // יוצר רשומת class_registrations של השבוע + checkin אוטומטי 'present'.
+  // בודק מכסה שבועית לפני (אלא אם זה שיעור "מזרן פתוח"/ספארינג שלא נספר במכסה).
+  async function addRegisteredMember(cls, member) {
+    const classId = cls.id
     const openMat = isOpenMatClass(cls)
+    const membershipType = member.membership_type || member.subscription_type
+    const limit = WEEKLY_LIMITS[membershipType] ?? 2
 
-    // עדכון אופטימי: הוסף ל-checkedIds, הסר מ-absentIds, והעלה מונה שבועי ב-1 (אם לא היה present כבר).
-    // שיעור "מזרן פתוח" לא נספר במכסה.
-    setClassData(p => {
-      const d = p[classId]
-      if (!d) return p
-      const wasPresent = d.checkedIds.has(memberId)
-      const newChecked = new Set(d.checkedIds); newChecked.add(memberId)
-      const newAbsent = new Set(d.absentIds); newAbsent.delete(memberId)
-      const newWeekly = { ...d.weeklyCount }
-      if (!wasPresent && !openMat) newWeekly[memberId] = (newWeekly[memberId] || 0) + 1
-      return { ...p, [classId]: { ...d, checkedIds: newChecked, absentIds: newAbsent, weeklyCount: newWeekly } }
-    })
-
-    // כתיבה ל-DB ברקע
-    const dayStart = startOfDay(selectedDate)
-    const { error: delErr } = await supabase.from('checkins').delete()
-      .eq('class_id', classId).eq('athlete_id', memberId)
-      .gte('checked_in_at', dayStart.toISOString())
-    if (delErr) console.error('markPresent delete error:', delErr)
-
-    const checkedAt = new Date(selectedDate); checkedAt.setHours(12, 0, 0, 0)
-    const { error: insErr } = await supabase.from('checkins').insert({
-      class_id: classId,
-      athlete_id: memberId,
-      status: 'present',
-      checked_in_at: checkedAt.toISOString(),
-    })
-    if (insErr) {
-      console.error('markPresent insert error:', insErr)
-      // Rollback למצב הקודם
-      setClassData(p => ({ ...p, [classId]: prevSnapshot }))
-      alert('שגיאה בסימון נוכחות:\n' + (insErr.message || JSON.stringify(insErr)))
+    // בדיקת מכסה (פרט לשיעורי מזרן פתוח/ספארינג)
+    if (!openMat && limit !== Infinity) {
+      const { weekStart, weekEnd } = getWeekRange(selectedDate)
+      const { data: weekChks, error: wErr } = await supabase
+        .from('checkins')
+        .select('class_id')
+        .eq('athlete_id', member.id)
+        .neq('status', 'absent')
+        .gte('checked_in_at', weekStart)
+        .lte('checked_in_at', weekEnd)
+      if (wErr) console.error('quota check error:', wErr)
+      // לא סופרים מזרן פתוח (בדיוק כמו ב-fetchClassDetails)
+      const openMatIds = new Set((classes || []).filter(isOpenMatClass).map(c => c.id))
+      const weekCount = (weekChks || []).filter(r => !openMatIds.has(r.class_id)).length
+      if (weekCount >= limit) {
+        alert(`${member.full_name} כבר ניצל/ה ${weekCount}/${limit} שיעורים השבוע.\nלא ניתן להוסיף יותר.`)
+        return
+      }
     }
-  }
 
-  async function markAbsent(classId, memberId) {
-    const prevSnapshot = classData[classId]
-    const cls = (classes || []).find(c => c.id === classId)
-    const openMat = isOpenMatClass(cls)
+    // week_start של השבוע של selectedDate (לא של היום הנוכחי) — תואם ל-fetch ב-trainer
+    const weekStartStr = (() => {
+      const d = startOfDay(selectedDate)
+      d.setDate(d.getDate() - d.getDay())
+      return d.toISOString().split('T')[0]
+    })()
 
-    // עדכון אופטימי: הוסף ל-absentIds, הסר מ-checkedIds, הורד מונה שבועי ב-1 (אם היה present ולא מזרן פתוח)
-    setClassData(p => {
-      const d = p[classId]
-      if (!d) return p
-      const wasPresent = d.checkedIds.has(memberId)
-      const newChecked = new Set(d.checkedIds); newChecked.delete(memberId)
-      const newAbsent = new Set(d.absentIds); newAbsent.add(memberId)
-      const newWeekly = { ...d.weeklyCount }
-      if (wasPresent && !openMat && newWeekly[memberId]) newWeekly[memberId] = Math.max(0, newWeekly[memberId] - 1)
-      return { ...p, [classId]: { ...d, checkedIds: newChecked, absentIds: newAbsent, weeklyCount: newWeekly } }
-    })
-
-    const dayStart = startOfDay(selectedDate)
-    const { error: delErr } = await supabase.from('checkins').delete()
-      .eq('class_id', classId).eq('athlete_id', memberId)
-      .gte('checked_in_at', dayStart.toISOString())
-    if (delErr) console.error('markAbsent delete error:', delErr)
-
-    const checkedAt = new Date(selectedDate); checkedAt.setHours(12, 0, 0, 0)
-    const { error: insErr } = await supabase.from('checkins').insert({
-      class_id: classId,
-      athlete_id: memberId,
-      status: 'absent',
-      checked_in_at: checkedAt.toISOString(),
-    })
-    if (insErr) {
-      console.error('markAbsent insert error:', insErr)
-      setClassData(p => ({ ...p, [classId]: prevSnapshot }))
-      alert('שגיאה בסימון היעדרות:\n' + (insErr.message || JSON.stringify(insErr)))
-    }
-  }
-
-  async function addNewVisitor(classId, branchId, name) {
-    const trimmed = name.trim()
-    if (!trimmed) return
-
-    // Create new member with trial membership
-    const { data: newMember, error } = await supabase
-      .from('members')
-      .insert({ full_name: trimmed, membership_type: 'trial', subscription_type: 'trial', branch_id: branchId, active: true })
-      .select('id, full_name, membership_type')
-      .single()
-
-    if (error) { console.error('addNewVisitor insert error:', error); return }
-
-    // Clear search
-    setVisitorSearch(p => ({ ...p, [classId]: '' }))
-    setVisitorResults(p => ({ ...p, [classId]: [] }))
-
-    // Register and mark present
-    await addVisitor(classId, newMember)
-  }
-
-  async function addVisitor(classId, member) {
-    // First register them to the class in member_classes
+    // 1. רישום שבועי
     const { error: regErr } = await supabase
-      .from('member_classes')
-      .upsert({ class_id: classId, member_id: member.id }, { onConflict: 'class_id,member_id' })
+      .from('class_registrations')
+      .upsert(
+        { class_id: classId, athlete_id: member.id, week_start: weekStartStr },
+        { onConflict: 'athlete_id,class_id' }
+      )
+    if (regErr) {
+      console.error('addRegisteredMember reg error:', regErr)
+      alert('שגיאה ברישום: ' + (regErr.message || ''))
+      return
+    }
 
-    if (regErr) console.error('addVisitor registration error:', regErr)
+    // 2. checkin אוטומטי 'present' (כדי שיופיע בדוחות בלי שהמאמן יסמן ידנית)
+    const checkedAt = new Date(selectedDate); checkedAt.setHours(12, 0, 0, 0)
+    await supabase.from('checkins').upsert(
+      { class_id: classId, athlete_id: member.id, status: 'present', checked_in_at: checkedAt.toISOString() },
+      { onConflict: 'class_id,athlete_id', ignoreDuplicates: true }
+    )
 
-    // Then mark present
-    await markPresent(classId, member.id, member.membership_type)
-
-    // Clear visitor search
+    // ניקוי חיפוש + רענון פרטי השיעור
     setVisitorSearch(p => ({ ...p, [classId]: '' }))
     setVisitorResults(p => ({ ...p, [classId]: [] }))
+    fetchClassDetails(classId)
+  }
+
+  // הסרת מתאמן רשום מהשיעור (מתאמן שהמאמן הוסיף בטעות, או שהוא לא הגיע).
+  // מוחק את ה-class_registrations ואת ה-checkin המוטמע 'present' של אותו יום.
+  async function removeRegistration(classId, memberId) {
+    if (!confirm('להסיר את המתאמן מהשיעור?')) return
+    const { error: delErr } = await supabase
+      .from('class_registrations')
+      .delete()
+      .eq('class_id', classId)
+      .eq('athlete_id', memberId)
+    if (delErr) {
+      console.error('removeRegistration error:', delErr)
+      alert('שגיאה בהסרה: ' + (delErr.message || ''))
+      return
+    }
+    const dayStart = startOfDay(selectedDate)
+    const dayEnd = new Date(dayStart); dayEnd.setHours(23, 59, 59, 999)
+    await supabase.from('checkins').delete()
+      .eq('class_id', classId)
+      .eq('athlete_id', memberId)
+      .eq('status', 'present')
+      .gte('checked_in_at', dayStart.toISOString())
+      .lte('checked_in_at', dayEnd.toISOString())
+    fetchClassDetails(classId)
+  }
+
+  // הוספת מתאמן ניסיון — אנונימי, לא נכנס ל-members. נשמר בטבלת trial_visits
+  // לדוחות שיווקיים (כמה ניסיונות ל-BJJ/MMA וכו'). חסום בשיעורי ספארינג/מזרן פתוח
+  // (לפי החלטה: רק מתאמנים מנויים יכולים לבוא לשיעורים פתוחים).
+  async function addTrialVisit(cls) {
+    const classId = cls.id
+    if (isOpenMatClass(cls)) {
+      alert('שיעור פתוח/ספארינג — רק מתאמנים מנויים יכולים להגיע. לא ניתן להוסיף מתאמן ניסיון.')
+      return
+    }
+    const form = trialForm[classId] || {}
+    const name = (form.name || '').trim()
+    if (!name) { alert('יש להזין שם'); return }
+    const visitedAt = new Date(selectedDate); visitedAt.setHours(12, 0, 0, 0)
+    const { error } = await supabase.from('trial_visits').insert({
+      class_id: classId,
+      visitor_name: name,
+      visitor_phone: (form.phone || '').trim() || null,
+      visited_at: visitedAt.toISOString(),
+      created_by: trainerId || null,
+    })
+    if (error) {
+      console.error('addTrialVisit error:', error)
+      if (/relation .*trial_visits/i.test(error.message || '')) {
+        alert('הטבלה trial_visits עדיין לא קיימת ב-DB.\nהרץ את migration-trial-visits.sql ב-Supabase SQL Editor.')
+      } else {
+        alert('שגיאה בהוספה: ' + (error.message || ''))
+      }
+      return
+    }
+    setTrialForm(p => ({ ...p, [classId]: { name: '', phone: '' } }))
+    fetchClassDetails(classId)
+  }
+
+  async function removeTrialVisit(classId, visitId) {
+    if (!confirm('להסיר את מתאמן הניסיון?')) return
+    const { error } = await supabase.from('trial_visits').delete().eq('id', visitId)
+    if (error) {
+      console.error('removeTrialVisit error:', error)
+      alert('שגיאה: ' + (error.message || ''))
+      return
+    }
+    fetchClassDetails(classId)
   }
 
   async function searchVisitor(classId, query) {
@@ -1027,15 +1067,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         return visibleClasses.map(cls => {
         const data = classData[cls.id]
         const isOpen = expanded === cls.id
-        const presentCount = data?.checkedIds?.size ?? 0
         const openMat = isOpenMatClass(cls)
-        // הספירה הכוללת: מתאמנים קבועים + נרשמים שבועיים (ללא כפילויות)
-        const totalCount = (() => {
-          if (!data) return 0
-          const ids = new Set((data.members || []).map(m => m.id))
-          ;(data.weeklyRegistrants || []).forEach(r => ids.add(r.id))
-          return ids.size
-        })()
 
         return (
           <div key={cls.id} className={`bg-white rounded-xl shadow-sm overflow-hidden border ${cls.status === 'pending' ? 'border-amber-300 ring-1 ring-amber-200' : ''} ${cls.deletion_requested_at ? 'border-rose-300 ring-1 ring-rose-200' : ''}`}>
@@ -1098,19 +1130,20 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
               </div>
               <div className="flex items-center gap-1 flex-wrap justify-end">
                 {(regCountsByClass[cls.id] || 0) > 0 && (
-                  <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">
+                  <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">
                     🙋 {regCountsByClass[cls.id]} נרשמו
                   </span>
                 )}
-                {data && !data.loading ? (
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                    {presentCount}/{totalCount} נוכחים
+                {data && !data.loading && (data.trialVisits || []).length > 0 && (
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">
+                    🆕 {data.trialVisits.length} ניסיון
                   </span>
-                ) : cls.id in memberCounts ? (
+                )}
+                {!data && cls.id in memberCounts && memberCounts[cls.id] > 0 && (
                   <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
                     {memberCounts[cls.id]} רשומים
                   </span>
-                ) : null}
+                )}
                 <span className="text-gray-400">{isOpen ? '▲' : '▼'}</span>
               </div>
             </button>
@@ -1140,12 +1173,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                             const membershipType = member.membership_type || member.subscription_type
                             const limit = WEEKLY_LIMITS[membershipType] ?? 2
                             const weekCount = data.weeklyCount[member.id] || 0
-                            const isPresent = data.checkedIds.has(member.id)
-                            const isAbsent = data.absentIds.has(member.id)
                             // מזרן פתוח: אין חריגה ממכסה כי השיעור לא נספר
-                            const isOverLimit = !openMat && limit !== Infinity && weekCount >= limit && !isPresent
-                            const key = `${cls.id}_${member.id}`
-                            const busy = actionLoading[key]
+                            const isOverLimit = !openMat && limit !== Infinity && weekCount > limit
                             const isWeekly = member._source === 'weekly'
 
                             return (
@@ -1155,8 +1184,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       <p className="text-sm font-medium text-gray-800">{member.full_name}</p>
                                       {isWeekly && (
-                                        <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
-                                          🙋 נרשם השבוע
+                                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+                                          ✓ נרשם
                                         </span>
                                       )}
                                       {isOverLimit && (
@@ -1174,35 +1203,13 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                                     </p>
                                   </div>
 
-                                  <div className="flex gap-1.5 shrink-0">
-                                    {/* נוכח button */}
-                                    <button
-                                      onClick={() => markPresent(cls.id, member.id, membershipType)}
-                                      disabled={busy}
-                                      title="סמן נוכח"
-                                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition disabled:opacity-40 ${
-                                        isPresent
-                                          ? 'bg-green-500 text-white shadow-sm'
-                                          : 'bg-gray-100 text-gray-500 hover:bg-green-100 hover:text-green-700'
-                                      }`}
-                                    >
-                                      {busy ? '...' : '✓ נוכח'}
-                                    </button>
-
-                                    {/* נעדר button */}
-                                    <button
-                                      onClick={() => markAbsent(cls.id, member.id)}
-                                      disabled={busy}
-                                      title="סמן נעדר"
-                                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition disabled:opacity-40 ${
-                                        isAbsent
-                                          ? 'bg-red-500 text-white shadow-sm'
-                                          : 'bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600'
-                                      }`}
-                                    >
-                                      {busy ? '...' : '✕ נעדר'}
-                                    </button>
-                                  </div>
+                                  <button
+                                    onClick={() => removeRegistration(cls.id, member.id)}
+                                    title="הסר מתאמן מהשיעור"
+                                    className="shrink-0 text-xs bg-white border border-gray-200 text-gray-500 hover:bg-red-50 hover:border-red-200 hover:text-red-600 px-2.5 py-1 rounded-lg font-medium transition"
+                                  >
+                                    ✕ הסר
+                                  </button>
                                 </div>
                               </li>
                             )
@@ -1211,13 +1218,39 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                       )
                     })()}
 
-                    {/* Visitor / walk-in section */}
-                    <div className={`pt-2 ${data.members.length > 0 ? 'border-t' : ''}`}>
-                      <p className="text-xs font-medium text-gray-500 mb-2">הוסף מבקר (לא רשום לשיעור)</p>
+                    {/* רשימת מתאמני ניסיון של היום (אם יש) */}
+                    {(data.trialVisits || []).length > 0 && (
+                      <div className="pt-2 border-t">
+                        <p className="text-xs font-bold text-gray-500 mb-2">🆕 מתאמני ניסיון ({data.trialVisits.length})</p>
+                        <ul className="divide-y border border-amber-100 rounded-lg overflow-hidden bg-amber-50/40">
+                          {data.trialVisits.map(tv => (
+                            <li key={tv.id} className="py-2.5 px-3 flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-800">{tv.visitor_name}</p>
+                                {tv.visitor_phone && (
+                                  <p className="text-xs text-gray-500 mt-0.5">📞 {tv.visitor_phone}</p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => removeTrialVisit(cls.id, tv.id)}
+                                title="הסר מתאמן ניסיון"
+                                className="shrink-0 text-xs bg-white border border-gray-200 text-gray-500 hover:bg-red-50 hover:border-red-200 hover:text-red-600 px-2.5 py-1 rounded-lg font-medium transition"
+                              >
+                                ✕ הסר
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* הוסף תלמיד רשום (חיפוש ב-members) */}
+                    <div className="pt-3 border-t">
+                      <p className="text-xs font-bold text-gray-700 mb-2">➕ הוסף תלמיד רשום</p>
                       <div className="relative">
                         <input
                           className="w-full border rounded-lg px-3 py-2 text-sm"
-                          placeholder="חפש מתאמן לפי שם..."
+                          placeholder="חפש לפי שם..."
                           value={visitorSearch[cls.id] || ''}
                           onChange={e => searchVisitor(cls.id, e.target.value)}
                         />
@@ -1238,14 +1271,15 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                                     {mtype === '2x_week' ? '2× שבוע'
                                       : mtype === '4x_week' ? '4× שבוע'
                                       : mtype === 'unlimited' ? 'ללא הגבלה'
+                                      : mtype === 'trial' ? 'ניסיון'
                                       : mtype || '—'}
                                   </p>
                                 </div>
                                 <button
-                                  onClick={() => addVisitor(cls.id, m)}
-                                  className="text-xs bg-orange-100 text-orange-700 hover:bg-orange-200 px-2.5 py-1 rounded-lg font-medium transition"
+                                  onClick={() => addRegisteredMember(cls, m)}
+                                  className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg font-bold transition"
                                 >
-                                  + הוסף כמבקר
+                                  + הוסף
                                 </button>
                               </li>
                             )
@@ -1254,14 +1288,42 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                       )}
 
                       {visitorSearch[cls.id] && !visitorLoading[cls.id] && (visitorResults[cls.id] || []).length === 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs text-gray-400 text-center mb-2">לא נמצאו מתאמנים קיימים</p>
+                        <p className="mt-2 text-xs text-gray-400 text-center">לא נמצאו תלמידים רשומים בשם זה</p>
+                      )}
+                    </div>
+
+                    {/* הוסף מתאמן ניסיון (לא רשום במערכת) */}
+                    <div className="pt-3 border-t">
+                      <p className="text-xs font-bold text-gray-700 mb-2">🆕 הוסף מתאמן ניסיון</p>
+                      {openMat ? (
+                        <p className="text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-3 py-2">
+                          🎯 שיעור מזרן פתוח / ספארינג — רק מתאמנים מנויים יכולים להגיע. הוספת מתאמני ניסיון חסומה.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          <input
+                            className="w-full border rounded-lg px-3 py-2 text-sm"
+                            placeholder="שם מלא"
+                            value={trialForm[cls.id]?.name || ''}
+                            onChange={e => setTrialForm(p => ({ ...p, [cls.id]: { ...(p[cls.id] || {}), name: e.target.value } }))}
+                          />
+                          <input
+                            className="w-full border rounded-lg px-3 py-2 text-sm"
+                            placeholder="טלפון (רשות)"
+                            type="tel"
+                            value={trialForm[cls.id]?.phone || ''}
+                            onChange={e => setTrialForm(p => ({ ...p, [cls.id]: { ...(p[cls.id] || {}), phone: e.target.value } }))}
+                          />
                           <button
-                            onClick={() => addNewVisitor(cls.id, cls.branch_id, visitorSearch[cls.id])}
-                            className="w-full text-sm bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 px-3 py-2 rounded-lg font-medium transition text-right"
+                            onClick={() => addTrialVisit(cls)}
+                            disabled={!(trialForm[cls.id]?.name || '').trim()}
+                            className="w-full text-sm bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg font-bold transition"
                           >
-                            + הוסף מבקר חדש: <span className="font-bold">{visitorSearch[cls.id]}</span>
+                            + הוסף מתאמן ניסיון
                           </button>
+                          <p className="text-[11px] text-gray-400 text-right">
+                            מתאמן ניסיון לא נכנס למערכת המנויים — רק מצטבר בדוחות שיעורי הניסיון לפי שיטת לחימה.
+                          </p>
                         </div>
                       )}
                     </div>

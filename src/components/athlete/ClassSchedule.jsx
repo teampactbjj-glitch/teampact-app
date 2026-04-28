@@ -8,11 +8,54 @@ function formatTime(t) {
   return t ? t.slice(0, 5) : ''
 }
 
+// מחזיר את ההופעה הקרובה ביותר *בעתיד* של השיעור השבועי.
+// אם היום זה היום-בשבוע של השיעור והוא עדיין לא התחיל — ההופעה הבאה היא היום.
+// אם היום והשיעור כבר התחיל (או הסתיים) — ההופעה הבאה היא השבוע הבא.
+// כך תאריך ה-checkin שיוטמע ברישום תמיד יצביע על שיעור עתידי.
+function computeNextOccurrence(cls, now = new Date()) {
+  const [hh = 0, mm = 0, ss = 0] = (cls.start_time || '00:00:00').split(':').map(Number)
+  const duration = Number(cls.duration_minutes) || 60
+  const todayDow = now.getDay() // 0=Sunday..6=Saturday — תואם ל-day_of_week בסכמה
+  if (todayDow === cls.day_of_week) {
+    const todayStart = new Date(now)
+    todayStart.setHours(hh, mm, ss || 0, 0)
+    if (now < todayStart) {
+      const todayEnd = new Date(todayStart.getTime() + duration * 60 * 1000)
+      return { start: todayStart, end: todayEnd }
+    }
+  }
+  let daysAhead = (cls.day_of_week - todayDow + 7) % 7
+  if (daysAhead === 0) daysAhead = 7
+  const nextStart = new Date(now)
+  nextStart.setDate(now.getDate() + daysAhead)
+  nextStart.setHours(hh, mm, ss || 0, 0)
+  const nextEnd = new Date(nextStart.getTime() + duration * 60 * 1000)
+  return { start: nextStart, end: nextEnd }
+}
+
+// השיעור של השבוע הזה נעול לרישום/ביטול אם היום הוא היום-בשבוע שלו
+// והשעה כבר עברה. אחרי `start_time` של השיעור — אין יותר שינוי רישומים.
+function isThisWeekLocked(cls, now = new Date()) {
+  if (now.getDay() !== cls.day_of_week) return false
+  const [hh = 0, mm = 0, ss = 0] = (cls.start_time || '00:00:00').split(':').map(Number)
+  const todayStart = new Date(now)
+  todayStart.setHours(hh, mm, ss || 0, 0)
+  return now >= todayStart
+}
+
 export default function ClassSchedule({ profile, member }) {
   const [classes, setClasses] = useState([])
   const [registeredIds, setRegisteredIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState({}) // { classId: bool }
+  // tick של "עכשיו" כל דקה — כדי שכפתורי הרישום/ביטול יחסמו אוטומטית
+  // ברגע שעוברים את start_time (לביטול) או start_time+duration (לרישום),
+  // בלי שהמתאמן צריך לרענן את המסך.
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60 * 1000)
+    return () => clearInterval(id)
+  }, [])
 
   const subType = profile?.subscription_type || member?.subscription_type || member?.membership_type
   const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
@@ -77,6 +120,17 @@ export default function ClassSchedule({ profile, member }) {
 
   async function toggleRegistration(classId) {
     const isRegistered = registeredIds.has(classId)
+    const cls = classes.find(c => c.id === classId)
+
+    // אכיפת חלון זמן בצד הלקוח: שיעור של היום שכבר התחיל — נעול לחלוטין.
+    // לא להירשם, לא לבטל. (השיעור של השבוע הבא כבר זמין כי computeNextOccurrence
+    // מחזירה את ההופעה הבאה בעתיד.)
+    if (cls && isThisWeekLocked(cls)) {
+      alert(isRegistered
+        ? 'השיעור כבר התחיל — לא ניתן לבטל את הרישום.'
+        : 'השיעור כבר התחיל — לא ניתן להירשם.')
+      return
+    }
 
     // Prevent going over limit when registering
     if (!isRegistered && limit !== Infinity && registeredIds.size >= limit) {
@@ -103,6 +157,19 @@ export default function ClassSchedule({ profile, member }) {
           .eq('athlete_id', profile.id)
           .eq('class_id', classId)
         if (error) throw error
+        // ביטול רישום → מוחק את ה-checkin המוטמע מסוג 'present' של אותה הופעה.
+        // אנחנו לא מוחקים checkin עם status='absent' (אם המאמן כבר התערב וסימן נעדר).
+        if (cls) {
+          const { start } = computeNextOccurrence(cls, new Date())
+          const dayStart = new Date(start); dayStart.setHours(0, 0, 0, 0)
+          const dayEnd = new Date(dayStart); dayEnd.setHours(23, 59, 59, 999)
+          await supabase.from('checkins').delete()
+            .eq('class_id', classId)
+            .eq('athlete_id', profile.id)
+            .eq('status', 'present')
+            .gte('checked_in_at', dayStart.toISOString())
+            .lte('checked_in_at', dayEnd.toISOString())
+        }
       } catch (e) {
         console.error('unregister error:', e)
         // rollback
@@ -117,6 +184,25 @@ export default function ClassSchedule({ profile, member }) {
           .from('class_registrations')
           .insert({ athlete_id: profile.id, class_id: classId })
         if (error) throw error
+        // רישום → יוצר checkin אוטומטי 'present' עם תאריך השיעור הקרוב.
+        // ככה המאמן/מנהל רואים את המתאמן כנוכח כברירת מחדל, וצריכים רק
+        // לסמן ✕ נעדר לאלה שלא הגיעו (במקום לסמן ✓ נוכח לכולם בכל שיעור).
+        // אם כבר קיים checkin (כולל absent) — לא נדרוס אותו (onConflict: do nothing).
+        if (cls) {
+          const { start } = computeNextOccurrence(cls, new Date())
+          const checkedAt = new Date(start); checkedAt.setHours(12, 0, 0, 0)
+          // upsert עם ignoreDuplicates=true: אם המאמן כבר סימן absent
+          // אנחנו לא רוצים להחליף את זה ב-present אוטומטית.
+          await supabase.from('checkins').upsert(
+            {
+              class_id: classId,
+              athlete_id: profile.id,
+              status: 'present',
+              checked_in_at: checkedAt.toISOString(),
+            },
+            { onConflict: 'class_id,athlete_id', ignoreDuplicates: true }
+          )
+        }
       } catch (e) {
         console.error('register error:', e)
         // rollback
@@ -192,13 +278,24 @@ export default function ClassSchedule({ profile, member }) {
                 const isRegistered = registeredIds.has(cls.id)
                 const atLimit = !isRegistered && limit !== Infinity && registeredIds.size >= limit
                 const busy = actionLoading[cls.id]
+                // השיעור של היום שכבר התחיל → נעול לרישום ולביטול גם יחד.
+                const locked = isThisWeekLocked(cls, now)
+                const disabled = busy || atLimit || locked
+
+                let label
+                if (busy) label = '...'
+                else if (locked && isRegistered) label = '✓ רשום · השיעור התחיל'
+                else if (locked) label = 'השיעור התחיל'
+                else if (isRegistered) label = '✓ רשום · בטל'
+                else if (atLimit) label = 'מגבלת מנוי'
+                else label = 'הירשם'
 
                 return (
                   <li
                     key={cls.id}
                     className={`bg-white rounded-xl border shadow-sm px-4 py-3 flex items-center justify-between gap-3 transition ${
                       isRegistered ? 'border-emerald-300 bg-emerald-50' : ''
-                    }`}
+                    } ${locked && !isRegistered ? 'opacity-60' : ''}`}
                   >
                     <div className="min-w-0">
                       <p className="font-semibold text-gray-800 text-sm">{cls.name}</p>
@@ -211,22 +308,18 @@ export default function ClassSchedule({ profile, member }) {
 
                     <button
                       onClick={() => toggleRegistration(cls.id)}
-                      disabled={busy || atLimit}
+                      disabled={disabled}
                       className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-40 ${
                         isRegistered
-                          ? 'bg-emerald-500 text-white hover:bg-red-100 hover:text-red-700'
-                          : atLimit
+                          ? locked
+                            ? 'bg-emerald-500 text-white cursor-not-allowed'
+                            : 'bg-emerald-500 text-white hover:bg-red-100 hover:text-red-700'
+                          : locked || atLimit
                           ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                           : 'bg-emerald-600 text-white hover:bg-emerald-700'
                       }`}
                     >
-                      {busy
-                        ? '...'
-                        : isRegistered
-                        ? '✓ רשום · בטל'
-                        : atLimit
-                        ? 'מגבלת מנוי'
-                        : 'הירשם'}
+                      {label}
                     </button>
                   </li>
                 )

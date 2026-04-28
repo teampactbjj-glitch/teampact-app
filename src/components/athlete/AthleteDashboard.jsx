@@ -1103,11 +1103,47 @@ export default function AthleteDashboard({ profile }) {
 
   async function handleRegister(cls) {
     const isRegistered = registrations.has(cls.id)
+
+    // אם השיעור של היום כבר התחיל — נעול לרישום ולביטול גם יחד.
+    // (אחרי start_time של השיעור — אין יותר שינוי.)
+    const isLockedNow = (() => {
+      const now = new Date()
+      if (now.getDay() !== cls.day_of_week) return false
+      const [hh = 0, mm = 0, ss = 0] = (cls.start_time || '00:00:00').split(':').map(Number)
+      const todayStart = new Date(now); todayStart.setHours(hh, mm, ss || 0, 0)
+      return now >= todayStart
+    })()
+    if (isLockedNow) {
+      alert(isRegistered
+        ? 'השיעור כבר התחיל — לא ניתן לבטל את הרישום.'
+        : 'השיעור כבר התחיל — לא ניתן להירשם.')
+      return
+    }
+
     if (!isRegistered && registrations.size >= limit && limit !== Infinity) {
       alert('הגעת למגבלת ' + limit + ' שיעורים שבועיים לפי המנוי שלך'); return
     }
     // לכידת week_start פעם אחת — מונע race condition בגבול שבוע (חצות שבת/ראשון)
     const weekStart = getWeekStart()
+
+    // חישוב תאריך/שעת ההופעה הבאה של השיעור (היום אם עוד לא התחיל, אחרת השבוע הבא).
+    // משמש לכתיבת checkin אוטומטי בעת רישום, וכמסנן בעת מחיקת checkin בעת ביטול.
+    const computeOccurrenceStart = () => {
+      const now = new Date()
+      const [hh = 0, mm = 0, ss = 0] = (cls.start_time || '00:00:00').split(':').map(Number)
+      const todayDow = now.getDay()
+      if (todayDow === cls.day_of_week) {
+        const todayStart = new Date(now)
+        todayStart.setHours(hh, mm, ss || 0, 0)
+        if (now < todayStart) return todayStart
+      }
+      let daysAhead = (cls.day_of_week - todayDow + 7) % 7
+      if (daysAhead === 0) daysAhead = 7
+      const nextStart = new Date(now)
+      nextStart.setDate(now.getDate() + daysAhead)
+      nextStart.setHours(hh, mm, ss || 0, 0)
+      return nextStart
+    }
 
     // Optimistic update: מעדכן UI מיד, לפני קריאה לשרת.
     // כך אם המשתמש מחליף טאב/יוצא מיד אחרי לחיצה — ה-UI כבר נכון,
@@ -1118,6 +1154,17 @@ export default function AthleteDashboard({ profile }) {
         const { error } = await supabase.from('class_registrations').delete()
           .eq('class_id', cls.id).eq('athlete_id', profile.id).eq('week_start', weekStart)
         if (error) throw error
+        // ביטול רישום → מוחק את ה-checkin המוטמע 'present' של ההופעה הקרובה.
+        // אם המאמן כבר סימן 'absent' לא דורסים — ה-status filter מוודא זאת.
+        const occStart = computeOccurrenceStart()
+        const dayStart = new Date(occStart); dayStart.setHours(0, 0, 0, 0)
+        const dayEnd = new Date(dayStart); dayEnd.setHours(23, 59, 59, 999)
+        await supabase.from('checkins').delete()
+          .eq('class_id', cls.id)
+          .eq('athlete_id', profile.id)
+          .eq('status', 'present')
+          .gte('checked_in_at', dayStart.toISOString())
+          .lte('checked_in_at', dayEnd.toISOString())
       } catch (e) {
         console.error('unregister error:', e)
         // rollback — מחזיר את הרישום אם הביטול נכשל
@@ -1139,6 +1186,20 @@ export default function AthleteDashboard({ profile }) {
           { onConflict: 'athlete_id,class_id' }
         )
         if (error) throw error
+        // רישום → checkin אוטומטי 'present' עם תאריך/שעת השיעור הקרוב.
+        // ככה המאמן רואה את כולם נוכחים כברירת מחדל, ומסמן ✕ נעדר רק לחריגים.
+        // ignoreDuplicates=true: אם כבר קיים checkin (כולל absent) לא דורסים אותו.
+        const occStart = computeOccurrenceStart()
+        const checkedAt = new Date(occStart); checkedAt.setHours(12, 0, 0, 0)
+        await supabase.from('checkins').upsert(
+          {
+            class_id: cls.id,
+            athlete_id: profile.id,
+            status: 'present',
+            checked_in_at: checkedAt.toISOString(),
+          },
+          { onConflict: 'class_id,athlete_id', ignoreDuplicates: true }
+        )
       } catch (e) {
         console.error('register error:', e)
         // rollback רק כשנכשל ממש

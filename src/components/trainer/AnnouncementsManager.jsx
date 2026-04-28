@@ -32,8 +32,10 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   const [branches, setBranches] = useState([])
 
   useEffect(() => {
-    supabase.from('branches').select('id, name').order('name').then(({ data }) => setBranches(data || []))
-  }, [])
+    let q = supabase.from('branches').select('id, name').order('name')
+    if (!isAdmin) q = q.eq('hidden', false)
+    q.then(({ data }) => setBranches(data || []))
+  }, [isAdmin])
 
   function openEdit(item) {
     setEditingId(item.id)

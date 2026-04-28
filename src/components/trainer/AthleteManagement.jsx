@@ -42,7 +42,9 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
 
   useEffect(() => {
     (async () => {
-      const { data: all } = await supabase.from('branches').select('id, name').order('name')
+      let bq = supabase.from('branches').select('id, name').order('name')
+      if (!isAdmin) bq = bq.eq('hidden', false)
+      const { data: all } = await bq
       if (!all) return
       if (isAdmin || !trainerId) { setBranches(all); return }
       const { data: coaches } = await supabase.from('coaches').select('branch_id').eq('user_id', trainerId)
@@ -340,7 +342,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-800">ניהול מתאמנים</h2>
         <div className="flex gap-2">
-          <ImportAthletes onImported={fetchAthletes} />
+          <ImportAthletes onImported={fetchAthletes} isAdmin={isAdmin} />
           <button onClick={openAdd} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
             + הוסף מתאמן
           </button>

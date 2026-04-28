@@ -14,7 +14,7 @@ export default function RegisterPage() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    supabase.from('branches').select('id, name').then(({ data }) => setBranches(data || []))
+    supabase.from('branches').select('id, name').eq('hidden', false).then(({ data }) => setBranches(data || []))
     // אם המשתמש כבר מחובר ומאושר — מעביר אותו לאפליקציה
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) return

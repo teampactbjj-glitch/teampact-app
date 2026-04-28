@@ -692,7 +692,7 @@ function ProfileTab({ profile, member }) {
   const [branchSessions, setBranchSessions] = useState({}) // {branchId: count}
 
   useEffect(() => {
-    supabase.from('branches').select('id, name').order('name').then(({ data }) => {
+    supabase.from('branches').select('id, name').eq('hidden', false).order('name').then(({ data }) => {
       setAllBranches(data || [])
     })
   }, [])

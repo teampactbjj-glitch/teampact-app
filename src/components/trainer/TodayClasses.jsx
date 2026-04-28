@@ -79,9 +79,11 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   const [showPending, setShowPending] = useState(true)
 
   useEffect(() => {
-    supabase.from('branches').select('id, name').order('name').then(({ data }) => setBranches(data || []))
+    let q = supabase.from('branches').select('id, name').order('name')
+    if (!isAdmin) q = q.eq('hidden', false)
+    q.then(({ data }) => setBranches(data || []))
     supabase.from('coaches').select('id, name, branch_id, user_id').order('name').then(({ data }) => setCoaches(data || []))
-  }, [])
+  }, [isAdmin])
 
   // שליפת כל הבקשות הממתינות (כל הימים) — להצגה למנהל בראש המסך
   async function fetchPendingRequests() {

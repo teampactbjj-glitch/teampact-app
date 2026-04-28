@@ -84,14 +84,16 @@ function parseFile(file) {
   })
 }
 
-export default function ImportAthletes({ onImported }) {
+export default function ImportAthletes({ onImported, isAdmin = false }) {
   const inputRef = useRef()
   const [show, setShow] = useState(false)
   const [branches, setBranches] = useState([])
   const [branchId, setBranchId] = useState('')
 
   useEffect(() => {
-    supabase.from('branches').select('id, name').order('name').then(({ data }) => {
+    let q = supabase.from('branches').select('id, name').order('name')
+    if (!isAdmin) q = q.eq('hidden', false)
+    q.then(({ data }) => {
       if (data?.length) {
         setBranches(data)
         setBranchId(p => p || data[0].id)

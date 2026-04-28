@@ -1,6 +1,6 @@
 // TeamPact service worker
 // חשוב: לכל release חדש — יש לעדכן את המחרוזת למטה כדי להכריח את הדפדפן לזהות גרסה חדשה.
-const SW_VERSION = '2026-04-24-reports-v1'
+const SW_VERSION = '2026-04-28-register-no-coach-v1'
 self.SW_VERSION = SW_VERSION
 
 self.addEventListener('install', () => {

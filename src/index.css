@@ -72,18 +72,139 @@ html.a11y-high-contrast img {
   filter: contrast(1.2);
 }
 
-/* מצב כהה - הופך את כל האפליקציה לעיצוב כהה.
-   נוח בתאורה נמוכה / לרגישים לאור / לחיסכון בסוללה ב-OLED.
-   טכניקה: filter invert + hue-rotate, ועיקוף לתמונות/וידאו כדי שלא יראו הפוכים. */
-html.a11y-dark-mode {
-  filter: invert(1) hue-rotate(180deg);
-  background: #ffffff;
+/* ============================================================
+   מצב כהה — Dark Mode אמיתי עם פלטת צבעים מותאמת
+   פלטה: slate-900 רקע, slate-800 surface, slate-700 borders
+   טקסט: slate-100 ראשי, slate-400 משני
+   צבעי תפקיד: emerald-400, blue-400, red-400, amber-400 (גוונים בהירים יותר לקריאות)
+   ============================================================ */
+
+html.a11y-dark-mode,
+html.a11y-dark-mode body,
+html.a11y-dark-mode #root {
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
 }
-html.a11y-dark-mode img,
-html.a11y-dark-mode video,
-html.a11y-dark-mode picture,
-html.a11y-dark-mode svg {
-  filter: invert(1) hue-rotate(180deg);
+
+/* רקעים - כל הוריאציות של white/gray הופכות לכהות */
+html.a11y-dark-mode .bg-white,
+html.a11y-dark-mode .bg-gray-50,
+html.a11y-dark-mode .bg-gray-100 {
+  background-color: #1e293b !important;
+}
+html.a11y-dark-mode .bg-gray-200,
+html.a11y-dark-mode .bg-gray-300 {
+  background-color: #334155 !important;
+}
+
+/* רקעים צבעוניים בהירים - הופכים לגרסה כהה יותר */
+html.a11y-dark-mode .bg-emerald-50,
+html.a11y-dark-mode .bg-emerald-100 { background-color: #064e3b !important; }
+html.a11y-dark-mode .bg-blue-50,
+html.a11y-dark-mode .bg-blue-100 { background-color: #1e3a8a !important; }
+html.a11y-dark-mode .bg-red-50,
+html.a11y-dark-mode .bg-red-100 { background-color: #7f1d1d !important; }
+html.a11y-dark-mode .bg-amber-50,
+html.a11y-dark-mode .bg-amber-100 { background-color: #78350f !important; }
+html.a11y-dark-mode .bg-orange-50,
+html.a11y-dark-mode .bg-orange-100 { background-color: #7c2d12 !important; }
+html.a11y-dark-mode .bg-purple-50,
+html.a11y-dark-mode .bg-purple-100 { background-color: #581c87 !important; }
+html.a11y-dark-mode .bg-rose-50,
+html.a11y-dark-mode .bg-rose-100 { background-color: #881337 !important; }
+
+/* טקסט - גוונים בהירים מותאמים */
+html.a11y-dark-mode .text-gray-400,
+html.a11y-dark-mode .text-gray-500,
+html.a11y-dark-mode .text-gray-600 { color: #94a3b8 !important; }
+html.a11y-dark-mode .text-gray-700,
+html.a11y-dark-mode .text-gray-800,
+html.a11y-dark-mode .text-gray-900,
+html.a11y-dark-mode .text-black { color: #e2e8f0 !important; }
+
+/* צבעי תפקיד - גוונים יותר בהירים לקריאות במצב כהה */
+html.a11y-dark-mode .text-emerald-600,
+html.a11y-dark-mode .text-emerald-700,
+html.a11y-dark-mode .text-emerald-800,
+html.a11y-dark-mode .text-emerald-900 { color: #34d399 !important; }
+html.a11y-dark-mode .text-blue-600,
+html.a11y-dark-mode .text-blue-700,
+html.a11y-dark-mode .text-blue-800,
+html.a11y-dark-mode .text-blue-900 { color: #60a5fa !important; }
+html.a11y-dark-mode .text-red-500,
+html.a11y-dark-mode .text-red-600,
+html.a11y-dark-mode .text-red-700 { color: #f87171 !important; }
+html.a11y-dark-mode .text-amber-700,
+html.a11y-dark-mode .text-amber-800,
+html.a11y-dark-mode .text-amber-900 { color: #fbbf24 !important; }
+html.a11y-dark-mode .text-orange-600,
+html.a11y-dark-mode .text-orange-700 { color: #fb923c !important; }
+html.a11y-dark-mode .text-purple-600,
+html.a11y-dark-mode .text-purple-700 { color: #c084fc !important; }
+html.a11y-dark-mode .text-rose-600,
+html.a11y-dark-mode .text-rose-700 { color: #fb7185 !important; }
+
+/* גבולות - גוון אמצעי שעובד על רקע כהה */
+html.a11y-dark-mode .border,
+html.a11y-dark-mode .border-2,
+html.a11y-dark-mode .border-gray-100,
+html.a11y-dark-mode .border-gray-200,
+html.a11y-dark-mode .border-gray-300 {
+  border-color: #475569 !important;
+}
+html.a11y-dark-mode .border-emerald-200,
+html.a11y-dark-mode .border-emerald-300 { border-color: #047857 !important; }
+html.a11y-dark-mode .border-blue-200,
+html.a11y-dark-mode .border-blue-300 { border-color: #1d4ed8 !important; }
+html.a11y-dark-mode .border-red-200,
+html.a11y-dark-mode .border-red-300 { border-color: #b91c1c !important; }
+html.a11y-dark-mode .border-amber-200,
+html.a11y-dark-mode .border-amber-300 { border-color: #b45309 !important; }
+
+/* divide-y / divide-gray וכד׳ */
+html.a11y-dark-mode [class*="divide-gray"] > * + * {
+  border-color: #475569 !important;
+}
+
+/* כפתורים מלאים - שמירה על הצבעים אבל החשכת הגוון */
+html.a11y-dark-mode .bg-emerald-500,
+html.a11y-dark-mode .bg-emerald-600 { background-color: #059669 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-emerald-700 { background-color: #047857 !important; }
+html.a11y-dark-mode .bg-blue-500,
+html.a11y-dark-mode .bg-blue-600 { background-color: #2563eb !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-blue-700 { background-color: #1d4ed8 !important; }
+html.a11y-dark-mode .bg-red-500,
+html.a11y-dark-mode .bg-red-600 { background-color: #dc2626 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-red-700 { background-color: #b91c1c !important; }
+
+/* Inputs / textareas */
+html.a11y-dark-mode input,
+html.a11y-dark-mode textarea,
+html.a11y-dark-mode select {
+  background-color: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #475569 !important;
+}
+html.a11y-dark-mode input::placeholder,
+html.a11y-dark-mode textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Gradients - מחליף לרקע אחיד כהה */
+html.a11y-dark-mode [class*="bg-gradient"] {
+  background: #1e293b !important;
+}
+/* gradient של מסך התחברות נשאר עם הצבעים שלו - הוא כבר כהה */
+html.a11y-dark-mode .from-gray-900,
+html.a11y-dark-mode .via-gray-800 { /* keep */ }
+
+/* shadow - חזק יותר במצב כהה */
+html.a11y-dark-mode .shadow,
+html.a11y-dark-mode .shadow-md,
+html.a11y-dark-mode .shadow-lg,
+html.a11y-dark-mode .shadow-xl,
+html.a11y-dark-mode .shadow-2xl {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
 }
 
 /* השהיית כל האנימציות והמעברים — חיוני למי שסובל מורטיגו / רגישות */

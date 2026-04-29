@@ -16,7 +16,10 @@ import { isStandalone } from '../../lib/platform'
 
 function RegisterLinkCard() {
   const [copied, setCopied] = useState(false)
+  const [showQr, setShowQr] = useState(false)
   const url = typeof window !== 'undefined' ? `${window.location.origin}/register` : '/register'
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(url)}`
+
   async function copy() {
     try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000) }
     catch { prompt('העתק את הקישור:', url) }
@@ -26,6 +29,11 @@ function RegisterLinkCard() {
       try { await navigator.share({ title: 'הצטרפות ל-TeamPact', text: 'הירשם כמתאמן חדש', url }) } catch {}
     } else { copy() }
   }
+  function sendWhatsapp() {
+    const text = encodeURIComponent(`היי, הוזמנת להצטרף ל-TeamPact כמתאמן. הירשם כאן: ${url}`)
+    window.open(`https://wa.me/?text=${text}`, '_blank')
+  }
+
   return (
     <div className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl p-4 shadow-md">
       <div className="flex items-center gap-2 mb-2">
@@ -34,14 +42,26 @@ function RegisterLinkCard() {
       </div>
       <p className="text-xs text-blue-100 mb-3">שלח את הקישור הזה למתאמן חדש — הוא ימלא פרטים ואתה תאשר אותו תחת "בקשות הצטרפות".</p>
       <div className="bg-white/10 backdrop-blur border border-white/20 rounded-lg px-3 py-2 text-xs font-mono break-all mb-2">{url}</div>
-      <div className="flex gap-2">
-        <button onClick={copy} className="flex-1 bg-white text-blue-700 hover:bg-blue-50 font-bold py-2 rounded-lg text-sm">
-          {copied ? '✓ הועתק' : '📋 העתק קישור'}
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={copy} className="bg-white text-blue-700 hover:bg-blue-50 font-bold py-2 rounded-lg text-sm">
+          {copied ? '✓ הועתק' : '📋 העתק'}
         </button>
-        <button onClick={share} className="flex-1 bg-blue-900 hover:bg-blue-950 text-white font-bold py-2 rounded-lg text-sm">
+        <button onClick={share} className="bg-blue-900 hover:bg-blue-950 text-white font-bold py-2 rounded-lg text-sm">
           📤 שתף
         </button>
+        <button onClick={sendWhatsapp} className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-lg text-sm">
+          💬 וואטסאפ
+        </button>
+        <button onClick={() => setShowQr(s => !s)} className="bg-blue-900/60 hover:bg-blue-900/80 text-white font-bold py-2 rounded-lg text-sm">
+          {showQr ? '▲ סגור QR' : '📱 הצג QR'}
+        </button>
       </div>
+      {showQr && (
+        <div className="mt-3 bg-white rounded-lg p-3 flex flex-col items-center">
+          <img src={qrSrc} alt="QR להרשמת מתאמן" className="w-48 h-48" />
+          <p className="text-xs text-gray-600 mt-2 text-center">סרוק את הקוד כדי להגיע ישירות לטופס ההרשמה</p>
+        </div>
+      )}
     </div>
   )
 }

@@ -71,6 +71,20 @@ export default function CoachesManager({ profile, onChange }) {
     setTimeout(() => setMsg(null), 4000)
   }
 
+  // ---------- קיבוץ מאמנים לפי שם — מאמן עם 2 סניפים = שורה אחת ----------
+  const coachGroups = (() => {
+    const map = new Map()
+    for (const c of coaches) {
+      const key = c.name
+      if (!map.has(key)) map.set(key, { name: c.name, rows: [], totalClasses: 0, hasUser: false })
+      const g = map.get(key)
+      g.rows.push(c)
+      g.totalClasses += classCounts[c.id] || 0
+      if (c.user_id) g.hasUser = true
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'he'))
+  })()
+
   // ---------- אישור / דחיית בקשת מאמן ----------
   async function approveTrainer(t) {
     setBusyId(t.id)
@@ -142,29 +156,80 @@ export default function CoachesManager({ profile, onChange }) {
     fetchAll()
   }
 
-  // ---------- החלפה רוחבית: שיעורים של מאמן X → מאמן Y ----------
+  // ---------- שינוי שם של כל הקבוצה (כל הסניפים של אותו מאמן) ----------
+  async function renameCoachGroup(group, newName) {
+    const trimmed = (newName || '').trim()
+    if (!trimmed || trimmed === group.name) return
+    setBusyId(`group:${group.name}`)
+    const ids = group.rows.map(r => r.id)
+    const { error: cErr } = await supabase.from('coaches').update({ name: trimmed }).in('id', ids)
+    if (cErr) { setBusyId(null); showMsg('err', cErr.message); return }
+    // עדכון coach_name בשיעורים — לא חובה אבל שומר עקביות
+    await supabase.from('classes').update({ coach_name: trimmed }).in('coach_id', ids)
+    setBusyId(null)
+    showMsg('ok', 'השם עודכן')
+    fetchAll()
+  }
+
+  // ---------- הוספת סניף נוסף למאמן קיים (יוצר שורה חדשה עם אותו שם) ----------
+  async function addBranchToCoach(group, branchId) {
+    if (!branchId) return
+    // לא לאפשר כפילות — אם הסניף כבר קיים אצלו
+    if (group.rows.some(r => r.branch_id === branchId)) {
+      showMsg('err', 'המאמן כבר משוייך לסניף הזה')
+      return
+    }
+    const userId = group.rows.find(r => r.user_id)?.user_id || null
+    setBusyId(`group:${group.name}`)
+    const { error } = await supabase.from('coaches').insert({
+      name: group.name,
+      branch_id: branchId,
+      user_id: userId,
+    })
+    setBusyId(null)
+    if (error) { showMsg('err', error.message); return }
+    showMsg('ok', 'הסניף נוסף למאמן')
+    fetchAll()
+  }
+
+  // ---------- מחיקת שיוך-סניף יחיד של מאמן ----------
+  async function deleteCoachRow(coachId) {
+    const cnt = classCounts[coachId] || 0
+    if (cnt > 0) {
+      showMsg('err', `אי אפשר להסיר — יש ${cnt} שיעורים פעילים בסניף הזה. השתמש ב"החלף" קודם.`)
+      return
+    }
+    if (!window.confirm('להסיר את שיוך הסניף הזה למאמן?')) return
+    setBusyId(coachId)
+    const { error } = await supabase.from('coaches').delete().eq('id', coachId)
+    setBusyId(null)
+    if (error) { showMsg('err', error.message); return }
+    showMsg('ok', 'הסניף הוסר')
+    fetchAll()
+  }
+
+  // ---------- החלפה רוחבית: כל השיעורים של קבוצת מאמן (כל הסניפים) → מאמן יעד ----------
+  // הלוגיקה: לכל שורת המקור (המאמן בסניף X), אנחנו מחפשים שורת יעד עם אותו סניף.
+  // אם אין — נשארים על שורת היעד הראשונה (לא אידיאלי אבל לא שובר).
   async function performReplace() {
     if (!replacing) return
-    const { fromCoach, toCoachId, scope } = replacing
+    const { fromGroup, toCoachId } = replacing
     const toCoach = coaches.find(c => c.id === toCoachId)
     if (!toCoach) { showMsg('err', 'לא נבחר מאמן יעד'); return }
-    if (toCoach.id === fromCoach.id) { showMsg('err', 'אותו מאמן בדיוק'); return }
+    // לא לאפשר העברה לאותה קבוצה
+    if (fromGroup.rows.some(r => r.id === toCoach.id)) {
+      showMsg('err', 'מאמן היעד הוא אותו מאמן')
+      return
+    }
+    if (!window.confirm(`להעביר את כל ${fromGroup.totalClasses} השיעורים של ${fromGroup.name} אל ${toCoach.name}?`)) return
 
-    const confirmText = scope === 'all'
-      ? `להעביר את כל השיעורים של ${fromCoach.name} אל ${toCoach.name}?`
-      : `להעביר רק שיעורי ${fromCoach.name} בסניף שלו אל ${toCoach.name}?`
-    if (!window.confirm(confirmText)) return
-
-    setBusyId(fromCoach.id)
-    let q = supabase
+    setBusyId(`group:${fromGroup.name}`)
+    const fromIds = fromGroup.rows.map(r => r.id)
+    const { error } = await supabase
       .from('classes')
       .update({ coach_id: toCoach.id, coach_name: toCoach.name })
-      .eq('coach_id', fromCoach.id)
+      .in('coach_id', fromIds)
       .is('deleted_at', null)
-    if (scope === 'branch' && fromCoach.branch_id) {
-      q = q.eq('branch_id', fromCoach.branch_id)
-    }
-    const { error } = await q
     setBusyId(null)
     if (error) { showMsg('err', `שגיאה: ${error.message}`); return }
     showMsg('ok', `השיעורים הועברו ל-${toCoach.name}`)
@@ -263,7 +328,7 @@ export default function CoachesManager({ profile, onChange }) {
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-gray-800 text-base flex items-center gap-2">
             <span>👥</span>
-            מאמנים פעילים ({coaches.length})
+            מאמנים פעילים ({coachGroups.length})
           </h2>
           <button
             onClick={() => setShowAdd(s => !s)}
@@ -302,21 +367,21 @@ export default function CoachesManager({ profile, onChange }) {
           </div>
         )}
 
-        {coaches.length === 0 ? (
+        {coachGroups.length === 0 ? (
           <p className="text-sm text-gray-400 py-4 text-center">אין מאמנים</p>
         ) : (
           <div className="space-y-2">
-            {coaches.map(c => (
-              <CoachRow
-                key={c.id}
-                coach={c}
+            {coachGroups.map(group => (
+              <CoachGroupRow
+                key={group.name}
+                group={group}
                 branches={branches}
-                allCoaches={coaches}
-                classCount={classCounts[c.id] || 0}
-                isBusy={busyId === c.id}
-                onUpdate={(patch) => updateCoach(c.id, patch)}
-                onStartReplace={(scope) => setReplacing({ fromCoach: c, toCoachId: '', scope })}
-                onDelete={() => deleteCoach(c)}
+                classCounts={classCounts}
+                busyId={busyId}
+                onRenameAll={(newName) => renameCoachGroup(group, newName)}
+                onAddBranch={(branchId) => addBranchToCoach(group, branchId)}
+                onRemoveBranch={(coachId) => deleteCoachRow(coachId)}
+                onStartReplaceAll={() => setReplacing({ fromGroup: group, toCoachId: '', scope: 'all' })}
               />
             ))}
           </div>
@@ -327,11 +392,9 @@ export default function CoachesManager({ profile, onChange }) {
       {replacing && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setReplacing(null)}>
           <div className="bg-white rounded-2xl p-5 max-w-sm w-full space-y-3" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-lg text-gray-800">
-              {replacing.scope === 'all' ? 'החלפת מאמן בכל השיעורים' : 'החלפת מאמן בסניף שלו'}
-            </h3>
+            <h3 className="font-bold text-lg text-gray-800">החלפת מאמן בכל השיעורים</h3>
             <p className="text-sm text-gray-600">
-              העברה מ-<strong>{replacing.fromCoach.name}</strong> אל:
+              העברה מ-<strong>{replacing.fromGroup.name}</strong> ({replacing.fromGroup.totalClasses} שיעורים) אל:
             </p>
             <select
               className="w-full border rounded-lg px-3 py-2 text-sm"
@@ -339,7 +402,7 @@ export default function CoachesManager({ profile, onChange }) {
               onChange={e => setReplacing(r => ({ ...r, toCoachId: e.target.value }))}
             >
               <option value="">בחר מאמן יעד</option>
-              {coaches.filter(c => c.id !== replacing.fromCoach.id).map(c => (
+              {coaches.filter(c => !replacing.fromGroup.rows.some(r => r.id === c.id)).map(c => (
                 <option key={c.id} value={c.id}>
                   {c.name}{c.branches?.name ? ` — ${c.branches.name}` : ''}
                 </option>
@@ -348,10 +411,10 @@ export default function CoachesManager({ profile, onChange }) {
             <div className="flex gap-2 pt-2">
               <button
                 onClick={performReplace}
-                disabled={!replacing.toCoachId || busyId === replacing.fromCoach.id}
+                disabled={!replacing.toCoachId || busyId === `group:${replacing.fromGroup.name}`}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-bold disabled:opacity-50"
               >
-                {busyId === replacing.fromCoach.id ? '...' : 'אשר החלפה'}
+                {busyId === `group:${replacing.fromGroup.name}` ? '...' : 'אשר החלפה'}
               </button>
               <button
                 onClick={() => setReplacing(null)}
@@ -367,79 +430,125 @@ export default function CoachesManager({ profile, onChange }) {
   )
 }
 
-// ---------- שורת מאמן עם עריכה inline ----------
-function CoachRow({ coach, branches, classCount, isBusy, onUpdate, onStartReplace, onDelete }) {
-  const [editing, setEditing] = useState(false)
-  const [name, setName] = useState(coach.name)
-  const [branchId, setBranchId] = useState(coach.branch_id || '')
+// ---------- שורת קבוצת מאמן (מאוחד לפי שם) ----------
+function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAddBranch, onRemoveBranch, onStartReplaceAll }) {
+  const [renaming, setRenaming] = useState(false)
+  const [newName, setNewName] = useState(group.name)
+  const [adding, setAdding] = useState(false)
+  const [newBranchId, setNewBranchId] = useState('')
 
-  function save() {
-    const patch = {}
-    if (name.trim() && name.trim() !== coach.name) patch.name = name.trim()
-    if ((branchId || null) !== (coach.branch_id || null)) patch.branch_id = branchId || null
-    if (Object.keys(patch).length === 0) { setEditing(false); return }
-    onUpdate(patch)
-    setEditing(false)
-  }
+  const groupBusy = busyId === `group:${group.name}`
+
+  // סניפים שעדיין לא משויכים לקבוצה
+  const usedBranchIds = new Set(group.rows.map(r => r.branch_id).filter(Boolean))
+  const availableBranches = branches.filter(b => !usedBranchIds.has(b.id))
 
   return (
     <div className="border rounded-xl p-3 hover:bg-gray-50 transition">
-      {!editing ? (
-        <div>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex-1">
-              <div className="font-bold text-gray-800 flex items-center gap-2">
-                {coach.name}
-                {coach.user_id ? (
-                  <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">מחובר</span>
-                ) : (
-                  <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">ללא משתמש</span>
-                )}
-              </div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                📍 {coach.branches?.name || 'ללא סניף'} · 📋 {classCount} שיעורים
-              </div>
+      {/* כותרת — שם המאמן */}
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex-1 min-w-0">
+          {renaming ? (
+            <div className="flex gap-1.5">
+              <input
+                className="flex-1 border rounded-lg px-2 py-1 text-sm"
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                autoFocus
+              />
+              <button
+                onClick={() => { onRenameAll(newName); setRenaming(false) }}
+                className="text-xs bg-blue-600 text-white px-2 py-1 rounded font-bold"
+              >שמור</button>
+              <button
+                onClick={() => { setRenaming(false); setNewName(group.name) }}
+                className="text-xs bg-gray-100 px-2 py-1 rounded font-bold"
+              >ביטול</button>
             </div>
-            <button
-              onClick={() => setEditing(true)}
-              disabled={isBusy}
-              className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded font-medium"
-            >ערוך</button>
-          </div>
-          <div className="flex gap-2 mt-2">
-            <button
-              onClick={() => onStartReplace('all')}
-              disabled={isBusy || classCount === 0}
-              className="flex-1 text-xs bg-amber-100 text-amber-800 hover:bg-amber-200 py-1.5 rounded font-bold disabled:opacity-40"
-              title={classCount === 0 ? 'אין שיעורים להעברה' : 'העברת כל השיעורים למאמן אחר'}
-            >🔄 החלף בכל השיעורים</button>
-            <button
-              onClick={onDelete}
-              disabled={isBusy || classCount > 0}
-              className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded font-bold disabled:opacity-40"
-              title={classCount > 0 ? 'קודם החלף את השיעורים' : 'מחיקת המאמן'}
-            >🗑</button>
-          </div>
+          ) : (
+            <div className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
+              <span>{group.name}</span>
+              {group.hasUser ? (
+                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">מחובר</span>
+              ) : (
+                <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">ללא משתמש</span>
+              )}
+              <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">📋 {group.totalClasses} שיעורים</span>
+            </div>
+          )}
+        </div>
+        {!renaming && (
+          <button
+            onClick={() => setRenaming(true)}
+            disabled={groupBusy}
+            className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded font-medium"
+          >שנה שם</button>
+        )}
+      </div>
+
+      {/* רשימת סניפים — כל סניף עם כפתור הסרה */}
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {group.rows.length === 0 ? (
+          <span className="text-xs text-gray-400">ללא סניפים</span>
+        ) : (
+          group.rows.map(row => {
+            const branchName = row.branches?.name || branches.find(b => b.id === row.branch_id)?.name || 'ללא סניף'
+            const cnt = classCounts[row.id] || 0
+            return (
+              <span
+                key={row.id}
+                className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-100 rounded-full px-2 py-1"
+              >
+                📍 {branchName}
+                {cnt > 0 && <span className="text-[10px] text-gray-500">({cnt})</span>}
+                <button
+                  onClick={() => onRemoveBranch(row.id)}
+                  disabled={busyId === row.id || cnt > 0}
+                  className="text-blue-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={cnt > 0 ? `יש ${cnt} שיעורים — קודם החלף או מחק את השיעורים` : 'הסר את הסניף הזה'}
+                >✕</button>
+              </span>
+            )
+          })
+        )}
+      </div>
+
+      {/* הוספת סניף + פעולות */}
+      {adding ? (
+        <div className="flex gap-1.5 mb-2">
+          <select
+            className="flex-1 border rounded-lg px-2 py-1 text-sm"
+            value={newBranchId}
+            onChange={e => setNewBranchId(e.target.value)}
+            autoFocus
+          >
+            <option value="">בחר סניף</option>
+            {availableBranches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <button
+            onClick={() => { if (newBranchId) { onAddBranch(newBranchId); setAdding(false); setNewBranchId('') } }}
+            disabled={!newBranchId || groupBusy}
+            className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold disabled:opacity-50"
+          >הוסף</button>
+          <button
+            onClick={() => { setAdding(false); setNewBranchId('') }}
+            className="text-xs bg-gray-100 px-2 py-1 rounded font-bold"
+          >ביטול</button>
         </div>
       ) : (
-        <div className="space-y-2">
-          <input
-            className="w-full border rounded-lg px-3 py-2 text-sm"
-            value={name}
-            onChange={e => setName(e.target.value)}
-          />
-          <select
-            className="w-full border rounded-lg px-3 py-2 text-sm"
-            value={branchId}
-            onChange={e => setBranchId(e.target.value)}
-          >
-            <option value="">ללא סניף</option>
-            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-          <div className="flex gap-2">
-            <button onClick={save} disabled={isBusy} className="flex-1 bg-blue-600 text-white py-1.5 rounded-lg text-sm font-bold disabled:opacity-50">שמור</button>
-            <button onClick={() => { setEditing(false); setName(coach.name); setBranchId(coach.branch_id || '') }} className="flex-1 bg-gray-100 text-gray-700 py-1.5 rounded-lg text-sm font-bold">ביטול</button>
-          </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setAdding(true)}
+            disabled={groupBusy || availableBranches.length === 0}
+            className="flex-1 text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 py-1.5 rounded font-bold disabled:opacity-40"
+            title={availableBranches.length === 0 ? 'המאמן כבר בכל הסניפים' : 'הוסף שיוך לסניף נוסף'}
+          >➕ הוסף סניף</button>
+          <button
+            onClick={onStartReplaceAll}
+            disabled={groupBusy || group.totalClasses === 0}
+            className="flex-1 text-xs bg-amber-100 text-amber-800 hover:bg-amber-200 py-1.5 rounded font-bold disabled:opacity-40"
+            title={group.totalClasses === 0 ? 'אין שיעורים להעברה' : 'העברת כל השיעורים למאמן אחר'}
+          >🔄 החלף בכל השיעורים</button>
         </div>
       )}
     </div>

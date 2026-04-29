@@ -171,6 +171,17 @@ if (!ok) return                // במקום if (!window.confirm(...)) return
 27. ✅ AthleteLogin.jsx – לינק לדף נגישות במסך ההתחברות.
 28. ✅ TrainerLogin.jsx – לינק לדף נגישות במסך ההתחברות של מאמנים.
 
+**שלב E – Accessibility Widget צף – ✅ הושלם (29.04.2026):**
+
+29. ✅ `src/components/AccessibilityWidget.jsx` – ווידג'ט פעיל:
+    - כפתור צף ♿ בפינה הימנית-תחתונה (z-index 9999)
+    - 5 הגדרות: גודל פונט (3 רמות), ניגודיות, השהיית אנימציות, הדגשת קישורים+פוקוס, סמן גדול
+    - שמירה ב-localStorage תחת `tp-a11y-prefs`
+    - החלה מיידית בטעינה (לפני React mount, מונע הבזקה)
+    - dialog נגיש: role=dialog, aria-modal, ESC, focus trap, focus restore
+30. ✅ `src/index.css` – CSS גלובלי עם classes: `a11y-text-large`, `a11y-text-xl`, `a11y-high-contrast`, `a11y-no-animations`, `a11y-emphasized-links`, `a11y-big-cursor`
+31. ✅ `src/App.jsx` – AccessibilityWidget מופיע בכל המסכים (login, register, dashboard, pending, error)
+
 **משימות שנותרו (לא חיוניות מבחינה חוקית):**
 1. **בדיקה ידנית של דף /accessibility** – נווט לכתובת `/accessibility` ובדוק שהדף מוצג כראוי בצד מובייל ודסקטופ.
 2. **בדיקה ידנית של כל ממשק המתאמן** (התחברות → יומן → חנות → פרופיל → הזמנת מוצר עם רכיבים).

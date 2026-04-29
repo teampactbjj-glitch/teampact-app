@@ -7,6 +7,7 @@ import RegisterPage from './components/RegisterPage'
 import RegisterCoachPage from './components/auth/RegisterCoachPage'
 import PendingApprovalScreen from './components/PendingApprovalScreen'
 import AccessibilityPage from './components/AccessibilityPage'
+import AccessibilityWidget from './components/AccessibilityWidget'
 import { SkipLink } from './components/a11y'
 
 export default function App() {
@@ -16,8 +17,8 @@ export default function App() {
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
 
-  if (window.location.pathname === '/register') return <RegisterPage />
-  if (window.location.pathname === '/register-coach') return <RegisterCoachPage />
+  if (window.location.pathname === '/register') return (<><RegisterPage /><AccessibilityWidget /></>)
+  if (window.location.pathname === '/register-coach') return (<><RegisterCoachPage /><AccessibilityWidget /></>)
   if (window.location.pathname === '/accessibility') return <AccessibilityPage />
 
   useEffect(() => {
@@ -152,19 +153,19 @@ export default function App() {
     </div>
   ) : null
 
-  if (!session) return (<><SkipLink /><UpdateBanner /><AthleteLogin /></>)
+  if (!session) return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><AthleteLogin /></>)
 
   if (loadingProfile) return (
-    <><SkipLink /><UpdateBanner /><div className="min-h-screen flex items-center justify-center" role="status" aria-live="polite">
+    <><SkipLink /><UpdateBanner /><AccessibilityWidget /><div className="min-h-screen flex items-center justify-center" role="status" aria-live="polite">
       <p className="text-gray-600">טוען...</p>
     </div></>
   )
 
   // מאמן לא מאושר → מסך המתנה (ולא Dashboard עם נתוני מועדון)
   if (profile?.role === 'trainer' && profile?.is_approved === false) {
-    return (<><SkipLink /><UpdateBanner /><PendingApprovalScreen /></>)
+    return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><PendingApprovalScreen /></>)
   }
-  if (profile?.role === 'trainer') return (<><SkipLink /><UpdateBanner /><TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} /></>)
-  if (memberStatus === 'pending') return (<><SkipLink /><UpdateBanner /><PendingApprovalScreen /></>)
-  return (<><SkipLink /><UpdateBanner /><AthleteDashboard profile={profile} /></>)
+  if (profile?.role === 'trainer') return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} /></>)
+  if (memberStatus === 'pending') return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><PendingApprovalScreen /></>)
+  return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><AthleteDashboard profile={profile} /></>)
 }

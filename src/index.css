@@ -11,3 +11,59 @@ body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f
   padding-top: calc(1rem + env(safe-area-inset-top));
   padding-bottom: 1rem;
 }
+
+/* ============================================================
+   נגישות — מחלקות גלובליות שמופעלות מ-AccessibilityWidget
+   נשמרות ב-localStorage תחת המפתח tp-a11y-prefs
+   ============================================================ */
+
+/* הגדלת פונט - +20% */
+html.a11y-text-large { font-size: 120%; }
+html.a11y-text-large body { font-size: 120%; }
+
+/* הגדלת פונט - +40% */
+html.a11y-text-xl { font-size: 140%; }
+html.a11y-text-xl body { font-size: 140%; }
+
+/* ניגודיות גבוהה - שחור-לבן עם צבעי משימה ברורים */
+html.a11y-high-contrast {
+  filter: contrast(1.4);
+}
+html.a11y-high-contrast body {
+  background: #ffffff !important;
+}
+html.a11y-high-contrast img {
+  filter: contrast(0.85);
+}
+
+/* השהיית כל האנימציות והמעברים — חיוני למי שסובל מורטיגו / רגישות */
+html.a11y-no-animations *,
+html.a11y-no-animations *::before,
+html.a11y-no-animations *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* הדגשת קישורים — הקלה לזיהוי קישורים על-ידי משתמשים עם לקויות ראייה */
+html.a11y-emphasized-links a:not(.a11y-no-emphasize) {
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
+  text-decoration-thickness: 2px !important;
+  font-weight: 700 !important;
+}
+
+/* סמן גדול — מקל על משתמשים עם לקויות ראייה */
+html.a11y-big-cursor,
+html.a11y-big-cursor * {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'><path fill='black' stroke='white' stroke-width='2' d='M6 4 L6 38 L14 30 L20 44 L26 42 L20 28 L32 28 Z'/></svg>") 6 4, auto !important;
+}
+
+/* פוקוס מודגש על כל אינטראקציה — תמיד יראו איפה הסמן במקלדת */
+html.a11y-emphasized-links *:focus {
+  outline: 3px solid #2563eb !important;
+  outline-offset: 2px !important;
+}

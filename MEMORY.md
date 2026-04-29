@@ -61,7 +61,111 @@
 - ב-submit הקוד שומר את `components` בתוך כל option ב-DB
 - אם ה-option עם components נטען לעריכה - הנתונים נשמרים אוטומטית
 
-## ⚠️ My last pending task
+---
+
+# 📅 Session 29.04.2026 – פרויקט הנגשת האפליקציה
+
+## הקשר ומטרה
+המשתמש ביקש להנגיש את האפליקציה כדי לעמוד בחוק שוויון זכויות לאנשים עם מוגבלות (התשנ"ח-1998) ובתקנות הנגישות לשירות. התקן הנדרש: **WCAG 2.1 AA / ת"י 5568**.
+
+## מסמכים שנוצרו (בתיקיית השורש)
+1. **ACCESSIBILITY_AUDIT.md** – אודיט מקיף + Roadmap.
+2. **ACCESSIBILITY_STATEMENT.md** – תבנית הצהרת נגישות חוקית עם placeholders.
+
+## ספריית קומפוננטות נגישות חדשה
+תיקייה: `src/components/a11y/`
+- `Modal.jsx` – role=dialog, aria-modal, focus trap, ESC, focus restore.
+- `Toast.jsx` – role=alert + aria-live, סגירה אוטומטית.
+- `Field.jsx` – wrapper לטפסים, מקשר label↔input אוטומטית עם htmlFor/id.
+- `SkipLink.jsx` – דילוג ניווט (sr-only עד Tab).
+- `ConfirmContext.js` + `ConfirmProvider.jsx` + `useConfirm.js` – החלפה ל-window.confirm().
+- `ToastContext.js` + `ToastProvider.jsx` + `useToast.js` – החלפה ל-window.alert().
+- `index.js` – barrel export.
+
+## API לשימוש בקבצים הבאים
+```jsx
+import { Field, useToast, useConfirm } from '../a11y'  // או './a11y' לפי עומק
+
+const toast = useToast()
+toast.success('נשמר!')        // במקום alert('נשמר!')
+toast.error('שגיאה')          // במקום alert('שגיאה')
+
+const confirm = useConfirm()
+const ok = await confirm({ title: 'למחוק?', message: 'לא הפיך', danger: true })
+if (!ok) return                // במקום if (!window.confirm(...)) return
+
+<Field label="שם מלא" required>
+  {(props) => <input {...props} type="text" value={x} onChange={...} className="..." />}
+</Field>
+```
+
+⚠️ **חשוב:** `useConfirm` מחזיר Promise – הפונקציה הקוראת חייבת להיות `async` ו-`await` חובה.
+
+## קבצים שכבר טופלו ✅ (build נקי, lint נקי)
+1. `src/main.jsx` – עטוף ב-ToastProvider + ConfirmProvider.
+2. `src/App.jsx` – SkipLink בכל branches, UpdateBanner נגיש.
+3. `src/components/auth/AthleteLogin.jsx` – פיילוט מלא.
+4. `src/components/auth/TrainerLogin.jsx`.
+5. `src/components/RegisterPage.jsx` – fieldset/legend לסניפים, aria-pressed.
+6. `src/components/auth/RegisterCoachPage.jsx`.
+7. `src/components/BottomNav.jsx` – aria-label, aria-current=page, aria-hidden לאייקונים.
+
+המשתמש אישר במהלך הסשן: "נראה שהכל עובד" אחרי הפיילוט של AthleteLogin.
+
+## ⚠️ My last pending task – נגישות
+
+**הפרומפט המקורי:** "אני רוצה לעשות את האפליקציה שלנו לנגישה כדי לעמוד בחוק... תתחיל לעבוד על זה קח את ההרשאות שצריך כדי לזה יהיה חוקי"
+
+**איפה אנחנו:**
+- שלב A (קומפוננטות בסיס) – ✅
+- שלב B (פיילוט) – ✅
+- שלב C (הרחבה לכל הקבצים) – 🟡 **באמצע. 7 קבצים טופלו, ~13 נשארו.**
+
+**המשך עבודה בסדר עדיפות (לסשן הבא):**
+
+🔴 **קבצים עם alert/confirm רבים – הכי דחוף:**
+1. `src/components/trainer/TodayClasses.jsx` – 24 alert/confirm.
+2. `src/components/athlete/AthleteDashboard.jsx` – 17 alert/confirm.
+3. `src/components/trainer/AthleteManagement.jsx` – 16 alert/confirm.
+4. `src/components/trainer/ShopManager.jsx` – 7 alert/confirm + טופס ענק עם fieldset חסר + `alt="preview"` (שורה 547).
+5. `src/components/trainer/CoachesManager.jsx` – 4 alert/confirm.
+6. `src/components/athlete/ClassSchedule.jsx` – 4 alert/confirm.
+7. `src/components/trainer/LeadsManager.jsx` – 2 alert/confirm.
+8. `src/components/trainer/AnnouncementsManager.jsx` – 1 alert + radio group ללא fieldset + `alt="preview"` (שורה 270).
+9. `src/components/trainer/ImportAthletes.jsx` – 1 alert + Modal ללא role=dialog (שורות 172-307).
+
+🟠 **קבצים נוספים שדורשים תיקון נגישות:**
+10. `src/components/trainer/TrainerDashboard.jsx`
+11. `src/components/trainer/TrainerProfile.jsx`
+12. `src/components/trainer/ReportsManager.jsx` – BarRow עם רוחב צבעוני בלי aria-label/title.
+13. `src/components/trainer/ProductRequests.jsx`
+14. `src/components/trainer/ProfileChangeRequests.jsx` – heading hierarchy (h2 בלי h1).
+15. `src/components/athlete/ProductDetail.jsx`
+16. `src/components/EnablePushBanner.jsx`
+17. `src/components/PendingApprovalScreen.jsx`
+18. `src/components/ErrorBoundary.jsx`
+
+**משימות אחרי שלב C:**
+- יצירת דף `/accessibility` באפליקציה שמציג את `ACCESSIBILITY_STATEMENT.md` (לאחר מילוי הפרטים האישיים).
+- הוספת קישור "נגישות" בתחתית כל מסך / בפרופיל.
+- הרצת Lighthouse + תיקון לציון 95+.
+- שכירת יועץ נגישות מוסמך מטעם משרד המשפטים (3,000-8,000 ₪ + מע"מ 18%).
+- אופציונלי: התקנת `eslint-plugin-jsx-a11y` למניעת רגרסיה.
+
+**הוראות להמשך:**
+1. קרא את ACCESSIBILITY_AUDIT.md לפירוט הבעיות.
+2. בנה לפני התחלה: `cd /Users/dudibenzaken/teampact-app && npx vite build --outDir /tmp/test`
+3. התחל מקובץ #1 (TodayClasses.jsx). דפוס: import של useToast/useConfirm/Field, החלפת alert→toast, confirm→`await confirm`, label→Field.
+4. אחרי כל קובץ או שניים – `npx eslint <file>` ו-build.
+5. לפני קובץ קריטי כמו AthleteDashboard – בקש מהמשתמש לבדוק ידנית.
+
+לא לפגוע בלוגיקה הקיימת. עדיף קובץ אחד נכון מ-5 קבצים שבורים.
+
+---
+
+# 📚 משימות קודמות (Session 24.04.2026 – לא קשור לנגישות)
+
+## ⚠️ My previous pending task (אולי הושלם, צריך לוודא)
 
 ### המשימה שנותרה למשתמש - הגדרת רכיבים למוצר "TeamPact תיק"
 אחרי ש-Vercel יסיים לבנות (דקה-שתיים מ-commit 45a0ad5):

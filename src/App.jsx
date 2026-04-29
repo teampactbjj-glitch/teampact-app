@@ -6,6 +6,7 @@ import AthleteDashboard from './components/athlete/AthleteDashboard'
 import RegisterPage from './components/RegisterPage'
 import RegisterCoachPage from './components/auth/RegisterCoachPage'
 import PendingApprovalScreen from './components/PendingApprovalScreen'
+import { SkipLink } from './components/a11y'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -129,35 +130,39 @@ export default function App() {
   const UpdateBanner = () => updateAvailable ? (
     <div
       dir="rtl"
+      role="status"
+      aria-live="polite"
       style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 99999, paddingTop: 'env(safe-area-inset-top)' }}
       className="bg-emerald-600 text-white shadow-lg"
     >
       <div className="max-w-3xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
         <span className="text-sm font-bold flex items-center gap-2">
-          <span className="text-lg">🔄</span>
+          <span className="text-lg" aria-hidden="true">🔄</span>
           <span>עדכון חדש זמין</span>
         </span>
         <button
+          type="button"
           onClick={() => window.location.reload()}
-          className="bg-white text-emerald-700 font-black px-4 py-1.5 rounded-lg text-sm hover:bg-emerald-50"
+          aria-label="טען מחדש את האפליקציה לקבלת העדכון"
+          className="bg-white text-emerald-700 font-black px-4 py-1.5 rounded-lg text-sm hover:bg-emerald-50 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-white"
         >טען מחדש</button>
       </div>
     </div>
   ) : null
 
-  if (!session) return (<><UpdateBanner /><AthleteLogin /></>)
+  if (!session) return (<><SkipLink /><UpdateBanner /><AthleteLogin /></>)
 
   if (loadingProfile) return (
-    <><UpdateBanner /><div className="min-h-screen flex items-center justify-center">
-      <p className="text-gray-400">טוען...</p>
+    <><SkipLink /><UpdateBanner /><div className="min-h-screen flex items-center justify-center" role="status" aria-live="polite">
+      <p className="text-gray-600">טוען...</p>
     </div></>
   )
 
   // מאמן לא מאושר → מסך המתנה (ולא Dashboard עם נתוני מועדון)
   if (profile?.role === 'trainer' && profile?.is_approved === false) {
-    return (<><UpdateBanner /><PendingApprovalScreen /></>)
+    return (<><SkipLink /><UpdateBanner /><PendingApprovalScreen /></>)
   }
-  if (profile?.role === 'trainer') return (<><UpdateBanner /><TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} /></>)
-  if (memberStatus === 'pending') return (<><UpdateBanner /><PendingApprovalScreen /></>)
-  return (<><UpdateBanner /><AthleteDashboard profile={profile} /></>)
+  if (profile?.role === 'trainer') return (<><SkipLink /><UpdateBanner /><TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} /></>)
+  if (memberStatus === 'pending') return (<><SkipLink /><UpdateBanner /><PendingApprovalScreen /></>)
+  return (<><SkipLink /><UpdateBanner /><AthleteDashboard profile={profile} /></>)
 }

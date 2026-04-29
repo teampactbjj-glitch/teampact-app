@@ -1,9 +1,10 @@
-export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin = false, pendingCount = 0, leadsCount = 0, ordersCount = 0, announcementsCount = 0, scheduleCount = 0 }) {
+export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin = false, pendingCount = 0, leadsCount = 0, ordersCount = 0, announcementsCount = 0, scheduleCount = 0, coachesCount = 0 }) {
   const tabs = isTrainer
     ? [
         { id: 'schedule',      icon: '📅', label: 'לו״ז' },
         { id: 'athletes',      icon: '👥', label: 'מתאמנים' },
         ...(isAdmin ? [{ id: 'reports', icon: '📊', label: 'דוחות' }] : []),
+        ...(isAdmin ? [{ id: 'coaches', icon: '🥋', label: 'מאמנים' }] : []),
         { id: 'shop',          icon: '🛒', label: 'חנות' },
         { id: 'announcements', icon: '📢', label: 'הודעות' },
         { id: 'profile',       icon: '👤', label: 'פרופיל' },
@@ -43,6 +44,10 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
             {tab.id === 'announcements' && announcementsCount > 0 && (
               <span className="absolute top-1.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold"
                 style={{ right: '22%', width: 16, height: 16 }}>{announcementsCount}</span>
+            )}
+            {tab.id === 'coaches' && isAdmin && coachesCount > 0 && (
+              <span className="absolute top-1.5 flex items-center justify-center rounded-full bg-orange-500 text-white text-[10px] font-bold"
+                style={{ right: '22%', width: 16, height: 16 }}>{coachesCount}</span>
             )}
           </button>
         )

@@ -4,6 +4,7 @@ import AthleteLogin from './components/auth/AthleteLogin'
 import TrainerDashboard from './components/trainer/TrainerDashboard'
 import AthleteDashboard from './components/athlete/AthleteDashboard'
 import RegisterPage from './components/RegisterPage'
+import RegisterCoachPage from './components/auth/RegisterCoachPage'
 import PendingApprovalScreen from './components/PendingApprovalScreen'
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
   const [updateAvailable, setUpdateAvailable] = useState(false)
 
   if (window.location.pathname === '/register') return <RegisterPage />
+  if (window.location.pathname === '/register-coach') return <RegisterCoachPage />
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -73,7 +75,7 @@ export default function App() {
   async function fetchProfile(user) {
     setLoadingProfile(true)
     const [{ data, error }, { data: member }] = await Promise.all([
-      supabase.from('profiles').select('*, is_admin').eq('id', user.id).maybeSingle(),
+      supabase.from('profiles').select('*, is_admin, is_approved').eq('id', user.id).maybeSingle(),
       supabase.from('members').select('status').eq('id', user.id).maybeSingle(),
     ])
     if (error) console.error('fetchProfile error:', error)
@@ -104,6 +106,26 @@ export default function App() {
     return () => { cancelled = true; clearInterval(interval) }
   }, [memberStatus, session?.user?.id])
 
+  // מאמן ממתין לאישור — בודקים כל 5 שניות אם אושר
+  useEffect(() => {
+    if (profile?.role !== 'trainer' || profile?.is_approved !== false || !session?.user?.id) return
+    const userId = session.user.id
+    let cancelled = false
+    const interval = setInterval(async () => {
+      if (cancelled) return
+      const { data } = await supabase
+        .from('profiles')
+        .select('is_approved')
+        .eq('id', userId)
+        .maybeSingle()
+      if (cancelled) return
+      if (data?.is_approved) {
+        setProfile(p => p ? { ...p, is_approved: true } : p)
+      }
+    }, 5000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [profile?.role, profile?.is_approved, session?.user?.id])
+
   const UpdateBanner = () => updateAvailable ? (
     <div
       dir="rtl"
@@ -131,6 +153,10 @@ export default function App() {
     </div></>
   )
 
+  // מאמן לא מאושר → מסך המתנה (ולא Dashboard עם נתוני מועדון)
+  if (profile?.role === 'trainer' && profile?.is_approved === false) {
+    return (<><UpdateBanner /><PendingApprovalScreen /></>)
+  }
   if (profile?.role === 'trainer') return (<><UpdateBanner /><TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} /></>)
   if (memberStatus === 'pending') return (<><UpdateBanner /><PendingApprovalScreen /></>)
   return (<><UpdateBanner /><AthleteDashboard profile={profile} /></>)

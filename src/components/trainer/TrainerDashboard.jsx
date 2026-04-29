@@ -6,6 +6,7 @@ import LeadsManager from './LeadsManager'
 import ProfileChangeRequests from './ProfileChangeRequests'
 import ShopManager from './ShopManager'
 import ReportsManager from './ReportsManager'
+import CoachesManager from './CoachesManager'
 import TrainerProfile from './TrainerProfile'
 import BottomNav from '../BottomNav'
 import InstallBanner from '../InstallBanner'
@@ -54,6 +55,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   const [latestAnnouncementAt, setLatestAnnouncementAt] = useState('')
   const [scheduleCount, setScheduleCount] = useState(0) // שיעורים ממתינים לאישור + בקשות מחיקה (אדמין בלבד)
   const [athleteDeletionCount, setAthleteDeletionCount] = useState(0) // בקשות מחיקת מתאמנים (אדמין בלבד)
+  const [pendingCoachesCount, setPendingCoachesCount] = useState(0)   // בקשות מאמנים ממתינות (אדמין בלבד)
   const [toast, setToast] = useState(null) // { name, id, kind }
 
   const lastSeenKey = profile?.id ? `announcements_last_seen_${profile.id}` : null
@@ -78,7 +80,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
 
   // hash → tab (מאפשר ניווט מהתראת push)
   useEffect(() => {
-    const TAB_HASHES = ['schedule', 'athletes', 'reports', 'shop', 'announcements', 'profile']
+    const TAB_HASHES = ['schedule', 'athletes', 'reports', 'coaches', 'shop', 'announcements', 'profile']
     function syncFromHash() {
       const h = (window.location.hash || '').replace('#', '')
       if (TAB_HASHES.includes(h)) setActiveTab(h)
@@ -182,18 +184,21 @@ export default function TrainerDashboard({ profile, isAdmin }) {
     if (isAdmin) {
       // .is('deleted_at', null) מחויב — אחרת שיעורים שנדחו (soft-delete) ימשיכו להיספר
       // והבאדג' על טאב הלו"ז יראה מספר שכבר לא רלוונטי.
-      const [addsRes, delsRes, athDelRes] = await Promise.all([
+      const [addsRes, delsRes, athDelRes, coachReqRes] = await Promise.all([
         supabase.from('classes').select('id', { count: 'exact', head: true }).eq('status', 'pending').is('deleted_at', null),
         supabase.from('classes').select('id', { count: 'exact', head: true }).not('deletion_requested_at', 'is', null).is('deleted_at', null),
         supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'pending_deletion').is('deleted_at', null),
+        supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'trainer').eq('is_approved', false),
       ])
       const adds = addsRes.error ? 0 : (addsRes.count || 0)
       const dels = delsRes.error ? 0 : (delsRes.count || 0)
       setScheduleCount(adds + dels)
       setAthleteDeletionCount(athDelRes.error ? 0 : (athDelRes.count || 0))
+      setPendingCoachesCount(coachReqRes.error ? 0 : (coachReqRes.count || 0))
     } else {
       setScheduleCount(0)
       setAthleteDeletionCount(0)
+      setPendingCoachesCount(0)
     }
   }
 
@@ -269,6 +274,10 @@ export default function TrainerDashboard({ profile, isAdmin }) {
           <ReportsManager isAdmin={isAdmin} />
         )}
 
+        {activeTab === 'coaches' && isAdmin && (
+          <CoachesManager profile={profile} onChange={refreshCounts} />
+        )}
+
         {activeTab === 'shop' && (
           <ShopManager isAdmin={isAdmin} trainerId={profile?.id} onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />
         )}
@@ -288,6 +297,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         pendingCount={requestsCount}
         announcementsCount={announcementsCount}
         scheduleCount={scheduleCount}
+        coachesCount={pendingCoachesCount}
       />
     </div>
   )

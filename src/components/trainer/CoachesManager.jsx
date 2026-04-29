@@ -1,0 +1,475 @@
+import { useEffect, useState } from 'react'
+import { supabase } from '../../lib/supabase'
+
+/**
+ * CoachesManager — מסך ניהול מאמנים לאדמין בלבד
+ *
+ * תכולה:
+ *  - בקשות מאמנים ממתינות (profiles עם role='trainer' ו-is_approved=false)
+ *  - רשימת כל המאמנים הפעילים (coaches table)
+ *  - הוספה ידנית של מאמן (בלי תהליך הרשמה)
+ *  - עריכת שם / סניף של מאמן
+ *  - החלפה רוחבית: כל השיעורים של מאמן X → מאמן Y במכה אחת
+ *  - מחיקת מאמן (רק אם אין לו שיעורים פעילים)
+ */
+export default function CoachesManager({ profile, onChange }) {
+  const [pendingTrainers, setPendingTrainers] = useState([])
+  const [coaches, setCoaches] = useState([])
+  const [branches, setBranches] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState(null)
+  const [msg, setMsg] = useState(null) // { type: 'ok'|'err', text }
+  const [showAdd, setShowAdd] = useState(false)
+  const [newCoach, setNewCoach] = useState({ name: '', branch_id: '' })
+  const [replacing, setReplacing] = useState(null) // { fromCoach, toCoachId, scope: 'all'|'branch' }
+  const [classCounts, setClassCounts] = useState({}) // { coach_id: count }
+
+  useEffect(() => { fetchAll() }, [])
+
+  // Realtime: בקשת מאמן חדשה → ריענון אוטומטי
+  useEffect(() => {
+    const ch = supabase
+      .channel('coach-approval-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'coaches' }, () => fetchAll())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [])
+
+  async function fetchAll() {
+    setLoading(true)
+    const [pendingRes, coachesRes, branchesRes, classesRes] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, full_name, email, phone, requested_branch_id, created_at')
+        .eq('role', 'trainer')
+        .eq('is_approved', false)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('coaches')
+        .select('id, name, branch_id, user_id, branches(name)')
+        .order('name'),
+      supabase.from('branches').select('id, name').order('name'),
+      supabase.from('classes').select('coach_id').is('deleted_at', null),
+    ])
+    setPendingTrainers(pendingRes.data || [])
+    setCoaches(coachesRes.data || [])
+    setBranches(branchesRes.data || [])
+    // ספירת שיעורים פעילים לכל מאמן
+    const counts = {}
+    ;(classesRes.data || []).forEach(c => {
+      if (!c.coach_id) return
+      counts[c.coach_id] = (counts[c.coach_id] || 0) + 1
+    })
+    setClassCounts(counts)
+    setLoading(false)
+    if (typeof onChange === 'function') onChange()
+  }
+
+  function showMsg(type, text) {
+    setMsg({ type, text })
+    setTimeout(() => setMsg(null), 4000)
+  }
+
+  // ---------- אישור / דחיית בקשת מאמן ----------
+  async function approveTrainer(t) {
+    setBusyId(t.id)
+    // 1. מסמן is_approved=true ב-profiles
+    const { error: profErr } = await supabase
+      .from('profiles')
+      .update({ is_approved: true })
+      .eq('id', t.id)
+    if (profErr) {
+      setBusyId(null)
+      showMsg('err', `שגיאה באישור: ${profErr.message}`)
+      return
+    }
+    // 2. יוצרים רשומת coaches המקושרת ל-user_id (אם לא קיימת כבר עם השם הזה)
+    const { data: existing } = await supabase
+      .from('coaches')
+      .select('id, user_id')
+      .eq('name', t.full_name)
+      .maybeSingle()
+
+    if (existing && !existing.user_id) {
+      await supabase.from('coaches').update({ user_id: t.id, branch_id: t.requested_branch_id || null }).eq('id', existing.id)
+    } else if (!existing) {
+      await supabase.from('coaches').insert({
+        name: t.full_name,
+        user_id: t.id,
+        branch_id: t.requested_branch_id || null,
+      })
+    }
+    setBusyId(null)
+    showMsg('ok', `${t.full_name} אושר כמאמן`)
+    fetchAll()
+  }
+
+  async function rejectTrainer(t) {
+    if (!window.confirm(`לדחות את הבקשה של ${t.full_name}? הפרופיל יימחק.`)) return
+    setBusyId(t.id)
+    const { error } = await supabase.from('profiles').delete().eq('id', t.id)
+    setBusyId(null)
+    if (error) { showMsg('err', `שגיאה: ${error.message}`); return }
+    showMsg('ok', 'הבקשה נדחתה')
+    fetchAll()
+  }
+
+  // ---------- הוספת מאמן ידנית ----------
+  async function addCoach() {
+    const name = newCoach.name.trim()
+    if (!name) { showMsg('err', 'נא להזין שם מאמן'); return }
+    setBusyId('new')
+    const { error } = await supabase.from('coaches').insert({
+      name,
+      branch_id: newCoach.branch_id || null,
+    })
+    setBusyId(null)
+    if (error) { showMsg('err', `שגיאה: ${error.message}`); return }
+    showMsg('ok', `${name} נוסף`)
+    setNewCoach({ name: '', branch_id: '' })
+    setShowAdd(false)
+    fetchAll()
+  }
+
+  // ---------- עריכת שם / סניף של מאמן קיים ----------
+  async function updateCoach(id, patch) {
+    setBusyId(id)
+    const { error } = await supabase.from('coaches').update(patch).eq('id', id)
+    setBusyId(null)
+    if (error) { showMsg('err', `שגיאה: ${error.message}`); return }
+    showMsg('ok', 'עודכן')
+    fetchAll()
+  }
+
+  // ---------- החלפה רוחבית: שיעורים של מאמן X → מאמן Y ----------
+  async function performReplace() {
+    if (!replacing) return
+    const { fromCoach, toCoachId, scope } = replacing
+    const toCoach = coaches.find(c => c.id === toCoachId)
+    if (!toCoach) { showMsg('err', 'לא נבחר מאמן יעד'); return }
+    if (toCoach.id === fromCoach.id) { showMsg('err', 'אותו מאמן בדיוק'); return }
+
+    const confirmText = scope === 'all'
+      ? `להעביר את כל השיעורים של ${fromCoach.name} אל ${toCoach.name}?`
+      : `להעביר רק שיעורי ${fromCoach.name} בסניף שלו אל ${toCoach.name}?`
+    if (!window.confirm(confirmText)) return
+
+    setBusyId(fromCoach.id)
+    let q = supabase
+      .from('classes')
+      .update({ coach_id: toCoach.id, coach_name: toCoach.name })
+      .eq('coach_id', fromCoach.id)
+      .is('deleted_at', null)
+    if (scope === 'branch' && fromCoach.branch_id) {
+      q = q.eq('branch_id', fromCoach.branch_id)
+    }
+    const { error } = await q
+    setBusyId(null)
+    if (error) { showMsg('err', `שגיאה: ${error.message}`); return }
+    showMsg('ok', `השיעורים הועברו ל-${toCoach.name}`)
+    setReplacing(null)
+    fetchAll()
+  }
+
+  // ---------- מחיקת מאמן ----------
+  async function deleteCoach(c) {
+    const cnt = classCounts[c.id] || 0
+    if (cnt > 0) {
+      showMsg('err', `אי אפשר למחוק — יש ${cnt} שיעורים פעילים. השתמש ב"החלף" קודם.`)
+      return
+    }
+    if (!window.confirm(`למחוק את המאמן ${c.name}? הפעולה לא הפיכה.`)) return
+    setBusyId(c.id)
+    const { error } = await supabase.from('coaches').delete().eq('id', c.id)
+    setBusyId(null)
+    if (error) { showMsg('err', `שגיאה: ${error.message}`); return }
+    showMsg('ok', 'המאמן נמחק')
+    fetchAll()
+  }
+
+  if (loading) return <div className="text-center text-gray-400 py-8">טוען...</div>
+
+  return (
+    <div className="space-y-4" dir="rtl">
+      {msg && (
+        <div className={`rounded-xl px-4 py-2 text-sm font-medium ${msg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {msg.text}
+        </div>
+      )}
+
+      {/* בקשות ממתינות */}
+      <section className="bg-white rounded-2xl shadow-sm border p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-gray-800 text-base flex items-center gap-2">
+            <span>🆕</span>
+            בקשות מאמנים חדשות
+            {pendingTrainers.length > 0 && (
+              <span className="bg-orange-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                {pendingTrainers.length}
+              </span>
+            )}
+          </h2>
+        </div>
+        {pendingTrainers.length === 0 ? (
+          <p className="text-sm text-gray-400 py-4 text-center">אין בקשות ממתינות</p>
+        ) : (
+          <div className="space-y-2">
+            {pendingTrainers.map(t => {
+              const branch = branches.find(b => b.id === t.requested_branch_id)
+              return (
+                <div key={t.id} className="border border-orange-200 bg-orange-50 rounded-xl p-3">
+                  <div className="font-bold text-gray-800">{t.full_name}</div>
+                  <div className="text-xs text-gray-600 mt-1 space-y-0.5">
+                    <div>📧 {t.email}</div>
+                    {t.phone && <div>📱 {t.phone}</div>}
+                    {branch && <div>📍 ביקש שיוך לסניף: {branch.name}</div>}
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => approveTrainer(t)}
+                      disabled={busyId === t.id}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg text-sm font-bold disabled:opacity-50"
+                    >
+                      {busyId === t.id ? '...' : '✓ אשר'}
+                    </button>
+                    <button
+                      onClick={() => rejectTrainer(t)}
+                      disabled={busyId === t.id}
+                      className="flex-1 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 py-2 rounded-lg text-sm font-bold disabled:opacity-50"
+                    >
+                      ✕ דחה
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* קישור הרשמה למאמן */}
+      <section className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl p-4 shadow-md">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xl">🔗</span>
+          <h3 className="font-black text-sm">קישור הרשמה למאמנים חדשים</h3>
+        </div>
+        <p className="text-xs text-blue-100 mb-3">שלח את הקישור הזה רק למאמנים שאתה רוצה להוסיף — הם ימלאו פרטים ויחכו לאישור שלך.</p>
+        <RegisterCoachLink />
+      </section>
+
+      {/* רשימת מאמנים פעילים + הוספה */}
+      <section className="bg-white rounded-2xl shadow-sm border p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-gray-800 text-base flex items-center gap-2">
+            <span>👥</span>
+            מאמנים פעילים ({coaches.length})
+          </h2>
+          <button
+            onClick={() => setShowAdd(s => !s)}
+            className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-bold"
+          >
+            {showAdd ? 'ביטול' : '+ הוסף ידנית'}
+          </button>
+        </div>
+
+        {showAdd && (
+          <div className="border border-blue-200 bg-blue-50 rounded-xl p-3 mb-3 space-y-2">
+            <input
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              placeholder="שם מאמן"
+              value={newCoach.name}
+              onChange={e => setNewCoach(p => ({ ...p, name: e.target.value }))}
+            />
+            <select
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              value={newCoach.branch_id}
+              onChange={e => setNewCoach(p => ({ ...p, branch_id: e.target.value }))}
+            >
+              <option value="">ללא סניף</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <button
+              onClick={addCoach}
+              disabled={busyId === 'new'}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-bold disabled:opacity-50"
+            >
+              {busyId === 'new' ? '...' : 'שמור מאמן'}
+            </button>
+            <p className="text-xs text-gray-500">
+              הוספה ידנית = רשומת מאמן בלי משתמש Auth. הוא לא יוכל להיכנס לאפליקציה עד שיירשם דרך קישור ההרשמה.
+            </p>
+          </div>
+        )}
+
+        {coaches.length === 0 ? (
+          <p className="text-sm text-gray-400 py-4 text-center">אין מאמנים</p>
+        ) : (
+          <div className="space-y-2">
+            {coaches.map(c => (
+              <CoachRow
+                key={c.id}
+                coach={c}
+                branches={branches}
+                allCoaches={coaches}
+                classCount={classCounts[c.id] || 0}
+                isBusy={busyId === c.id}
+                onUpdate={(patch) => updateCoach(c.id, patch)}
+                onStartReplace={(scope) => setReplacing({ fromCoach: c, toCoachId: '', scope })}
+                onDelete={() => deleteCoach(c)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* מודאל החלפה */}
+      {replacing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setReplacing(null)}>
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full space-y-3" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-lg text-gray-800">
+              {replacing.scope === 'all' ? 'החלפת מאמן בכל השיעורים' : 'החלפת מאמן בסניף שלו'}
+            </h3>
+            <p className="text-sm text-gray-600">
+              העברה מ-<strong>{replacing.fromCoach.name}</strong> אל:
+            </p>
+            <select
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              value={replacing.toCoachId}
+              onChange={e => setReplacing(r => ({ ...r, toCoachId: e.target.value }))}
+            >
+              <option value="">בחר מאמן יעד</option>
+              {coaches.filter(c => c.id !== replacing.fromCoach.id).map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name}{c.branches?.name ? ` — ${c.branches.name}` : ''}
+                </option>
+              ))}
+            </select>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={performReplace}
+                disabled={!replacing.toCoachId || busyId === replacing.fromCoach.id}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {busyId === replacing.fromCoach.id ? '...' : 'אשר החלפה'}
+              </button>
+              <button
+                onClick={() => setReplacing(null)}
+                className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg text-sm font-bold"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------- שורת מאמן עם עריכה inline ----------
+function CoachRow({ coach, branches, classCount, isBusy, onUpdate, onStartReplace, onDelete }) {
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(coach.name)
+  const [branchId, setBranchId] = useState(coach.branch_id || '')
+
+  function save() {
+    const patch = {}
+    if (name.trim() && name.trim() !== coach.name) patch.name = name.trim()
+    if ((branchId || null) !== (coach.branch_id || null)) patch.branch_id = branchId || null
+    if (Object.keys(patch).length === 0) { setEditing(false); return }
+    onUpdate(patch)
+    setEditing(false)
+  }
+
+  return (
+    <div className="border rounded-xl p-3 hover:bg-gray-50 transition">
+      {!editing ? (
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex-1">
+              <div className="font-bold text-gray-800 flex items-center gap-2">
+                {coach.name}
+                {coach.user_id ? (
+                  <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">מחובר</span>
+                ) : (
+                  <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">ללא משתמש</span>
+                )}
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                📍 {coach.branches?.name || 'ללא סניף'} · 📋 {classCount} שיעורים
+              </div>
+            </div>
+            <button
+              onClick={() => setEditing(true)}
+              disabled={isBusy}
+              className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded font-medium"
+            >ערוך</button>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={() => onStartReplace('all')}
+              disabled={isBusy || classCount === 0}
+              className="flex-1 text-xs bg-amber-100 text-amber-800 hover:bg-amber-200 py-1.5 rounded font-bold disabled:opacity-40"
+              title={classCount === 0 ? 'אין שיעורים להעברה' : 'העברת כל השיעורים למאמן אחר'}
+            >🔄 החלף בכל השיעורים</button>
+            <button
+              onClick={onDelete}
+              disabled={isBusy || classCount > 0}
+              className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded font-bold disabled:opacity-40"
+              title={classCount > 0 ? 'קודם החלף את השיעורים' : 'מחיקת המאמן'}
+            >🗑</button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <input
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
+          <select
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+            value={branchId}
+            onChange={e => setBranchId(e.target.value)}
+          >
+            <option value="">ללא סניף</option>
+            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <div className="flex gap-2">
+            <button onClick={save} disabled={isBusy} className="flex-1 bg-blue-600 text-white py-1.5 rounded-lg text-sm font-bold disabled:opacity-50">שמור</button>
+            <button onClick={() => { setEditing(false); setName(coach.name); setBranchId(coach.branch_id || '') }} className="flex-1 bg-gray-100 text-gray-700 py-1.5 rounded-lg text-sm font-bold">ביטול</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------- כרטיס קישור הרשמה למאמן ----------
+function RegisterCoachLink() {
+  const [copied, setCopied] = useState(false)
+  const url = typeof window !== 'undefined' ? `${window.location.origin}/register-coach` : '/register-coach'
+  async function copy() {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+    catch { prompt('העתק את הקישור:', url) }
+  }
+  async function share() {
+    if (navigator.share) {
+      try { await navigator.share({ title: 'הצטרפות ל-TeamPact כמאמן', text: 'הירשם כמאמן חדש', url }) } catch {}
+    } else { copy() }
+  }
+  return (
+    <>
+      <div className="bg-white/10 backdrop-blur border border-white/20 rounded-lg px-3 py-2 text-xs font-mono break-all mb-2">{url}</div>
+      <div className="flex gap-2">
+        <button onClick={copy} className="flex-1 bg-white text-blue-700 hover:bg-blue-50 font-bold py-2 rounded-lg text-sm">
+          {copied ? '✓ הועתק' : '📋 העתק קישור'}
+        </button>
+        <button onClick={share} className="flex-1 bg-blue-900 hover:bg-blue-950 text-white font-bold py-2 rounded-lg text-sm">
+          📤 שתף
+        </button>
+      </div>
+    </>
+  )
+}

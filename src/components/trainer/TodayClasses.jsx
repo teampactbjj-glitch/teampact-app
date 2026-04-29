@@ -1328,6 +1328,35 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                       )}
                     </div>
 
+                    {/* החלפת מאמן לשיעור הזה (אדמין בלבד) */}
+                    {isAdmin && (
+                      <div className="pt-3 border-t">
+                        <p className="text-xs font-bold text-gray-700 mb-2">👨‍🏫 שייך מאמן לשיעור זה</p>
+                        <select
+                          className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                          value={cls.coach_id || ''}
+                          onChange={async (e) => {
+                            const newCoachId = e.target.value || null
+                            const newCoach = coaches.find(c => c.id === newCoachId)
+                            const { error } = await supabase
+                              .from('classes')
+                              .update({ coach_id: newCoachId, coach_name: newCoach?.name || null })
+                              .eq('id', cls.id)
+                            if (error) { alert('שגיאה: ' + error.message); return }
+                            fetchDayClasses(selectedDate)
+                          }}
+                        >
+                          <option value="">— ללא מאמן —</option>
+                          {coaches.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                        <p className="text-[11px] text-gray-400 mt-1.5">
+                          שינוי מיידי — לא דורש אישור. ההחלפה משפיעה רק על השיעור הזה.
+                        </p>
+                      </div>
+                    )}
+
                     {/* Danger zone — מחיקת שיעור */}
                     <div className="pt-3 border-t">
                       {cls.deletion_requested_at && !isAdmin ? (

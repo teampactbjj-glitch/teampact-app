@@ -111,7 +111,7 @@ export default function AccessibilityWidget() {
 
   return (
     <>
-      {/* כפתור צף — נגיש בעצמו */}
+      {/* כפתור צף — נגיש בעצמו. ממוקם מעל ה-BottomNav (z=9999, גובה ~90px) */}
       <button
         ref={buttonRef}
         type="button"
@@ -119,10 +119,11 @@ export default function AccessibilityWidget() {
         aria-label={open ? 'סגור תפריט נגישות' : 'פתח תפריט נגישות'}
         aria-expanded={open}
         aria-controls="a11y-panel"
-        className="fixed bottom-4 right-4 z-[9999] w-12 h-12 rounded-full bg-blue-700 hover:bg-blue-800 text-white text-2xl font-bold flex items-center justify-center shadow-2xl border-2 border-white focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-400 transition"
+        className="fixed right-4 w-12 h-12 rounded-full bg-blue-700 hover:bg-blue-800 text-white text-2xl font-bold flex items-center justify-center shadow-2xl border-2 border-white focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-400 transition"
         style={{
-          // לוודא שהכפתור לא מוסתר על-ידי safe-area-bottom של PWA במובייל
-          marginBottom: 'env(safe-area-inset-bottom, 0)',
+          // bottom גמיש: 90px מעל הקצה (BottomNav 68px + 22px), בתוספת safe-area של iOS
+          bottom: 'calc(90px + env(safe-area-inset-bottom, 0px))',
+          zIndex: 10001,
         }}
       >
         <span aria-hidden="true">♿</span>
@@ -137,10 +138,12 @@ export default function AccessibilityWidget() {
           aria-modal="true"
           aria-label="הגדרות נגישות"
           tabIndex={-1}
-          className="fixed bottom-20 right-4 z-[9999] w-72 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border-2 border-blue-700 p-4 outline-none"
+          className="fixed right-4 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border-2 border-blue-700 p-4 outline-none"
           style={{
-            marginBottom: 'env(safe-area-inset-bottom, 0)',
-            maxHeight: 'calc(100vh - 6rem)',
+            // הפאנל יושב מעל הכפתור: כפתור bottom=90+safe, פאנל bottom=160+safe
+            bottom: 'calc(160px + env(safe-area-inset-bottom, 0px))',
+            zIndex: 10001,
+            maxHeight: 'calc(100vh - 14rem)',
             overflowY: 'auto',
           }}
         >

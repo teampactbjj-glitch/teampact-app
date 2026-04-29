@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useConfirm } from '../a11y'
 
 /**
  * CoachesManager — מסך ניהול מאמנים לאדמין בלבד
@@ -13,6 +14,7 @@ import { supabase } from '../../lib/supabase'
  *  - מחיקת מאמן (רק אם אין לו שיעורים פעילים)
  */
 export default function CoachesManager({ profile, onChange }) {
+  const confirm = useConfirm()
   const [pendingTrainers, setPendingTrainers] = useState([])
   const [coaches, setCoaches] = useState([])
   const [branches, setBranches] = useState([])
@@ -120,7 +122,8 @@ export default function CoachesManager({ profile, onChange }) {
   }
 
   async function rejectTrainer(t) {
-    if (!window.confirm(`לדחות את הבקשה של ${t.full_name}? הפרופיל יימחק.`)) return
+    const ok = await confirm({ title: 'דחיית בקשה', message: `לדחות את הבקשה של ${t.full_name}? הפרופיל יימחק.`, confirmText: 'דחה ומחק', danger: true })
+    if (!ok) return
     setBusyId(t.id)
     const { error } = await supabase.from('profiles').delete().eq('id', t.id)
     setBusyId(null)
@@ -199,7 +202,8 @@ export default function CoachesManager({ profile, onChange }) {
       showMsg('err', `אי אפשר להסיר — יש ${cnt} שיעורים פעילים בסניף הזה. השתמש ב"החלף" קודם.`)
       return
     }
-    if (!window.confirm('להסיר את שיוך הסניף הזה למאמן?')) return
+    const ok = await confirm({ title: 'הסרת שיוך', message: 'להסיר את שיוך הסניף הזה למאמן?', confirmText: 'הסר', danger: true })
+    if (!ok) return
     setBusyId(coachId)
     const { error } = await supabase.from('coaches').delete().eq('id', coachId)
     setBusyId(null)
@@ -221,7 +225,8 @@ export default function CoachesManager({ profile, onChange }) {
       showMsg('err', 'מאמן היעד הוא אותו מאמן')
       return
     }
-    if (!window.confirm(`להעביר את כל ${fromGroup.totalClasses} השיעורים של ${fromGroup.name} אל ${toCoach.name}?`)) return
+    const ok = await confirm({ title: 'העברת שיעורים', message: `להעביר את כל ${fromGroup.totalClasses} השיעורים של ${fromGroup.name} אל ${toCoach.name}?`, confirmText: 'העבר' })
+    if (!ok) return
 
     setBusyId(`group:${fromGroup.name}`)
     const fromIds = fromGroup.rows.map(r => r.id)
@@ -244,7 +249,8 @@ export default function CoachesManager({ profile, onChange }) {
       showMsg('err', `אי אפשר למחוק — יש ${cnt} שיעורים פעילים. השתמש ב"החלף" קודם.`)
       return
     }
-    if (!window.confirm(`למחוק את המאמן ${c.name}? הפעולה לא הפיכה.`)) return
+    const ok = await confirm({ title: 'מחיקת מאמן', message: `למחוק את המאמן ${c.name}? הפעולה לא הפיכה.`, confirmText: 'מחק', danger: true })
+    if (!ok) return
     setBusyId(c.id)
     const { error } = await supabase.from('coaches').delete().eq('id', c.id)
     setBusyId(null)

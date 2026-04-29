@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { notifyPush } from '../../lib/notifyPush'
 import { allActiveAthleteUserIds, allAdminUserIds, athleteUserIdsForBranches } from '../../lib/notifyTargets'
+import { useToast } from '../a11y'
 
 const TYPE_OPTIONS = [
   { value: 'general',  label: '📢 הודעה כללית (שינוי לו"ז / סגירה)' },
@@ -23,6 +24,7 @@ const TYPE_COLORS = {
 }
 
 export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
+  const toast = useToast()
   const [items, setItems]       = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -78,7 +80,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
           return pub.publicUrl
         }
       }
-      alert('שגיאה בהעלאת תמונה — ודא שקיים bucket בשם images או products ב-Supabase Storage')
+      toast.error('שגיאה בהעלאת תמונה — ודא שקיים bucket בשם images או products ב-Supabase Storage')
       return null
     } finally {
       setUploading(false)
@@ -191,8 +193,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
       {showForm && (
         <div className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-gray-600">סוג הפרסום</label>
+          <fieldset className="space-y-1">
+            <legend className="text-xs font-medium text-gray-600">סוג הפרסום</legend>
             <div className="grid grid-cols-1 gap-2">
               {TYPE_OPTIONS.map(opt => (
                 <label key={opt.value} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition ${form.type === opt.value ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
@@ -202,7 +204,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                 </label>
               ))}
             </div>
-          </div>
+          </fieldset>
           <div>
             <label className="text-xs font-medium text-gray-600 block mb-1">סניף יעד</label>
             <div className="flex flex-wrap gap-2">
@@ -267,7 +269,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
             </div>
             {form.image_url && (
               <div className="flex items-center gap-2">
-                <img src={form.image_url} alt="preview" className="w-16 h-16 rounded-lg object-cover border" />
+                <img src={form.image_url} alt={form.title ? `תצוגה מקדימה של ${form.title}` : 'תצוגה מקדימה של תמונת ההודעה'} className="w-16 h-16 rounded-lg object-cover border" />
                 <button type="button" onClick={() => setForm(p => ({ ...p, image_url: '' }))}
                   className="text-xs text-red-500">הסר</button>
               </div>

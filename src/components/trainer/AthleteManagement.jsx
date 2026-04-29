@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import ImportAthletes from './ImportAthletes'
 import { notifyPush } from '../../lib/notifyPush'
 import { allAdminUserIds } from '../../lib/notifyTargets'
+import { useToast, useConfirm } from '../a11y'
 
 const MEMBERSHIP_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 const SESSION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
@@ -25,6 +26,8 @@ const EMPTY_FORM = {
 }
 
 export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null, stackedLayout = false, extraTop = null }) {
+  const toast = useToast()
+  const confirm = useConfirm()
   const [athletes, setAthletes] = useState([])
   const [pendingAthletes, setPendingAthletes] = useState([])
   const [pendingDeletions, setPendingDeletions] = useState([])
@@ -143,13 +146,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   async function deleteAthlete(id) {
     const athleteObj = athletes.find(a => a.id === id) || pendingDeletions.find(a => a.id === id)
     if (isAdmin) {
-      if (!window.confirm('למחוק את המתאמן לצמיתות?')) return
+      const ok = await confirm({ title: 'מחיקת מתאמן', message: 'למחוק את המתאמן לצמיתות?', confirmText: 'מחק', danger: true })
+      if (!ok) return
       const { error } = await supabase.from('members').delete().eq('id', id)
-      if (error) { alert('שגיאה במחיקה: ' + error.message); return }
+      if (error) { toast.error('שגיאה במחיקה: ' + error.message); return }
     } else {
-      if (!window.confirm('לשלוח בקשת מחיקה למנהל?')) return
+      const ok = await confirm({ title: 'בקשת מחיקה', message: 'לשלוח בקשת מחיקה למנהל?', confirmText: 'שלח בקשה' })
+      if (!ok) return
       const { error } = await supabase.from('members').update({ status: 'pending_deletion' }).eq('id', id)
-      if (error) { alert('שגיאה בשליחת הבקשה: ' + error.message); return }
+      if (error) { toast.error('שגיאה בשליחת הבקשה: ' + error.message); return }
       // Push למנהל (עובד גם כשהאפליקציה סגורה)
       allAdminUserIds().then(ids => notifyPush({
         userIds: ids,
@@ -167,23 +172,26 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   }
 
   async function approveDeletion(id) {
-    if (!window.confirm('לאשר מחיקה? המתאמן יימחק לצמיתות. הפעולה לא הפיכה.')) return
+    const ok = await confirm({ title: 'אישור מחיקה', message: 'לאשר מחיקה? המתאמן יימחק לצמיתות. הפעולה לא הפיכה.', confirmText: 'אשר מחיקה', danger: true })
+    if (!ok) return
     const { error } = await supabase.from('members').delete().eq('id', id)
-    if (error) { alert('שגיאה במחיקה: ' + error.message); return }
+    if (error) { toast.error('שגיאה במחיקה: ' + error.message); return }
     fetchAthletes()
   }
 
   async function rejectDeletion(id) {
-    if (!window.confirm('לדחות את בקשת המחיקה?')) return
+    const ok = await confirm({ title: 'דחיית בקשה', message: 'לדחות את בקשת המחיקה?', confirmText: 'דחה' })
+    if (!ok) return
     const { error } = await supabase.from('members').update({ status: 'approved' }).eq('id', id)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) { toast.error('שגיאה: ' + error.message); return }
     fetchAthletes()
   }
 
   async function cancelDeletionRequest(id) {
-    if (!window.confirm('לבטל את בקשת המחיקה?')) return
+    const ok = await confirm({ title: 'ביטול בקשה', message: 'לבטל את בקשת המחיקה?', confirmText: 'בטל בקשה' })
+    if (!ok) return
     const { error } = await supabase.from('members').update({ status: 'approved' }).eq('id', id)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) { toast.error('שגיאה: ' + error.message); return }
     fetchAthletes()
   }
 
@@ -217,15 +225,19 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
 
     if (isAdmin) {
       // אישור דו-שלבי למנהל למניעת מחיקה בטעות
-      if (!window.confirm(`אתה עומד למחוק ${ids.length} מתאמנים לצמיתות. להמשיך?`)) return
-      if (ids.length >= 5 && !window.confirm(`אישור סופי: מחיקה של ${ids.length} מתאמנים. הפעולה לא הפיכה.`)) return
+      const ok1 = await confirm({ title: 'מחיקה מרובה', message: `אתה עומד למחוק ${ids.length} מתאמנים לצמיתות. להמשיך?`, confirmText: 'המשך', danger: true })
+      if (!ok1) return
+      if (ids.length >= 5) {
+        const ok2 = await confirm({ title: 'אישור סופי', message: `אישור סופי: מחיקה של ${ids.length} מתאמנים. הפעולה לא הפיכה.`, confirmText: 'אשר מחיקה', danger: true })
+        if (!ok2) return
+      }
       setBulkDeleting(true)
       try {
         const CHUNK = 200
         for (let i = 0; i < ids.length; i += CHUNK) {
           const part = ids.slice(i, i + CHUNK)
           const { error } = await supabase.from('members').delete().in('id', part)
-          if (error) { console.error('bulk delete error:', error); alert('שגיאה במחיקה: ' + error.message); break }
+          if (error) { console.error('bulk delete error:', error); toast.error('שגיאה במחיקה: ' + error.message); break }
         }
         clearSelection()
         await fetchAthletes()
@@ -234,14 +246,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       }
     } else {
       // מאמן: שליחת בקשות מחיקה למנהל (לא מחיקה ישירה)
-      if (!window.confirm(`לשלוח ${ids.length} בקשות מחיקה למנהל?`)) return
+      const ok = await confirm({ title: 'שליחת בקשות', message: `לשלוח ${ids.length} בקשות מחיקה למנהל?`, confirmText: 'שלח בקשות' })
+      if (!ok) return
       setBulkDeleting(true)
       try {
         const CHUNK = 200
         for (let i = 0; i < ids.length; i += CHUNK) {
           const part = ids.slice(i, i + CHUNK)
           const { error } = await supabase.from('members').update({ status: 'pending_deletion' }).in('id', part)
-          if (error) { console.error('bulk request error:', error); alert('שגיאה בשליחת הבקשות: ' + error.message); break }
+          if (error) { console.error('bulk request error:', error); toast.error('שגיאה בשליחת הבקשות: ' + error.message); break }
         }
         // Push למנהל (עובד גם כשהאפליקציה סגורה)
         allAdminUserIds().then(adminIds => notifyPush({
@@ -698,6 +711,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
 
 
 function PendingLeadCard({ lead, branches, onApprove, onReject }) {
+  const confirm = useConfirm()
   const [subType, setSubType] = useState(lead.subscription_type || lead.membership_type || '2x_week')
   const [busy, setBusy] = useState(null)
   const bids = lead.branch_ids?.length ? lead.branch_ids : (lead.branch_id ? [lead.branch_id] : [])
@@ -711,7 +725,8 @@ function PendingLeadCard({ lead, branches, onApprove, onReject }) {
     try { await onApprove(subType) } finally { setBusy(null) }
   }
   async function handleReject() {
-    if (!window.confirm('למחוק את הבקשה?')) return
+    const ok = await confirm({ title: 'מחיקת בקשה', message: 'למחוק את הבקשה?', confirmText: 'מחק', danger: true })
+    if (!ok) return
     setBusy('reject')
     try { await onReject() } finally { setBusy(null) }
   }

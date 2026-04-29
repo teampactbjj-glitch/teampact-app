@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { notifyPush } from '../../lib/notifyPush'
 import { allTrainerUserIds, allAdminUserIds } from '../../lib/notifyTargets'
+import { useToast, useConfirm } from '../a11y'
 
 const WEEKLY_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
@@ -52,6 +53,8 @@ function formatDateLabel(date) {
 }
 
 export default function TodayClasses({ trainerId, isAdmin, onChange }) {
+  const toast = useToast()
+  const confirm = useConfirm()
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
   const todayBtnRef = useRef(null)
   const selectedBtnRef = useRef(null)
@@ -420,7 +423,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       const openMatIds = new Set((classes || []).filter(isOpenMatClass).map(c => c.id))
       const weekCount = (weekChks || []).filter(r => !openMatIds.has(r.class_id)).length
       if (weekCount >= limit) {
-        alert(`${member.full_name} כבר ניצל/ה ${weekCount}/${limit} שיעורים השבוע.\nלא ניתן להוסיף יותר.`)
+        toast.error(`${member.full_name} כבר ניצל/ה ${weekCount}/${limit} שיעורים השבוע. לא ניתן להוסיף יותר.`)
         return
       }
     }
@@ -441,7 +444,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       )
     if (regErr) {
       console.error('addRegisteredMember reg error:', regErr)
-      alert('שגיאה ברישום: ' + (regErr.message || ''))
+      toast.error('שגיאה ברישום: ' + (regErr.message || ''))
       return
     }
 
@@ -461,7 +464,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   // הסרת מתאמן רשום מהשיעור (מתאמן שהמאמן הוסיף בטעות, או שהוא לא הגיע).
   // מוחק את ה-class_registrations ואת ה-checkin המוטמע 'present' של אותו יום.
   async function removeRegistration(classId, memberId) {
-    if (!confirm('להסיר את המתאמן מהשיעור?')) return
+    const ok = await confirm({ title: 'הסרת מתאמן', message: 'להסיר את המתאמן מהשיעור?', confirmText: 'הסר', danger: true })
+    if (!ok) return
     const { error: delErr } = await supabase
       .from('class_registrations')
       .delete()
@@ -469,7 +473,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       .eq('athlete_id', memberId)
     if (delErr) {
       console.error('removeRegistration error:', delErr)
-      alert('שגיאה בהסרה: ' + (delErr.message || ''))
+      toast.error('שגיאה בהסרה: ' + (delErr.message || ''))
       return
     }
     const dayStart = startOfDay(selectedDate)
@@ -489,12 +493,12 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   async function addTrialVisit(cls) {
     const classId = cls.id
     if (isOpenMatClass(cls)) {
-      alert('שיעור פתוח/ספארינג — רק מתאמנים מנויים יכולים להגיע. לא ניתן להוסיף מתאמן ניסיון.')
+      toast.error('שיעור פתוח/ספארינג — רק מתאמנים מנויים יכולים להגיע. לא ניתן להוסיף מתאמן ניסיון.')
       return
     }
     const form = trialForm[classId] || {}
     const name = (form.name || '').trim()
-    if (!name) { alert('יש להזין שם'); return }
+    if (!name) { toast.error('יש להזין שם'); return }
     const visitedAt = new Date(selectedDate); visitedAt.setHours(12, 0, 0, 0)
     const { error } = await supabase.from('trial_visits').insert({
       class_id: classId,
@@ -506,9 +510,9 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     if (error) {
       console.error('addTrialVisit error:', error)
       if (/relation .*trial_visits/i.test(error.message || '')) {
-        alert('הטבלה trial_visits עדיין לא קיימת ב-DB.\nהרץ את migration-trial-visits.sql ב-Supabase SQL Editor.')
+        toast.error('הטבלה trial_visits עדיין לא קיימת ב-DB. הרץ את migration-trial-visits.sql ב-Supabase SQL Editor.')
       } else {
-        alert('שגיאה בהוספה: ' + (error.message || ''))
+        toast.error('שגיאה בהוספה: ' + (error.message || ''))
       }
       return
     }
@@ -517,11 +521,12 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   }
 
   async function removeTrialVisit(classId, visitId) {
-    if (!confirm('להסיר את מתאמן הניסיון?')) return
+    const ok = await confirm({ title: 'הסרת מתאמן ניסיון', message: 'להסיר את מתאמן הניסיון?', confirmText: 'הסר', danger: true })
+    if (!ok) return
     const { error } = await supabase.from('trial_visits').delete().eq('id', visitId)
     if (error) {
       console.error('removeTrialVisit error:', error)
-      alert('שגיאה: ' + (error.message || ''))
+      toast.error('שגיאה: ' + (error.message || ''))
       return
     }
     fetchClassDetails(classId)
@@ -628,7 +633,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     }
     setShowAdd(false)
     setNewClass({ name: '', coach_id: '', date: '', start_time: '', duration_minutes: 60 })
-    alert(isAdmin ? 'השיעור נוסף ומאושר' : 'השיעור נשלח לאישור מנהל')
+    toast.success(isAdmin ? 'השיעור נוסף ומאושר' : 'השיעור נשלח לאישור מנהל')
     fetchDayClasses(selectedDate)
   }
 
@@ -653,7 +658,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     const { error } = await supabase.from('classes')
       .update({ status: 'approved' })
       .eq('id', classId)
-    if (error) { console.error('approveClass error:', error); alert('שגיאה באישור: ' + (error.message || '')); return }
+    if (error) { console.error('approveClass error:', error); toast.error('שגיאה באישור: ' + (error.message || '')); return }
     setPendingRequests(prev => prev.filter(r => r.id !== classId))
     await fetchPendingRequests()
     fetchDayClasses(selectedDate)
@@ -662,7 +667,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   }
 
   async function rejectClass(classId) {
-    if (!confirm('למחוק את השיעור הממתין?')) return
+    const ok = await confirm({ title: 'מחיקת שיעור ממתין', message: 'למחוק את השיעור הממתין?', confirmText: 'מחק', danger: true })
+    if (!ok) return
     // ניקוי תלויות (DELETE ישיר — אין על הטבלאות האלה soft-delete trigger)
     await supabase.from('class_registrations').delete().eq('class_id', classId)
     await supabase.from('member_classes').delete().eq('class_id', classId)
@@ -675,7 +681,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     const { error } = await supabase.from('classes')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', classId)
-    if (error) { console.error('rejectClass error:', error); alert('שגיאה במחיקה: ' + (error.message || '')); return }
+    if (error) { console.error('rejectClass error:', error); toast.error('שגיאה במחיקה: ' + (error.message || '')); return }
     setPendingRequests(prev => prev.filter(r => r.id !== classId))
     await fetchPendingRequests()
     fetchDayClasses(selectedDate)
@@ -694,24 +700,35 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   async function deleteClass(cls) {
     const label = `${cls.name || cls.title || 'ללא שם'}${cls.coachName ? ` · ${cls.coachName}` : ''}`
     if (isAdmin) {
-      if (!confirm(`למחוק את השיעור "${label}"?\n\nפעולה זו תמחק גם את כל הרישומים והנוכחות של השיעור.`)) return
+      const ok = await confirm({
+        title: 'מחיקת שיעור',
+        message: `למחוק את השיעור "${label}"? פעולה זו תמחק גם את כל הרישומים והנוכחות של השיעור.`,
+        confirmText: 'מחק',
+        danger: true,
+      })
+      if (!ok) return
       const { error } = await performHardDelete(cls)
-      if (error) { console.error('deleteClass error:', error); alert('שגיאה במחיקה: ' + (error.message || '')); return }
+      if (error) { console.error('deleteClass error:', error); toast.error('שגיאה במחיקה: ' + (error.message || '')); return }
       setExpanded(null)
       fetchDayClasses(selectedDate)
       return
     }
     // מאמן — שולח בקשת מחיקה למנהל
-    if (!confirm(`לשלוח בקשת מחיקה של "${label}" לאישור מנהל?`)) return
+    const ok = await confirm({
+      title: 'בקשת מחיקת שיעור',
+      message: `לשלוח בקשת מחיקה של "${label}" לאישור מנהל?`,
+      confirmText: 'שלח בקשה',
+    })
+    if (!ok) return
     const { error } = await supabase.from('classes')
       .update({ deletion_requested_at: new Date().toISOString() })
       .eq('id', cls.id)
     if (error) {
       console.error('request deletion error:', error)
       if (/deletion_requested_at/i.test(error.message || '')) {
-        alert('המסד לא מעודכן עדיין — יש להריץ את migration-classes-deletion-requests.sql ב-Supabase')
+        toast.error('המסד לא מעודכן עדיין — יש להריץ את migration-classes-deletion-requests.sql ב-Supabase')
       } else {
-        alert('שגיאה: ' + (error.message || ''))
+        toast.error('שגיאה: ' + (error.message || ''))
       }
       return
     }
@@ -725,15 +742,21 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         tag: `class-deletion:${cls.id}`,
       }))
       .catch(() => {})
-    alert('בקשת המחיקה נשלחה לאישור מנהל')
+    toast.success('בקשת המחיקה נשלחה לאישור מנהל')
     setExpanded(null)
     fetchDayClasses(selectedDate)
   }
 
   async function approveDeletion(cls) {
-    if (!confirm(`לאשר מחיקה של "${cls.name || cls.title || 'ללא שם'}"? הפעולה בלתי הפיכה.`)) return
+    const ok = await confirm({
+      title: 'אישור מחיקה',
+      message: `לאשר מחיקה של "${cls.name || cls.title || 'ללא שם'}"? הפעולה בלתי הפיכה.`,
+      confirmText: 'אשר מחיקה',
+      danger: true,
+    })
+    if (!ok) return
     const { error } = await performHardDelete(cls)
-    if (error) { console.error('approveDeletion error:', error); alert('שגיאה: ' + (error.message || '')); return }
+    if (error) { console.error('approveDeletion error:', error); toast.error('שגיאה: ' + (error.message || '')); return }
     setPendingRequests(prev => prev.filter(r => r.id !== cls.id))
     setExpanded(null)
     fetchDayClasses(selectedDate)
@@ -743,7 +766,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     const { error } = await supabase.from('classes')
       .update({ deletion_requested_at: null })
       .eq('id', cls.id)
-    if (error) { console.error('cancelDeletionRequest error:', error); alert('שגיאה: ' + (error.message || '')); return }
+    if (error) { console.error('cancelDeletionRequest error:', error); toast.error('שגיאה: ' + (error.message || '')); return }
     setPendingRequests(prev => prev.filter(r => r.id !== cls.id))
     fetchDayClasses(selectedDate)
   }
@@ -1342,7 +1365,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                               .from('classes')
                               .update({ coach_id: newCoachId, coach_name: newCoach?.name || null })
                               .eq('id', cls.id)
-                            if (error) { alert('שגיאה: ' + error.message); return }
+                            if (error) { toast.error('שגיאה: ' + error.message); return }
                             fetchDayClasses(selectedDate)
                           }}
                         >

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useToast } from '../a11y'
 
 const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
@@ -44,6 +45,7 @@ function isThisWeekLocked(cls, now = new Date()) {
 }
 
 export default function ClassSchedule({ profile, member }) {
+  const toast = useToast()
   const [classes, setClasses] = useState([])
   const [registeredIds, setRegisteredIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
@@ -126,7 +128,7 @@ export default function ClassSchedule({ profile, member }) {
     // לא להירשם, לא לבטל. (השיעור של השבוע הבא כבר זמין כי computeNextOccurrence
     // מחזירה את ההופעה הבאה בעתיד.)
     if (cls && isThisWeekLocked(cls)) {
-      alert(isRegistered
+      toast.error(isRegistered
         ? 'השיעור כבר התחיל — לא ניתן לבטל את הרישום.'
         : 'השיעור כבר התחיל — לא ניתן להירשם.')
       return
@@ -134,7 +136,7 @@ export default function ClassSchedule({ profile, member }) {
 
     // Prevent going over limit when registering
     if (!isRegistered && limit !== Infinity && registeredIds.size >= limit) {
-      alert(`הגעת למגבלת ${limit} שיעורים שבועיים לפי המנוי שלך`)
+      toast.error(`הגעת למגבלת ${limit} שיעורים שבועיים לפי המנוי שלך`)
       return
     }
 
@@ -174,7 +176,7 @@ export default function ClassSchedule({ profile, member }) {
         console.error('unregister error:', e)
         // rollback
         setRegisteredIds(prev => new Set([...prev, classId]))
-        alert('ביטול הרישום נכשל. נסה שוב.')
+        toast.error('ביטול הרישום נכשל. נסה שוב.')
       }
     } else {
       // add optimistically
@@ -211,7 +213,7 @@ export default function ClassSchedule({ profile, member }) {
           next.delete(classId)
           return next
         })
-        alert('הרישום נכשל. נסה שוב.')
+        toast.error('הרישום נכשל. נסה שוב.')
       }
     }
 

@@ -109,6 +109,21 @@ if (!ok) return                // במקום if (!window.confirm(...)) return
 5. `src/components/RegisterPage.jsx` – fieldset/legend לסניפים, aria-pressed.
 6. `src/components/auth/RegisterCoachPage.jsx`.
 7. `src/components/BottomNav.jsx` – aria-label, aria-current=page, aria-hidden לאייקונים.
+8. `src/components/trainer/TodayClasses.jsx` – 22 alert/confirm הוחלפו (8 confirm dialogs + 14 toasts). build נקי. (29.04.2026)
+9. `src/components/athlete/AthleteDashboard.jsx` – 17 alert/confirm הוחלפו ב-4 קומפוננטות (AnnouncementsTab, ShopTab, ProfileTab, AthleteDashboard). 3 confirm dialogs + 14 toasts. build נקי. (29.04.2026) ✅ אושר ע"י המשתמש.
+10. `src/components/trainer/AthleteManagement.jsx` – 16 alert/confirm הוחלפו ב-2 קומפוננטות (AthleteManagement + PendingLeadCard). 9 confirm dialogs + 7 toasts. build נקי. (29.04.2026)
+11. `src/components/athlete/ClassSchedule.jsx` – 4 alert→toast.error. (29.04.2026)
+12. `src/components/athlete/ProductDetail.jsx` – הוסף aria-pressed לכל כפתורי בחירה (מידה/צבע/אפשרות רכישה/רכיבים) + role="group" + aria-labelledby. (29.04.2026)
+13. `src/components/EnablePushBanner.jsx` – role=region + aria-label לכפתורים + aria-hidden לאייקונים. (29.04.2026)
+14. `src/components/PendingApprovalScreen.jsx` – `<main id="main-content">` + role=status/aria-live + h1 במקום h2 + aria-hidden לאייקונים. (29.04.2026)
+15. `src/components/ErrorBoundary.jsx` – `<main>` + role=alert/aria-live=assertive + h1. (29.04.2026)
+16. `src/components/trainer/ShopManager.jsx` – 7 alert→toast + 2 כפתורי מחיקה ללא confirm קיבלו `await confirm()` + aria-label דינמיים + תיקון `alt="preview"`. (29.04.2026)
+17. `src/components/trainer/CoachesManager.jsx` – 4 confirm→`await confirm()`. (29.04.2026)
+18. `src/components/trainer/LeadsManager.jsx` – 1 confirm + 1 alert→toast. (29.04.2026)
+19. `src/components/trainer/AnnouncementsManager.jsx` – 1 alert→toast + radio group עם fieldset/legend + תיקון alt. (29.04.2026)
+20. `src/components/trainer/ImportAthletes.jsx` – 1 alert→toast + Modal הפך לנגיש (role=dialog, aria-modal, ESC, focus trap). (29.04.2026)
+21. `src/components/trainer/ReportsManager.jsx` – BarRow קיבל role=progressbar + aria-valuenow/min/max + aria-label דינמי. (29.04.2026)
+22. `src/components/trainer/ProfileChangeRequests.jsx` – heading hierarchy תוקן (h2→h3). (29.04.2026)
 
 המשתמש אישר במהלך הסשן: "נראה שהכל עובד" אחרי הפיילוט של AthleteLogin.
 
@@ -119,47 +134,54 @@ if (!ok) return                // במקום if (!window.confirm(...)) return
 **איפה אנחנו:**
 - שלב A (קומפוננטות בסיס) – ✅
 - שלב B (פיילוט) – ✅
-- שלב C (הרחבה לכל הקבצים) – 🟡 **באמצע. 7 קבצים טופלו, ~13 נשארו.**
+- שלב C (הרחבה לכל הקבצים) – ✅ **הושלם 29.04.2026. 22 קבצים טופלו.**
 
-**המשך עבודה בסדר עדיפות (לסשן הבא):**
+**רשימת כל הקבצים שטופלו במהלך הסשן 29.04.2026:**
 
-🔴 **קבצים עם alert/confirm רבים – הכי דחוף:**
-1. `src/components/trainer/TodayClasses.jsx` – 24 alert/confirm.
-2. `src/components/athlete/AthleteDashboard.jsx` – 17 alert/confirm.
-3. `src/components/trainer/AthleteManagement.jsx` – 16 alert/confirm.
-4. `src/components/trainer/ShopManager.jsx` – 7 alert/confirm + טופס ענק עם fieldset חסר + `alt="preview"` (שורה 547).
-5. `src/components/trainer/CoachesManager.jsx` – 4 alert/confirm.
-6. `src/components/athlete/ClassSchedule.jsx` – 4 alert/confirm.
-7. `src/components/trainer/LeadsManager.jsx` – 2 alert/confirm.
-8. `src/components/trainer/AnnouncementsManager.jsx` – 1 alert + radio group ללא fieldset + `alt="preview"` (שורה 270).
-9. `src/components/trainer/ImportAthletes.jsx` – 1 alert + Modal ללא role=dialog (שורות 172-307).
+🔴 **alert/confirm – כולם הוחלפו:**
+1. ✅ TodayClasses.jsx — 22 הוחלפו
+2. ✅ AthleteDashboard.jsx — 17 הוחלפו (4 קומפוננטות) — **אושר ידנית ע"י המשתמש**
+3. ✅ AthleteManagement.jsx — 16 הוחלפו (כולל PendingLeadCard)
+4. ✅ ShopManager.jsx — 7 alerts + הוספת 2 confirm dialogs לכפתורי מחיקה
+5. ✅ CoachesManager.jsx — 4 confirm
+6. ✅ ClassSchedule.jsx — 4 alert
+7. ✅ LeadsManager.jsx — 1 confirm + 1 alert
+8. ✅ AnnouncementsManager.jsx — 1 alert + fieldset/legend
+9. ✅ ImportAthletes.jsx — 1 alert + Modal נגיש מלא
 
-🟠 **קבצים נוספים שדורשים תיקון נגישות:**
-10. `src/components/trainer/TrainerDashboard.jsx`
-11. `src/components/trainer/TrainerProfile.jsx`
-12. `src/components/trainer/ReportsManager.jsx` – BarRow עם רוחב צבעוני בלי aria-label/title.
-13. `src/components/trainer/ProductRequests.jsx`
-14. `src/components/trainer/ProfileChangeRequests.jsx` – heading hierarchy (h2 בלי h1).
-15. `src/components/athlete/ProductDetail.jsx`
-16. `src/components/EnablePushBanner.jsx`
-17. `src/components/PendingApprovalScreen.jsx`
-18. `src/components/ErrorBoundary.jsx`
+🟠 **תיקוני נגישות נוספים – כולם הושלמו:**
+10. ✅ ProductDetail.jsx — aria-pressed + role=group
+11. ✅ EnablePushBanner.jsx — role=region + aria-label
+12. ✅ PendingApprovalScreen.jsx — main + role=status + h1
+13. ✅ ErrorBoundary.jsx — main + role=alert + h1
+14. ✅ ReportsManager.jsx — BarRow כ-progressbar
+15. ✅ ProfileChangeRequests.jsx — heading hierarchy
 
-**משימות אחרי שלב C:**
-- יצירת דף `/accessibility` באפליקציה שמציג את `ACCESSIBILITY_STATEMENT.md` (לאחר מילוי הפרטים האישיים).
-- הוספת קישור "נגישות" בתחתית כל מסך / בפרופיל.
-- הרצת Lighthouse + תיקון לציון 95+.
-- שכירת יועץ נגישות מוסמך מטעם משרד המשפטים (3,000-8,000 ₪ + מע"מ 18%).
-- אופציונלי: התקנת `eslint-plugin-jsx-a11y` למניעת רגרסיה.
+**קבצים שלא נדרש בהם תיקון (אין alert/confirm/בעיות):**
+- TrainerDashboard.jsx (h1 קיים, ניווט תקין)
+- TrainerProfile.jsx
+- ProductRequests.jsx
 
-**הוראות להמשך:**
-1. קרא את ACCESSIBILITY_AUDIT.md לפירוט הבעיות.
-2. בנה לפני התחלה: `cd /Users/dudibenzaken/teampact-app && npx vite build --outDir /tmp/test`
-3. התחל מקובץ #1 (TodayClasses.jsx). דפוס: import של useToast/useConfirm/Field, החלפת alert→toast, confirm→`await confirm`, label→Field.
-4. אחרי כל קובץ או שניים – `npx eslint <file>` ו-build.
-5. לפני קובץ קריטי כמו AthleteDashboard – בקש מהמשתמש לבדוק ידנית.
+**שלב D – הצהרת נגישות + לינקים – ✅ הושלם (29.04.2026):**
 
-לא לפגוע בלוגיקה הקיימת. עדיף קובץ אחד נכון מ-5 קבצים שבורים.
+23. ✅ `src/components/AccessibilityPage.jsx` – דף הצהרת נגישות חדש, נגיש בעצמו, עם פרטי קשר רכז (דודי), מספר נציבות, תאריכים, ולינק לאתר הנציבות.
+24. ✅ `src/App.jsx` – הוספת route `/accessibility` (זמין ללא login).
+25. ✅ AthleteDashboard.jsx (ProfileTab) – לינק "♿ הצהרת נגישות" מתחת לאתר המועדון.
+26. ✅ TrainerProfile.jsx – אותו לינק.
+27. ✅ AthleteLogin.jsx – לינק לדף נגישות במסך ההתחברות.
+28. ✅ TrainerLogin.jsx – לינק לדף נגישות במסך ההתחברות של מאמנים.
+
+**משימות שנותרו (לא חיוניות מבחינה חוקית):**
+1. **בדיקה ידנית של דף /accessibility** – נווט לכתובת `/accessibility` ובדוק שהדף מוצג כראוי בצד מובייל ודסקטופ.
+2. **בדיקה ידנית של כל ממשק המתאמן** (התחברות → יומן → חנות → פרופיל → הזמנת מוצר עם רכיבים).
+3. **הרצת Lighthouse Audit** (אופציונלי, להוכחת ציון 95+).
+4. אופציונלי: התקנת `eslint-plugin-jsx-a11y` למניעת רגרסיה עתידית.
+
+**הערת המשתמש:** אין כוונה לשכור יועץ נגישות. זו מערכת פנימית למתאמנים שעוסקים באומנויות לחימה. הפעולות שננקטו: ההצהרה פורסמה תחת `/accessibility`, ההתאמות לפי WCAG 2.1 AA יושמו בקוד, רכז הנגישות (דודי בן זקן) זמין במייל teampactbjj@gmail.com.
+
+**מה נשאר אופציונלי (לא נדרש חוקית):**
+- ממשק מנהל (admin-only) – לא חייב לפי החוק (זה כלי פנימי שלך).
+- ה-eslint warnings הקיימים (`navigate` לא בשימוש, `loadPending` accessed before declared, empty blocks) – לא קשורים לנגישות.
 
 ---
 

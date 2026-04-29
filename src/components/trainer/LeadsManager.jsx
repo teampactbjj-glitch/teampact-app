@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useToast, useConfirm } from '../a11y'
 
 const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
 export default function LeadsManager({ trainerId = null, isAdmin = false } = {}) {
+  const toast = useToast()
+  const confirm = useConfirm()
   const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [branches, setBranches] = useState({})
@@ -62,7 +65,8 @@ export default function LeadsManager({ trainerId = null, isAdmin = false } = {})
   }
 
   async function rejectLead(id) {
-    if (!window.confirm('למחוק את הבקשה?')) return
+    const ok = await confirm({ title: 'מחיקת בקשה', message: 'למחוק את הבקשה?', confirmText: 'מחק', danger: true })
+    if (!ok) return
     setActionLoading(p => ({ ...p, [id]: 'rejecting' }))
     await supabase.from('members').delete().eq('id', id)
     setLeads(p => p.filter(l => l.id !== id))
@@ -82,7 +86,7 @@ export default function LeadsManager({ trainerId = null, isAdmin = false } = {})
             className="flex-1 border border-blue-200 rounded-lg px-3 py-2 text-xs bg-white text-gray-700"
           />
           <button
-            onClick={() => { navigator.clipboard.writeText(registrationLink); alert('הקישור הועתק') }}
+            onClick={() => { navigator.clipboard.writeText(registrationLink); toast.success('הקישור הועתק') }}
             className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs font-semibold"
           >
             העתק

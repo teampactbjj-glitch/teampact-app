@@ -8,15 +8,15 @@ export default function PendingApprovalScreen() {
   }
 
   return (
-    <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4">
+    <main id="main-content" className="min-h-screen bg-emerald-50 flex items-center justify-center p-4">
       <div className="max-w-sm w-full space-y-3">
-        <div className="bg-white rounded-2xl shadow p-8 text-center space-y-3">
-          <div className="text-5xl">✅</div>
-          <h2 className="font-bold text-xl text-gray-800">הבקשה נשלחה לטיפול</h2>
+        <div role="status" aria-live="polite" className="bg-white rounded-2xl shadow p-8 text-center space-y-3">
+          <div className="text-5xl" aria-hidden="true">✅</div>
+          <h1 className="font-bold text-xl text-gray-800">הבקשה נשלחה לטיפול</h1>
           <p className="text-gray-500 text-sm">בקשת ההצטרפות שלך ממתינה לאישור הצוות.</p>
           <p className="text-gray-400 text-xs">לאחר האישור תקבל גישה מלאה לאפליקציה ותוכל להירשם לאימונים.</p>
           <div className="flex items-center justify-center gap-2 text-xs text-emerald-600 mt-2">
-            <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" aria-hidden="true" />
             <span>ממתין לאישור... הדף יתעדכן אוטומטית</span>
           </div>
           <button
@@ -29,6 +29,6 @@ export default function PendingApprovalScreen() {
         </div>
         <InstallBanner />
       </div>
-    </div>
+    </main>
   )
 }

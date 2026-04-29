@@ -6,6 +6,7 @@ import AthleteDashboard from './components/athlete/AthleteDashboard'
 import RegisterPage from './components/RegisterPage'
 import RegisterCoachPage from './components/auth/RegisterCoachPage'
 import PendingApprovalScreen from './components/PendingApprovalScreen'
+import AccessibilityPage from './components/AccessibilityPage'
 import { SkipLink } from './components/a11y'
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
 
   if (window.location.pathname === '/register') return <RegisterPage />
   if (window.location.pathname === '/register-coach') return <RegisterCoachPage />
+  if (window.location.pathname === '/accessibility') return <AccessibilityPage />
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))

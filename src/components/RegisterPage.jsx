@@ -145,6 +145,12 @@ export default function RegisterPage() {
               <span aria-hidden="true">🌐 </span>לאתר המועדון — teampact.co.il
               <span className="sr-only"> (נפתח בחלון חדש)</span>
             </a>
+            <a
+              href="/accessibility"
+              className="block mt-3 text-xs text-gray-500 hover:text-gray-700 hover:underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-400 rounded"
+            >
+              <span aria-hidden="true">♿ </span>הצהרת נגישות
+            </a>
           </div>
         </main>
         <InstallBanner />

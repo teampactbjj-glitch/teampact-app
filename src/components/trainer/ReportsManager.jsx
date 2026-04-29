@@ -60,8 +60,16 @@ function StatCard({ label, value, sub, tone = 'blue' }) {
 
 function BarRow({ label, value, max, color = '#2563eb', suffix = '', sessions }) {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0
+  const ariaLabel = `${label}: ${value}${suffix}${typeof sessions === 'number' ? ` (${sessions} אימונים)` : ''}`
   return (
-    <div className="mb-2">
+    <div
+      className="mb-2"
+      role="progressbar"
+      aria-label={ariaLabel}
+      aria-valuenow={value}
+      aria-valuemin={0}
+      aria-valuemax={max || 100}
+    >
       <div className="flex justify-between items-baseline mb-1">
         <span className="text-sm font-semibold text-gray-800 truncate" title={label}>{label}</span>
         <span className="text-sm font-bold text-gray-900 shrink-0 mr-2">
@@ -71,7 +79,7 @@ function BarRow({ label, value, max, color = '#2563eb', suffix = '', sessions })
           )}
         </span>
       </div>
-      <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+      <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden" aria-hidden="true">
         <div
           className="h-full rounded-full transition-all"
           style={{ width: `${pct}%`, background: color }}

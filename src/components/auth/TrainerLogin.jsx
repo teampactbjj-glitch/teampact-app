@@ -76,6 +76,12 @@ export default function TrainerLogin({ onSwitch }) {
         >
           מתאמן? לחץ כאן
         </button>
+        <a
+          href="/accessibility"
+          className="block mt-3 text-xs text-gray-500 hover:text-gray-700 text-center transition focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-400 rounded"
+        >
+          <span aria-hidden="true">♿ </span>הצהרת נגישות
+        </a>
       </main>
       </div>
     </div>

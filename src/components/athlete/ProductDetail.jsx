@@ -176,9 +176,9 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
 
       {/* בחירת מידה/צבע ברמת המוצר - רק אם אין רכיבים באפשרות הנבחרת */}
       {!hasComponents && hasSizes && (
-        <div>
+        <div role="group" aria-labelledby="size-heading">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-sm text-gray-800">📏 בחר מידה</h3>
+            <h3 id="size-heading" className="font-bold text-sm text-gray-800">📏 בחר מידה</h3>
             {selectedSize && (
               <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedSize}</span>
             )}
@@ -190,6 +190,8 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
                 <button
                   key={size}
                   type="button"
+                  aria-pressed={isSelected}
+                  aria-label={`מידה ${size}`}
                   onClick={() => { setSelectedSize(size); setValidationError('') }}
                   className={`min-w-[52px] py-2 px-3 rounded-xl border-2 text-sm font-bold transition ${
                     isSelected
@@ -206,9 +208,9 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
       )}
 
       {!hasComponents && hasColors && (
-        <div>
+        <div role="group" aria-labelledby="color-heading">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-sm text-gray-800">🎨 בחר צבע</h3>
+            <h3 id="color-heading" className="font-bold text-sm text-gray-800">🎨 בחר צבע</h3>
             {selectedColor && (
               <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedColor}</span>
             )}
@@ -220,6 +222,8 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
                 <button
                   key={color}
                   type="button"
+                  aria-pressed={isSelected}
+                  aria-label={`צבע ${color}`}
                   onClick={() => { setSelectedColor(color); setValidationError('') }}
                   className={`py-2 px-4 rounded-xl border-2 text-sm font-bold transition ${
                     isSelected
@@ -262,6 +266,8 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
                           <button
                             key={size}
                             type="button"
+                            aria-pressed={isSelected}
+                            aria-label={`${comp.name} מידה ${size}`}
                             onClick={() => updateComponentSelection(idx, 'size', size)}
                             className={`min-w-[44px] py-1.5 px-2.5 rounded-lg border-2 text-xs font-bold transition ${
                               isSelected
@@ -290,6 +296,8 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
                           <button
                             key={color}
                             type="button"
+                            aria-pressed={isSelected}
+                            aria-label={`${comp.name} צבע ${color}`}
                             onClick={() => updateComponentSelection(idx, 'color', color)}
                             className={`py-1.5 px-3 rounded-lg border-2 text-xs font-bold transition ${
                               isSelected
@@ -312,8 +320,8 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
 
       {/* אפשרויות רכישה */}
       {hasOptions && (
-        <div>
-          <h3 className="font-bold text-sm text-gray-800 mb-2">💰 בחר אפשרות רכישה</h3>
+        <div role="group" aria-labelledby="purchase-option-heading">
+          <h3 id="purchase-option-heading" className="font-bold text-sm text-gray-800 mb-2">💰 בחר אפשרות רכישה</h3>
           <div className="space-y-2">
             {options.map((opt, i) => {
               const selected = selectedOption && (
@@ -323,6 +331,7 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
                 <button
                   key={i}
                   type="button"
+                  aria-pressed={selected}
                   onClick={() => setSelectedOption(opt)}
                   className={`w-full text-right p-3 rounded-xl border-2 transition ${
                     selected

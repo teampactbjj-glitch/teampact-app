@@ -1,6 +1,7 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useId } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../../lib/supabase'
+import { useToast } from '../a11y'
 
 // Map Hebrew / various formats → internal membership_type
 const MEMBERSHIP_MAP = {
@@ -85,7 +86,10 @@ function parseFile(file) {
 }
 
 export default function ImportAthletes({ onImported, isAdmin = false }) {
+  const toast = useToast()
   const inputRef = useRef()
+  const dialogRef = useRef(null)
+  const dialogTitleId = useId()
   const [show, setShow] = useState(false)
   const [branches, setBranches] = useState([])
   const [branchId, setBranchId] = useState('')
@@ -104,6 +108,36 @@ export default function ImportAthletes({ onImported, isAdmin = false }) {
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState(null) // { saved, failed }
 
+  // א11y: ESC לסגירה + focus trap בסיסי + החזרת focus לאלמנט הקודם
+  useEffect(() => {
+    if (!show) return
+    const previousFocus = document.activeElement
+    const t = setTimeout(() => dialogRef.current?.focus(), 0)
+    function onKey(e) {
+      if (e.key === 'Escape') { e.stopPropagation(); handleClose() }
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusables = dialogRef.current.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+        if (focusables.length === 0) return
+        const first = focusables[0]
+        const last = focusables[focusables.length - 1]
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+      if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show])
+
   async function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
@@ -116,7 +150,7 @@ export default function ImportAthletes({ onImported, isAdmin = false }) {
       setRows(withErrors)
       setResult(null)
     } catch (err) {
-      alert('שגיאה בקריאת הקובץ: ' + err.message)
+      toast.error('שגיאה בקריאת הקובץ: ' + err.message)
     }
     // Reset input so same file can be re-selected
     e.target.value = ''
@@ -170,12 +204,26 @@ export default function ImportAthletes({ onImported, isAdmin = false }) {
       </button>
 
       {show && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8">
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-y-auto"
+          onClick={handleClose}
+          dir="rtl"
+        >
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={dialogTitleId}
+            tabIndex={-1}
+            onClick={e => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 outline-none"
+          >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h2 className="font-bold text-gray-800 text-lg">ייבוא מתאמנים מקובץ</h2>
-              <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              <h2 id={dialogTitleId} className="font-bold text-gray-800 text-lg">ייבוא מתאמנים מקובץ</h2>
+              <button type="button" onClick={handleClose} aria-label="סגור חלון" className="text-gray-400 hover:text-gray-600 text-xl leading-none">
+                <span aria-hidden="true">✕</span>
+              </button>
             </div>
 
             <div className="px-6 py-4 space-y-4">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useToast, useConfirm } from '../a11y'
 
 const STATUS_LABELS = { pending: 'ממתין', done: 'טופל' }
 const STATUS_COLORS = { pending: 'bg-orange-100 text-orange-700', done: 'bg-green-100 text-green-700' }
@@ -47,6 +48,8 @@ function clearDraft() {
 }
 
 export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId = null }) {
+  const toast = useToast()
+  const confirm = useConfirm()
   const [products, setProducts] = useState([])
   const [orders, setOrders] = useState([])
   const [tab, setTab] = useState(isAdmin ? 'orders' : 'products')
@@ -187,11 +190,11 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     const { data, error } = await supabase.from('announcements').delete().eq('id', id).select()
     console.log('[deleteProduct]', { id, data, error })
     if (error) {
-      alert('שגיאה במחיקת המוצר: ' + error.message)
+      toast.error('שגיאה במחיקת המוצר: ' + error.message)
       return
     }
     if (!data || data.length === 0) {
-      alert('המחיקה לא בוצעה - ייתכן שאין לך הרשאת מחיקה (RLS). בדוק את מדיניות ההרשאות ב-Supabase.')
+      toast.error('המחיקה לא בוצעה - ייתכן שאין לך הרשאת מחיקה (RLS). בדוק את מדיניות ההרשאות ב-Supabase.')
       return
     }
     // לאחר מחיקה מוצלחת - מרעננים מהשרת כדי להיות 100% מסונכרנים (במקום רק לסנן state מקומי)
@@ -208,7 +211,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       const { error: upErr } = await supabase.storage.from('products').upload(path, file)
       if (upErr) {
         const { error: upErr2 } = await supabase.storage.from('images').upload(path, file)
-        if (upErr2) { alert('שגיאת העלאה: ' + upErr2.message); return null }
+        if (upErr2) { toast.error('שגיאת העלאה: ' + upErr2.message); return null }
         const { data: pub } = supabase.storage.from('images').getPublicUrl(path)
         return pub.publicUrl
       }
@@ -259,10 +262,10 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     let productId = editingId
     if (editingId) {
       const { error } = await supabase.from('announcements').update(payload).eq('id', editingId)
-      if (error) { alert('שגיאה בעדכון המוצר: ' + error.message); return }
+      if (error) { toast.error('שגיאה בעדכון המוצר: ' + error.message); return }
     } else {
       const { data, error } = await supabase.from('announcements').insert(payload).select().single()
-      if (error) { alert('שגיאה ביצירת המוצר: ' + error.message); return }
+      if (error) { toast.error('שגיאה ביצירת המוצר: ' + error.message); return }
       productId = data.id
     }
 
@@ -341,11 +344,11 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     const { data, error } = await supabase.from(table).delete().eq('id', order.id).select()
     console.log('[deleteOrder]', { id: order.id, table, data, error })
     if (error) {
-      alert('שגיאה במחיקת הבקשה: ' + error.message)
+      toast.error('שגיאה במחיקת הבקשה: ' + error.message)
       return
     }
     if (!data || data.length === 0) {
-      alert('המחיקה לא בוצעה - ייתכן שאין הרשאת מחיקה (RLS) על טבלת ' + table)
+      toast.error('המחיקה לא בוצעה - ייתכן שאין הרשאת מחיקה (RLS) על טבלת ' + table)
       return
     }
     setOrders(prev => prev.filter(o => o.id !== order.id))
@@ -437,7 +440,12 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                           סמן כטופל ✓
                         </button>
                       )}
-                      <button onClick={() => deleteOrder(order)}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const ok = await confirm({ title: 'מחיקת בקשה', message: 'למחוק את הבקשה?', confirmText: 'מחק', danger: true })
+                          if (ok) deleteOrder(order)
+                        }}
                         className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">
                         מחק
                       </button>
@@ -544,7 +552,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                 </div>
                 {form.image_url && (
                   <div className="flex items-center gap-2">
-                    <img src={form.image_url} alt="preview" className="w-16 h-16 rounded-lg object-cover border" />
+                    <img src={form.image_url} alt={form.title ? `תצוגה מקדימה של ${form.title}` : 'תצוגה מקדימה של תמונת המוצר'} className="w-16 h-16 rounded-lg object-cover border" />
                     <button type="button" onClick={() => setForm(p => ({ ...p, image_url: '' }))}
                       className="text-xs text-red-500">הסר</button>
                   </div>
@@ -961,8 +969,18 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                   </div>
                   {isAdmin && (
                     <div className="flex gap-2 flex-shrink-0">
-                      <button onClick={() => openEdit(item)} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
-                      <button onClick={() => deleteProduct(item.id)} className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">🗑️ מחק</button>
+                      <button type="button" onClick={() => openEdit(item)} aria-label={`ערוך ${item.title}`} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
+                      <button
+                        type="button"
+                        aria-label={`מחק ${item.title}`}
+                        onClick={async () => {
+                          const ok = await confirm({ title: 'מחיקת מוצר', message: `למחוק את "${item.title}"?`, confirmText: 'מחק', danger: true })
+                          if (ok) deleteProduct(item.id)
+                        }}
+                        className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg"
+                      >
+                        🗑️ מחק
+                      </button>
                     </div>
                   )}
                 </li>

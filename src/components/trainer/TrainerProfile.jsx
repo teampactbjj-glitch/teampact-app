@@ -98,10 +98,20 @@ export default function TrainerProfile({ profile, isAdmin }) {
       </button>
 
       {/* קישור לאתר המועדון */}
-      <div className="text-center pt-2 pb-4">
+      <div className="text-center pt-2">
         <a href="https://www.teampact.co.il" target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-sm text-emerald-700 hover:text-emerald-800 hover:underline font-medium">
-          🌐 בקרו באתר המועדון — teampact.co.il
+          <span aria-hidden="true">🌐</span> בקרו באתר המועדון — teampact.co.il
+        </a>
+      </div>
+
+      {/* קישור לדף נגישות — חובה לפי תקנות הנגישות לשירות */}
+      <div className="text-center pb-4">
+        <a
+          href="/accessibility"
+          className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-800 hover:underline font-medium focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-600 rounded"
+        >
+          <span aria-hidden="true">♿</span> הצהרת נגישות
         </a>
       </div>
     </div>

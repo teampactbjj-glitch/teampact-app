@@ -7,6 +7,7 @@ import { isStandalone } from '../../lib/platform'
 import { notifyPush } from '../../lib/notifyPush'
 import { allTrainerUserIds } from '../../lib/notifyTargets'
 import ProductDetail from './ProductDetail'
+import { useToast, useConfirm } from '../a11y'
 
 const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const SUBSCRIPTION_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -367,6 +368,8 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
 }
 
 function AnnouncementsTab({ announcements, profile, member }) {
+  const toast = useToast()
+  const confirm = useConfirm()
   const athleteName = member?.full_name || profile?.full_name || profile?.email || 'לא ידוע'
   const general = announcements.filter(a => a.type === 'general' || a.type === 'announcement')
   const seminars = announcements.filter(a => a.type === 'seminar')
@@ -396,7 +399,8 @@ function AnnouncementsTab({ announcements, profile, member }) {
 
   async function handleOrder(item) {
     if (ordered.has(item.id)) {
-      if (!confirm(`לבטל את ההזמנה של "${item.title}"?`)) return
+      const ok = await confirm({ title: 'ביטול הזמנה', message: `לבטל את ההזמנה של "${item.title}"?`, confirmText: 'בטל הזמנה', danger: true })
+      if (!ok) return
       setOrderingId(item.id)
       await supabase.from('product_requests')
         .delete()
@@ -414,7 +418,7 @@ function AnnouncementsTab({ announcements, profile, member }) {
       athlete_name: athleteName,
       status: 'pending',
     })
-    if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
+    if (error) { console.error('order error:', error); toast.error('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
     else {
       setOrdered(prev => new Set([...prev, item.id]))
       // בניית גוף התראה - גם לסמינרים נוסיף מחיר/תיאור אם קיימים
@@ -484,6 +488,8 @@ function AnnouncementsTab({ announcements, profile, member }) {
 }
 
 function ShopTab({ profile, member, allAnnouncements }) {
+  const toast = useToast()
+  const confirm = useConfirm()
   const products = allAnnouncements.filter(a => a.type === 'product')
   const athleteName = member?.full_name || profile?.full_name || profile?.email || 'לא ידוע'
   const storageKey = profile?.id ? `shop_ordered_${profile.id}` : null
@@ -514,7 +520,8 @@ function ShopTab({ profile, member, allAnnouncements }) {
   // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם אפשרות/מידה/צבע/רכיבים)
   async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null, componentSelections = null) {
     if (ordered.has(item.id)) {
-      if (!confirm(`לבטל את ההזמנה של "${item.title}"?`)) return
+      const ok = await confirm({ title: 'ביטול הזמנה', message: `לבטל את ההזמנה של "${item.title}"?`, confirmText: 'בטל הזמנה', danger: true })
+      if (!ok) return
       setOrderingId(item.id)
       await supabase.from('product_requests')
         .delete()
@@ -570,7 +577,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
       payload.total_price = item.price
     }
     const { error } = await supabase.from('product_requests').insert(payload)
-    if (error) { console.error('order error:', error); alert('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
+    if (error) { console.error('order error:', error); toast.error('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
     else {
       setOrdered(prev => new Set([...prev, item.id]))
       // בניית גוף התראה מפורט - כולל מידה, צבע, אפשרות, רכיבים ומחיר
@@ -682,6 +689,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
 }
 
 function ProfileTab({ profile, member }) {
+  const toast = useToast()
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -750,7 +758,7 @@ function ProfileTab({ profile, member }) {
   }
 
   async function submitEmailChange() {
-    if (!newEmail || newEmail === profile.email) { alert('הזן כתובת מייל חדשה'); return }
+    if (!newEmail || newEmail === profile.email) { toast.error('הזן כתובת מייל חדשה'); return }
     setSaving(true)
     const { error } = await supabase.from('profile_change_requests').insert({
       athlete_id: profile.id,
@@ -760,8 +768,8 @@ function ProfileTab({ profile, member }) {
       requested_value: newEmail,
     })
     setSaving(false)
-    if (error) { alert('שגיאה: ' + error.message); return }
-    alert('בקשת שינוי המייל נשלחה למנהל')
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    toast.success('בקשת שינוי המייל נשלחה למנהל')
     setNewEmail('')
     loadPending()
   }
@@ -771,17 +779,17 @@ function ProfileTab({ profile, member }) {
     const branchesChanged =
       requestedBranchIds.length !== currentBranches.length ||
       requestedBranchIds.some(id => !currentBranches.includes(id))
-    if (requestedSub === currentSub && !branchesChanged) { alert('בחר מנוי אחר או סניפים אחרים'); return }
-    if (requestedBranchIds.length === 0) { alert('יש לבחור לפחות סניף אחד'); return }
+    if (requestedSub === currentSub && !branchesChanged) { toast.error('בחר מנוי אחר או סניפים אחרים'); return }
+    if (requestedBranchIds.length === 0) { toast.error('יש לבחור לפחות סניף אחד'); return }
     // ולידציה — סכום האימונים חייב להתאים למנוי (רק ל-2x/4x)
     if (totalSessionsAllowed !== null) {
       if (totalSelectedSessions !== totalSessionsAllowed) {
-        alert(`סכום האימונים בסניפים חייב להיות בדיוק ${totalSessionsAllowed} (כרגע ${totalSelectedSessions})`)
+        toast.error(`סכום האימונים בסניפים חייב להיות בדיוק ${totalSessionsAllowed} (כרגע ${totalSelectedSessions})`)
         return
       }
       for (const id of requestedBranchIds) {
         if (!branchSessions[id] || branchSessions[id] < 1) {
-          alert('יש להזין מספר אימונים לכל סניף שנבחר')
+          toast.error('יש להזין מספר אימונים לכל סניף שנבחר')
           return
         }
       }
@@ -798,8 +806,8 @@ function ProfileTab({ profile, member }) {
       note: subNote,
     })
     setSaving(false)
-    if (error) { alert('שגיאה: ' + error.message); return }
-    alert('בקשת שינוי המנוי נשלחה למנהל')
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    toast.success('בקשת שינוי המנוי נשלחה למנהל')
     setSubNote('')
     loadPending()
   }
@@ -958,10 +966,20 @@ function ProfileTab({ profile, member }) {
       </button>
 
       {/* קישור לאתר המועדון */}
-      <div className="text-center pt-2 pb-4">
+      <div className="text-center pt-2">
         <a href="https://www.teampact.co.il" target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-sm text-emerald-700 hover:text-emerald-800 hover:underline font-medium">
-          🌐 בקרו באתר המועדון — teampact.co.il
+          <span aria-hidden="true">🌐</span> בקרו באתר המועדון — teampact.co.il
+        </a>
+      </div>
+
+      {/* קישור לדף נגישות — חובה לפי תקנות הנגישות לשירות */}
+      <div className="text-center pb-4">
+        <a
+          href="/accessibility"
+          className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-800 hover:underline font-medium focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-600 rounded"
+        >
+          <span aria-hidden="true">♿</span> הצהרת נגישות
         </a>
       </div>
     </div>
@@ -976,6 +994,8 @@ function getWeekStart() {
 }
 
 export default function AthleteDashboard({ profile }) {
+  const toast = useToast()
+  const confirm = useConfirm()
   const [activeTab, setActiveTab]           = useState('schedule')
   const [announcements, setAnnouncements]   = useState([])
   const [loading, setLoading]               = useState(true)
@@ -1114,14 +1134,14 @@ export default function AthleteDashboard({ profile }) {
       return now >= todayStart
     })()
     if (isLockedNow) {
-      alert(isRegistered
+      toast.error(isRegistered
         ? 'השיעור כבר התחיל — לא ניתן לבטל את הרישום.'
         : 'השיעור כבר התחיל — לא ניתן להירשם.')
       return
     }
 
     if (!isRegistered && registrations.size >= limit && limit !== Infinity) {
-      alert('הגעת למגבלת ' + limit + ' שיעורים שבועיים לפי המנוי שלך'); return
+      toast.error('הגעת למגבלת ' + limit + ' שיעורים שבועיים לפי המנוי שלך'); return
     }
     // לכידת week_start פעם אחת — מונע race condition בגבול שבוע (חצות שבת/ראשון)
     const weekStart = getWeekStart()
@@ -1169,7 +1189,7 @@ export default function AthleteDashboard({ profile }) {
         console.error('unregister error:', e)
         // rollback — מחזיר את הרישום אם הביטול נכשל
         setRegistrations(p => new Set([...p, cls.id]))
-        alert('ביטול הרישום נכשל. נסה שוב.')
+        toast.error('ביטול הרישום נכשל. נסה שוב.')
       }
     } else {
       setRegistrations(p => new Set([...p, cls.id]))
@@ -1204,7 +1224,7 @@ export default function AthleteDashboard({ profile }) {
         console.error('register error:', e)
         // rollback רק כשנכשל ממש
         setRegistrations(p => { const n = new Set(p); n.delete(cls.id); return n })
-        alert('הרישום נכשל. נסה שוב.')
+        toast.error('הרישום נכשל. נסה שוב.')
       }
     }
   }

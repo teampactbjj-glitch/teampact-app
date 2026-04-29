@@ -73,7 +73,7 @@ export default function ProfileChangeRequests({ onChange }) {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-bold text-gray-800">בקשות לאישור</h2>
+      <h3 className="text-lg font-bold text-gray-800">בקשות לאישור</h3>
       {requests.map(req => {
         const m = membersMap[req.athlete_id]
         const displayName = req.athlete_name || m?.full_name || '— ללא שם —'

@@ -48,9 +48,9 @@ export default function EnablePushBanner({ profile }) {
   }
 
   return (
-    <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-xs">
+    <div role="region" aria-label="באנר הפעלת התראות" className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-xs">
       <div className="flex items-center gap-2">
-        <span className="text-base">🔔</span>
+        <span className="text-base" aria-hidden="true">🔔</span>
         <span>הפעל התראות כדי לקבל עדכון בזמן אמת</span>
       </div>
       <div className="flex gap-2 items-center">
@@ -58,11 +58,19 @@ export default function EnablePushBanner({ profile }) {
           type="button"
           disabled={busy}
           onClick={enable}
+          aria-label="הפעל התראות"
           className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold px-3 py-1 rounded-lg"
         >
           {busy ? '...' : 'הפעל'}
         </button>
-        <button type="button" onClick={dismiss} className="text-emerald-800/60 hover:text-emerald-900 text-base leading-none">✕</button>
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label="סגור באנר"
+          className="text-emerald-800/60 hover:text-emerald-900 text-base leading-none"
+        >
+          <span aria-hidden="true">✕</span>
+        </button>
       </div>
     </div>
   )

@@ -207,6 +207,70 @@ html.a11y-dark-mode .shadow-2xl {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
 }
 
+/* Hover states - Tailwind מייצר אותם כ-`:hover { ... }` ללא class רגיל,
+   אז ה-overrides הקודמים לא תופסים. צריך לכוון אליהם ספציפית. */
+html.a11y-dark-mode [class*="hover:bg-gray"]:hover,
+html.a11y-dark-mode [class*="hover:bg-white"]:hover,
+html.a11y-dark-mode [class*="hover:bg-slate"]:hover {
+  background-color: #334155 !important;
+}
+html.a11y-dark-mode [class*="hover:bg-emerald"]:hover { background-color: #047857 !important; }
+html.a11y-dark-mode [class*="hover:bg-blue"]:hover { background-color: #1d4ed8 !important; }
+html.a11y-dark-mode [class*="hover:bg-red"]:hover { background-color: #b91c1c !important; }
+html.a11y-dark-mode [class*="hover:bg-amber"]:hover { background-color: #b45309 !important; }
+html.a11y-dark-mode [class*="hover:bg-rose"]:hover { background-color: #9f1239 !important; }
+html.a11y-dark-mode [class*="hover:bg-purple"]:hover { background-color: #7e22ce !important; }
+
+/* פסי קצה (ring) — לא לבן זוהר על רקע כהה */
+html.a11y-dark-mode [class*="ring-amber"] { --tw-ring-color: #b45309 !important; }
+html.a11y-dark-mode [class*="ring-rose"] { --tw-ring-color: #9f1239 !important; }
+html.a11y-dark-mode [class*="ring-emerald"] { --tw-ring-color: #047857 !important; }
+html.a11y-dark-mode [class*="ring-blue"] { --tw-ring-color: #1d4ed8 !important; }
+
+/* Modal/Dialog backdrop — הופך שקוף יותר במצב כהה */
+html.a11y-dark-mode .bg-black\/50 { background-color: rgba(0, 0, 0, 0.75) !important; }
+
+/* Toast/popups - לוודא שהם נראים על רקע כהה */
+html.a11y-dark-mode [role="dialog"] {
+  background-color: #1e293b !important;
+  color: #e2e8f0 !important;
+}
+
+/* Skip link - שמירת זהות */
+html.a11y-dark-mode [class*="bg-emerald-600"][class*="text-white"],
+html.a11y-dark-mode [class*="bg-blue-600"][class*="text-white"],
+html.a11y-dark-mode [class*="bg-red-600"][class*="text-white"] {
+  color: #ffffff !important;
+}
+
+/* טקסט בתוך כרטיסים צבעוניים — לוודא קריאות */
+html.a11y-dark-mode .bg-amber-50 *,
+html.a11y-dark-mode .bg-amber-100 * { color: #fef3c7 !important; }
+html.a11y-dark-mode .bg-rose-50 *,
+html.a11y-dark-mode .bg-rose-100 * { color: #ffe4e6 !important; }
+html.a11y-dark-mode .bg-emerald-50 *,
+html.a11y-dark-mode .bg-emerald-100 * { color: #d1fae5 !important; }
+html.a11y-dark-mode .bg-blue-50 *,
+html.a11y-dark-mode .bg-blue-100 * { color: #dbeafe !important; }
+
+/* יוצא דופן - כפתורים מלאים בתוך כרטיסים צבעוניים שומרים על white */
+html.a11y-dark-mode [class*="bg-emerald-500"] *,
+html.a11y-dark-mode [class*="bg-emerald-600"] *,
+html.a11y-dark-mode [class*="bg-emerald-700"] *,
+html.a11y-dark-mode [class*="bg-blue-500"] *,
+html.a11y-dark-mode [class*="bg-blue-600"] *,
+html.a11y-dark-mode [class*="bg-blue-700"] *,
+html.a11y-dark-mode [class*="bg-red-500"] *,
+html.a11y-dark-mode [class*="bg-red-600"] *,
+html.a11y-dark-mode [class*="bg-red-700"] *,
+html.a11y-dark-mode [class*="bg-green-500"] *,
+html.a11y-dark-mode [class*="bg-green-600"] *,
+html.a11y-dark-mode [class*="bg-green-700"] *,
+html.a11y-dark-mode [class*="bg-amber-500"] *,
+html.a11y-dark-mode [class*="bg-amber-600"] * {
+  color: #ffffff !important;
+}
+
 /* השהיית כל האנימציות והמעברים — חיוני למי שסובל מורטיגו / רגישות */
 html.a11y-no-animations *,
 html.a11y-no-animations *::before,

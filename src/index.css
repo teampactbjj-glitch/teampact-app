@@ -25,15 +25,65 @@ html.a11y-text-large body { font-size: 120%; }
 html.a11y-text-xl { font-size: 140%; }
 html.a11y-text-xl body { font-size: 140%; }
 
-/* ניגודיות גבוהה - שחור-לבן עם צבעי משימה ברורים */
-html.a11y-high-contrast {
-  filter: contrast(1.4);
-}
+/* ניגודיות גבוהה - שחור-לבן בעוצמה מקסימלית.
+   מטרה: לעזור למשתמשים עם קטרקט / ניוון רשתית / ראייה מטושטשת. */
+html.a11y-high-contrast,
 html.a11y-high-contrast body {
   background: #ffffff !important;
+  color: #000000 !important;
+}
+html.a11y-high-contrast * {
+  color: #000000 !important;
+  border-color: #000000 !important;
+}
+/* כותרות, כפתורים וקישורים - נשארים מדגישים */
+html.a11y-high-contrast h1,
+html.a11y-high-contrast h2,
+html.a11y-high-contrast h3,
+html.a11y-high-contrast strong,
+html.a11y-high-contrast b {
+  color: #000000 !important;
+  font-weight: 900 !important;
+}
+html.a11y-high-contrast a {
+  color: #0000ee !important;
+  text-decoration: underline !important;
+  font-weight: 700 !important;
+}
+html.a11y-high-contrast button {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: 2px solid #000000 !important;
+  font-weight: 700 !important;
+}
+html.a11y-high-contrast button:hover,
+html.a11y-high-contrast button:focus {
+  background: #000000 !important;
+  color: #ffffff !important;
+}
+html.a11y-high-contrast input,
+html.a11y-high-contrast textarea,
+html.a11y-high-contrast select {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: 2px solid #000000 !important;
 }
 html.a11y-high-contrast img {
-  filter: contrast(0.85);
+  filter: contrast(1.2);
+}
+
+/* מצב כהה - הופך את כל האפליקציה לעיצוב כהה.
+   נוח בתאורה נמוכה / לרגישים לאור / לחיסכון בסוללה ב-OLED.
+   טכניקה: filter invert + hue-rotate, ועיקוף לתמונות/וידאו כדי שלא יראו הפוכים. */
+html.a11y-dark-mode {
+  filter: invert(1) hue-rotate(180deg);
+  background: #ffffff;
+}
+html.a11y-dark-mode img,
+html.a11y-dark-mode video,
+html.a11y-dark-mode picture,
+html.a11y-dark-mode svg {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 /* השהיית כל האנימציות והמעברים — חיוני למי שסובל מורטיגו / רגישות */

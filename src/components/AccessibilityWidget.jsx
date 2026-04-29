@@ -11,6 +11,7 @@ const PREFS_KEY = 'tp-a11y-prefs'
 const DEFAULT_PREFS = {
   fontSize: 0,           // 0=רגיל, 1=גדול (+20%), 2=ענק (+40%)
   highContrast: false,
+  darkMode: false,
   noAnimations: false,
   emphasizedLinks: false,
   bigCursor: false,
@@ -42,6 +43,7 @@ function applyPrefs(prefs) {
   else if (prefs.fontSize === 2) html.classList.add('a11y-text-xl')
   // שאר ההעדפות
   html.classList.toggle('a11y-high-contrast', !!prefs.highContrast)
+  html.classList.toggle('a11y-dark-mode', !!prefs.darkMode)
   html.classList.toggle('a11y-no-animations', !!prefs.noAnimations)
   html.classList.toggle('a11y-emphasized-links', !!prefs.emphasizedLinks)
   html.classList.toggle('a11y-big-cursor', !!prefs.bigCursor)
@@ -180,7 +182,11 @@ export default function AccessibilityWidget() {
             {/* ניגודיות גבוהה */}
             <button
               type="button"
-              onClick={() => update('highContrast', !prefs.highContrast)}
+              onClick={() => {
+                // ניגודיות וDark Mode לא ביחד - מבטל אם השני פעיל
+                update('highContrast', !prefs.highContrast)
+                if (!prefs.highContrast && prefs.darkMode) update('darkMode', false)
+              }}
               aria-pressed={prefs.highContrast}
               className={`w-full text-right flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border-2 transition focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-blue-500 ${
                 prefs.highContrast
@@ -193,6 +199,28 @@ export default function AccessibilityWidget() {
               </span>
               <span className={`text-xs font-bold px-2 py-0.5 rounded ${prefs.highContrast ? 'bg-blue-700 text-white' : 'bg-gray-100 text-gray-500'}`}>
                 {prefs.highContrast ? 'מופעל' : 'כבוי'}
+              </span>
+            </button>
+
+            {/* מצב כהה */}
+            <button
+              type="button"
+              onClick={() => {
+                update('darkMode', !prefs.darkMode)
+                if (!prefs.darkMode && prefs.highContrast) update('highContrast', false)
+              }}
+              aria-pressed={prefs.darkMode}
+              className={`w-full text-right flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border-2 transition focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-blue-500 ${
+                prefs.darkMode
+                  ? 'border-blue-700 bg-blue-50'
+                  : 'border-gray-200 hover:border-blue-500 hover:bg-blue-50'
+              }`}
+            >
+              <span className="text-sm font-semibold text-gray-800">
+                <span aria-hidden="true">🌙 </span>מצב כהה
+              </span>
+              <span className={`text-xs font-bold px-2 py-0.5 rounded ${prefs.darkMode ? 'bg-blue-700 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                {prefs.darkMode ? 'מופעל' : 'כבוי'}
               </span>
             </button>
 

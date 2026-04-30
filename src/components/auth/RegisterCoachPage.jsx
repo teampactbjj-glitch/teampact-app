@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import InstallBanner from '../InstallBanner'
 import { Field } from '../a11y'
+import { notifyPush } from '../../lib/notifyPush'
+import { allAdminUserIds } from '../../lib/notifyTargets'
 
 export default function RegisterCoachPage() {
   const [branches, setBranches] = useState([])
@@ -130,6 +132,17 @@ export default function RegisterCoachPage() {
       setError('הרישום נכשל — פנה למנהל')
       return
     }
+
+    // 3. Push לכל המנהלים (fire-and-forget — לא לחסום את החוויה אם נכשל)
+    allAdminUserIds()
+      .then(userIds => notifyPush({
+        userIds,
+        title: 'בקשת מאמן חדשה 🥋',
+        body: `${form.full_name.trim()} מבקש להצטרף כמאמן`,
+        url: '/#coaches',
+        tag: `coach-request-${userId}`,
+      }))
+      .catch(e => console.warn('coach notify push failed', e?.message || e))
 
     setDone(true)
   }

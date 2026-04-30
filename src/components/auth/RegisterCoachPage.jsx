@@ -99,26 +99,35 @@ export default function RegisterCoachPage() {
       return
     }
 
-    // 2. השלמת רשומת profiles — הטריגר handle_new_user כבר יצר שורה בסיסית
-    //    (id, email, full_name) אז אנחנו עושים UPDATE במקום INSERT כדי להוסיף
-    //    role=trainer, phone, requested_branch_id. הטריגר enforce_pending_coach_approval
-    //    היה רץ רק ב-INSERT, אז אנחנו מגדירים is_approved=false ידנית כאן.
-    const profilePatch = {
+    // 2. UPSERT לרשומת profiles — חסין לחלוטין:
+    //    - אם הטריגר handle_new_user יצר שורה: יעדכן אותה עם השדות החסרים.
+    //    - אם הטריגר לא רץ (סיבה כלשהי): ייצור שורה חדשה.
+    //    is_approved=false נשלח ידנית (גם אם הטריגר enforce_pending_coach_approval
+    //    לא רץ ב-UPDATE — עבור UPSERT שמתפקד כ-INSERT הוא כן ירוץ).
+    const profilePayload = {
+      id: userId,
+      email,
       full_name: form.full_name.trim(),
       phone: form.phone.trim(),
       role: 'trainer',
       requested_branch_id: form.branch_id,
       is_approved: false,
     }
-    const { error: profileErr } = await supabase
+    const { data: upsertData, error: profileErr } = await supabase
       .from('profiles')
-      .update(profilePatch)
-      .eq('id', userId)
+      .upsert(profilePayload, { onConflict: 'id' })
+      .select()
     setLoading(false)
 
     if (profileErr) {
-      console.error('profile update error:', profileErr)
+      console.error('profile upsert error:', profileErr)
       setError('נרשמת אך הייתה בעיה בשמירת הפרטים — פנה למנהל')
+      return
+    }
+    // וודא שהשורה אכן נוצרה/עודכנה — אחרת המאמן יהיה תקוע בלי לדעת
+    if (!upsertData || upsertData.length === 0) {
+      console.error('profile upsert returned no rows')
+      setError('הרישום נכשל — פנה למנהל')
       return
     }
 

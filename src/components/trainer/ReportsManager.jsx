@@ -63,6 +63,38 @@ function daysAgoISO(days) {
   return d.toISOString()
 }
 
+// המרת מספר טלפון ישראלי לפורמט בינלאומי עבור wa.me
+// 0545551234 → 972545551234 ; +972545551234 → 972545551234 ; 545551234 → 972545551234
+function toIntlPhone(raw) {
+  if (!raw) return null
+  const digits = String(raw).replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.startsWith('972')) return digits
+  if (digits.startsWith('0')) return '972' + digits.slice(1)
+  // 9-10 ספרות בלי קידומת — מניחים מספר ישראלי
+  if (digits.length >= 9 && digits.length <= 10) return '972' + digits
+  return digits
+}
+
+// קישור WhatsApp עם הודעה ממולאת מראש
+function whatsappLink(phone, message) {
+  const intl = toIntlPhone(phone)
+  if (!intl) return null
+  return `https://wa.me/${intl}?text=${encodeURIComponent(message)}`
+}
+
+// תבנית ההודעה לתזכורת מתאמן שלא הגיע
+function inactiveReminderMessage(name, daysSince) {
+  const firstName = String(name || '').trim().split(/\s+/)[0] || 'חבר'
+  if (daysSince === null) {
+    return `היי ${firstName}! 🥋\nשמתי לב שעוד לא התחלת להתאמן איתנו. נשמח לראות אותך באימון הקרוב — תודיע לי באיזה יום נוח לך להתחיל.`
+  }
+  if (daysSince <= 14) {
+    return `היי ${firstName}! 🥋\nלא היית השבוע באימונים, נשמח לשמוע ממך — הכל בסדר?\nמחכים לראות אותך שוב על המזרן 💪`
+  }
+  return `היי ${firstName}! 🥋\nלא ראיתי אותך כבר ${daysSince} ימים באימונים — קרה משהו? נשמח לשמוע ממך.\nאם צריך הפסקה או התאמה במנוי, בוא נדבר 💬`
+}
+
 // ===== UI Primitives =====
 function StatCard({ label, value, sub, tone = 'blue' }) {
   const tones = {
@@ -155,7 +187,7 @@ export default function ReportsManager({ isAdmin }) {
       const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes] = await Promise.all([
         supabase
           .from('members')
-          .select('id, full_name, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at')
+          .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at')
           .range(0, ROW_LIMIT - 1),
         supabase.from('coaches').select('id, name, branch_id').range(0, ROW_LIMIT - 1),
         supabase.from('classes').select('id, name, class_type, coach_id, coach_name, branch_id, day_of_week, start_time').range(0, ROW_LIMIT - 1),
@@ -311,10 +343,12 @@ export default function ReportsManager({ isAdmin }) {
     })
   }, [registrations, periodDays])
 
-  // 0a) מתאמנים רשומים לפי מאמן — לפי class_registrations.
-  // לכל זוג (athlete, class) — יורד למאמן של אותה קבוצה.
+  // 0a) מתאמנים פעילים לפי מאמן — לפי class_registrations.
+  // count = מספר מתאמנים ייחודיים שהיו אצל המאמן.
+  // sessions = סך כל הרישומים לקבוצות של המאמן (אותו מתאמן רשום ל-2 קבוצות → 2 sessions).
   const byAssignedCoach = useMemo(() => {
-    const counts = new Map()
+    const members = new Map()    // coachName → Set<athleteId>
+    const sessions = new Map()   // coachName → number of registrations
     filteredRegistrations.forEach(r => {
       if (!r.athlete_id || !r.class_id) return
       if (!activeMemberIds.has(r.athlete_id)) return
@@ -324,19 +358,21 @@ export default function ReportsManager({ isAdmin }) {
       if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
       if (!coachName && cls.coach_name) coachName = cls.coach_name
       if (!coachName) coachName = 'ללא מאמן'
-      if (!counts.has(coachName)) counts.set(coachName, new Set())
-      counts.get(coachName).add(r.athlete_id)
+      if (!members.has(coachName)) { members.set(coachName, new Set()); sessions.set(coachName, 0) }
+      members.get(coachName).add(r.athlete_id)
+      sessions.set(coachName, sessions.get(coachName) + 1)
     })
-    return Array.from(counts.entries())
-      .map(([name, set]) => ({ name, count: set.size }))
+    return Array.from(members.entries())
+      .map(([name, set]) => ({ name, count: set.size, sessions: sessions.get(name) || 0 }))
       .sort((a, b) => b.count - a.count)
   }, [filteredRegistrations, classById, coachById, activeMemberIds])
 
-  // 0b) מתאמנים רשומים לפי תחום + פילוח לפי מאמן בתוך התחום.
+  // 0b) מתאמנים פעילים לפי תחום + פילוח לפי מאמן בתוך התחום.
+  // count = מספר מתאמנים ייחודיים בתחום, sessions = סך הרישומים לקבוצות בתחום.
   const byAssignedDiscipline = useMemo(() => {
     const acc = {}
     DISCIPLINE_ORDER.forEach(d => {
-      acc[d] = { members: new Set(), byCoach: new Map() }
+      acc[d] = { members: new Set(), sessions: 0, byCoach: new Map() }
     })
     filteredRegistrations.forEach(r => {
       if (!r.athlete_id || !r.class_id) return
@@ -352,17 +388,60 @@ export default function ReportsManager({ isAdmin }) {
       if (!coachName) coachName = 'ללא מאמן'
 
       acc[disc].members.add(r.athlete_id)
-      if (!acc[disc].byCoach.has(coachName)) acc[disc].byCoach.set(coachName, new Set())
-      acc[disc].byCoach.get(coachName).add(r.athlete_id)
+      acc[disc].sessions += 1
+
+      if (!acc[disc].byCoach.has(coachName)) {
+        acc[disc].byCoach.set(coachName, { members: new Set(), sessions: 0 })
+      }
+      const coachAgg = acc[disc].byCoach.get(coachName)
+      coachAgg.members.add(r.athlete_id)
+      coachAgg.sessions += 1
     })
     return DISCIPLINE_ORDER.map(d => ({
       name: d,
       count: acc[d].members.size,
+      sessions: acc[d].sessions,
       byCoach: Array.from(acc[d].byCoach.entries())
-        .map(([name, set]) => ({ name, count: set.size }))
+        .map(([name, agg]) => ({ name, count: agg.members.size, sessions: agg.sessions }))
         .sort((a, b) => b.count - a.count),
     }))
   }, [filteredRegistrations, classById, coachById, disciplineByClassId, activeMemberIds])
+
+  // 0c) מתאמנים שלא נרשמו לאף קבוצה השבוע (>= 7 ימים מאז רישום אחרון).
+  // מבוסס על MAX(week_start) של class_registrations עבור כל מתאמן פעיל.
+  // רושם=נוכחות במודל החדש, אז "לא נרשם השבוע" = "לא הגיע לאימון השבוע".
+  const inactiveMembers = useMemo(() => {
+    const lastByMember = new Map()
+    // משתמשים ב-registrations המלאים (לא ה-filtered) — צריכים את כל ה-180 יום
+    // כדי לדעת מתי באמת היה הרישום האחרון, גם אם הוא ישן.
+    registrations.forEach(r => {
+      if (!r.athlete_id || !r.week_start) return
+      const t = new Date(r.week_start).getTime()
+      const prev = lastByMember.get(r.athlete_id) || 0
+      if (t > prev) lastByMember.set(r.athlete_id, t)
+    })
+
+    const cutoff = Date.now() - 7 * DAY_MS
+    return activeMembers
+      .map(m => {
+        const last = lastByMember.get(m.id) || null
+        return {
+          id: m.id,
+          name: m.full_name || '—',
+          phone: m.phone || null,
+          email: m.email || null,
+          lastRegistration: last,
+          daysSince: last ? Math.floor((Date.now() - last) / DAY_MS) : null,
+        }
+      })
+      .filter(m => !m.lastRegistration || m.lastRegistration < cutoff)
+      // לפי כמות הימים בלי רישום, יורד (הכי מנותקים בראש)
+      .sort((a, b) => {
+        const aDays = a.daysSince ?? 999999
+        const bDays = b.daysSince ?? 999999
+        return bDays - aDays
+      })
+  }, [activeMembers, registrations])
 
   // 1) כמות מתאמנים לפי מאמן — מבוסס נוכחות בפועל (checkins) בטווח הנבחר
   // מחזיר: שם, מתאמנים ייחודיים, וסה"כ אימונים (ספירת כל ה-checkins).
@@ -577,9 +656,10 @@ export default function ReportsManager({ isAdmin }) {
 
   const totalActive = activeMembers.length
   const totalPending = filteredMembers.filter(m => m.status === 'pending' && !m.deleted_at).length
-  const maxCoach = byCoach.reduce((m, r) => Math.max(m, r.count), 0) || 1
-  const maxDiscipline = byDiscipline.reduce((m, r) => Math.max(m, r.count), 0) || 1
   const churnPctTotal = totalActiveBase > 0 ? Math.round((totalChurned / totalActiveBase) * 100) : 0
+  // משתנים אלה אינם בשימוש עוד (היו משמשים את דוחות "פעילות בפועל" שהוסרו),
+  // אבל ה-aggregations byCoach/byDiscipline עדיין מחושבים כי משמשים את churn report.
+  void byCoach; void byDiscipline
 
   return (
     <div className="space-y-4" dir="rtl">
@@ -624,29 +704,29 @@ export default function ReportsManager({ isAdmin }) {
         ))}
       </div>
 
-      {/* === רישום פעיל לקבוצות (לא תלוי נוכחות) === */}
+      {/* === פעילות מאמנים ותחומים (מודל "רישום=הגעה") === */}
 
-      {/* מתאמנים רשומים לפי מאמן — לפי class_registrations */}
+      {/* מתאמנים פעילים לפי מאמן */}
       <SectionCard
-        title={`מתאמנים רשומים לפי מאמן (${periodDays} ימים)`}
+        title={`מתאמנים פעילים לפי מאמן (${periodDays} ימים)`}
         icon="🥋"
-        footer={`ספירה לפי רישום פעיל לקבוצות (class_registrations) — מי שנרשם לקבוצה כלשהי בטווח של ${periodDays} הימים האחרונים. לא תלוי בנוכחות בפועל.`}
+        footer="המספר הראשון = מתאמנים ייחודיים אצל המאמן. המספר השני = סה״כ רישומים לקבוצות שלו (מתאמן הרשום ל-2 קבוצות נספר 2)."
       >
         {byAssignedCoach.length === 0 || byAssignedCoach.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
         ) : (
           byAssignedCoach.filter(r => r.count > 0).map(row => {
             const max = byAssignedCoach.reduce((m, r) => Math.max(m, r.count), 0) || 1
-            return <BarRow key={row.name} label={row.name} value={row.count} max={max} color="#0d9488" />
+            return <BarRow key={row.name} label={row.name} value={row.count} max={max} color="#0d9488" sessions={row.sessions} />
           })
         )}
       </SectionCard>
 
-      {/* מתאמנים רשומים לפי תחום + פילוח לפי מאמן */}
+      {/* מתאמנים פעילים לפי תחום + פילוח לפי מאמן */}
       <SectionCard
-        title={`מתאמנים רשומים לפי תחום לחימה (${periodDays} ימים)`}
+        title={`מתאמנים פעילים לפי תחום לחימה (${periodDays} ימים)`}
         icon="🥊"
-        footer={`ספירה לפי רישום פעיל לקבוצות (class_registrations) ב-${periodDays} הימים האחרונים. תחת כל תחום, פילוח לפי המאמן של הקבוצה.`}
+        footer="המספר הראשון = מתאמנים ייחודיים בתחום. השני = סה״כ רישומים לקבוצות באותו תחום. תחת כל תחום, פילוח לפי המאמן של הקבוצה."
       >
         {byAssignedDiscipline.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
@@ -660,6 +740,7 @@ export default function ReportsManager({ isAdmin }) {
                   value={row.count}
                   max={max}
                   color={DISCIPLINE_COLORS[row.name]}
+                  sessions={row.sessions}
                 />
                 {row.byCoach.length > 0 && row.count > 0 && (
                   <div className="mr-3 pl-2 border-r-2 border-gray-200 mt-1">
@@ -669,7 +750,10 @@ export default function ReportsManager({ isAdmin }) {
                           <span aria-hidden="true" className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: DISCIPLINE_COLORS[row.name] }} />
                           <span className="truncate" title={coach.name}>{coach.name}</span>
                         </span>
-                        <span className="shrink-0 mr-2 font-semibold text-gray-900">{coach.count}</span>
+                        <span className="shrink-0 mr-2 font-semibold text-gray-900">
+                          {coach.count}
+                          <span className="text-gray-500 font-normal mr-1">· {coach.sessions} אימונים</span>
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -681,53 +765,54 @@ export default function ReportsManager({ isAdmin }) {
         <p className="text-xs text-gray-500 mt-2">* מתאמן שמשויך לקבוצות בכמה תחומים נספר בכל אחד.</p>
       </SectionCard>
 
-      {/* === מבוסס נוכחות בפועל (engagement metric) === */}
-
-      {/* מתאמנים לפי מאמן — מבוסס נוכחות בפועל */}
-      <SectionCard title={`פעילות בפועל לפי מאמן (${periodDays} ימים)`} icon="✅" footer={`ספירה מבוססת על נוכחות (checkins) ב-${periodDays} הימים האחרונים · מתאמן שהיה אצל מספר מאמנים נספר אצל כל אחד.`}>
-        {byCoach.length === 0 ? (
-          <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
+      {/* === התראת לא-פעילים (פער בין רשומים לבין מי שמגיע באמת) === */}
+      <SectionCard
+        title={`מתאמנים שלא הגיעו מעל שבוע ${inactiveMembers.length > 0 ? `(${inactiveMembers.length})` : ''}`}
+        icon="⚠️"
+        footer="במודל הנוכחי רישום לקבוצה = הגעה לאימון. רשימה זו מציגה מתאמנים פעילים שלא נרשמו לאף קבוצה במהלך 7 הימים האחרונים. לחיצה על ווצאפ פותחת שיחה עם הודעת תזכורת ממולאת מראש."
+      >
+        {inactiveMembers.length === 0 ? (
+          <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3">✅ כל המתאמנים הפעילים נרשמו לאימון בשבוע האחרון.</p>
         ) : (
-          byCoach.filter(r => r.count > 0).map(row => (
-            <BarRow key={row.name} label={row.name} value={row.count} max={maxCoach} color="#059669" sessions={row.sessions} />
-          ))
-        )}
-      </SectionCard>
-
-      {/* מתאמנים לפי תחום — מבוסס נוכחות בפועל, עם פילוח פנימי לפי מאמן */}
-      <SectionCard title={`פעילות בפועל לפי תחום לחימה (${periodDays} ימים)`} icon="✅" footer={`ספירה מבוססת על נוכחות (checkins) ב-${periodDays} הימים האחרונים. התחום מזוהה אוטומטית לפי שם השיעור.`}>
-        {byDiscipline.every(r => r.count === 0) ? (
-          <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
-        ) : (
-          byDiscipline.filter(r => r.count > 0 || r.name !== 'אחר').map(row => (
-            <div key={row.name} className="mb-4 last:mb-0">
-              <BarRow
-                label={row.name}
-                value={row.count}
-                max={maxDiscipline}
-                color={DISCIPLINE_COLORS[row.name]}
-                sessions={row.sessions}
-              />
-              {row.byCoach.length > 0 && row.count > 0 && (
-                <div className="mr-3 pl-2 border-r-2 border-gray-200 mt-1">
-                  {row.byCoach.map(coach => (
-                    <div key={`${row.name}-${coach.name}`} className="flex items-center justify-between text-xs text-gray-700 py-1">
-                      <span className="truncate flex items-center gap-1.5">
-                        <span aria-hidden="true" className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: DISCIPLINE_COLORS[row.name] }} />
-                        <span className="truncate" title={coach.name}>{coach.name}</span>
-                      </span>
-                      <span className="shrink-0 mr-2 font-semibold text-gray-900">
-                        {coach.count}
-                        <span className="text-gray-500 font-normal mr-1">· {coach.sessions} אימונים</span>
-                      </span>
+          <div className="max-h-96 overflow-y-auto -mx-4 px-4">
+            <ul className="divide-y divide-gray-100">
+              {inactiveMembers.map(m => {
+                const days = m.daysSince
+                const daysLabel = days === null ? 'לא נרשם מעולם' : `${days} ימים`
+                const toneClass = days === null ? 'bg-gray-100 text-gray-700' :
+                  days >= 30 ? 'bg-red-100 text-red-800' :
+                  days >= 14 ? 'bg-orange-100 text-orange-800' :
+                  'bg-yellow-100 text-yellow-800'
+                const waLink = whatsappLink(m.phone, inactiveReminderMessage(m.name, days))
+                return (
+                  <li key={m.id} className="flex items-center gap-3 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 text-sm truncate" title={m.name}>{m.name}</div>
+                      {m.phone && <div className="text-xs text-gray-500 mt-0.5" dir="ltr">{m.phone}</div>}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))
+                    <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${toneClass}`}>
+                      {daysLabel}
+                    </span>
+                    {waLink ? (
+                      <a
+                        href={waLink}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        aria-label={`שלח הודעת ווצאפ ל${m.name}`}
+                        className="shrink-0 inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold px-3 py-2 rounded-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-700"
+                      >
+                        <span aria-hidden="true">💬</span>
+                        <span>ווצאפ</span>
+                      </a>
+                    ) : (
+                      <span className="shrink-0 text-xs text-gray-400 italic px-3 py-2">אין טלפון</span>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
         )}
-        <p className="text-xs text-gray-500 mt-2">* מתאמן שהיה באימונים במספר תחומים/מאמנים נספר בכל אחד מהם.</p>
       </SectionCard>
 
       {/* שיעורי ניסיון לפי תחום לחימה — דוח שיווקי */}

@@ -716,6 +716,9 @@ export default function ReportsManager({ isAdmin }) {
         ) : (
           byAssignedDiscipline.filter(r => r.count > 0 || r.name !== 'אחר').map(row => {
             const max = byAssignedDiscipline.reduce((m, r) => Math.max(m, r.count), 0) || 1
+            // חפיפה = סכום פר-מאמן פחות הייחודיים. אם > 0 → יש מתאמנים אצל כמה מאמנים.
+            const sumByCoach = row.byCoach.reduce((s, c) => s + c.count, 0)
+            const overlap = sumByCoach - row.count
             return (
               <div key={`assigned-${row.name}`} className="mb-4 last:mb-0">
                 <BarRow
@@ -727,6 +730,11 @@ export default function ReportsManager({ isAdmin }) {
                 />
                 {row.byCoach.length > 0 && row.count > 0 && (
                   <div className="mr-3 pl-2 border-r-2 border-gray-200 mt-1.5 space-y-1.5">
+                    {overlap > 0 && (
+                      <div className="text-[11px] text-gray-500 italic mb-1">
+                        💡 סכום העמודות מתחת ({sumByCoach}) גדול מ-{row.count} כי {overlap} {overlap === 1 ? 'מתאמן רשום' : 'מתאמנים רשומים'} אצל יותר ממאמן אחד.
+                      </div>
+                    )}
                     {row.byCoach.map(coach => {
                       // המד של המאמן יחסי למאמן הבולט בתחום שלו
                       const maxInDisc = row.byCoach.reduce((m, c) => Math.max(m, c.count), 0) || 1
@@ -758,7 +766,10 @@ export default function ReportsManager({ isAdmin }) {
             )
           })
         )}
-        <p className="text-xs text-gray-500 mt-2">* מתאמן שמשויך לקבוצות בכמה תחומים נספר בכל אחד.</p>
+        <p className="text-xs text-gray-500 mt-2">
+          * מתאמן שמשויך לקבוצות בכמה תחומים נספר בכל תחום בנפרד.<br />
+          * בתוך תחום, מתאמן שרשום אצל כמה מאמנים נספר אצל כל אחד מהם — לכן סכום המאמנים יכול להיות גדול מהמספר הכולל בתחום.
+        </p>
       </SectionCard>
 
       {/* === התראת לא-פעילים (פער בין רשומים לבין מי שמגיע באמת) === */}

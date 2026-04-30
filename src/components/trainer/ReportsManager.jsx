@@ -282,6 +282,95 @@ export default function ReportsManager({ isAdmin }) {
     return m
   }, [classes])
 
+  // ============================================================
+  // דוחות שיוך (registration-based) — לא מבוססי נוכחות בפועל.
+  // סופרים את מי שמשויך פורמלית למאמן/לקבוצה, גם אם עדיין לא הגיע
+  // פיזית לאף שיעור (למשל: נרשמים חדשים).
+  // ============================================================
+
+  // 0a) מתאמנים משויכים לפי מאמן — לפי שדה members.coach_id (שיוך פורמלי).
+  // אם אין coach_id, ניסיון fallback ל-requested_coach_name(s) (לידים שטרם אושרו).
+  const byAssignedCoach = useMemo(() => {
+    const counts = new Map()
+    coaches.forEach(c => counts.set(c.name || '—', new Set()))
+    activeMembers.forEach(m => {
+      if (m.coach_id && coachById.has(m.coach_id)) {
+        const name = coachById.get(m.coach_id).name || '—'
+        if (!counts.has(name)) counts.set(name, new Set())
+        counts.get(name).add(m.id)
+        return
+      }
+      // fallback: requested_coach_names array או requested_coach_name יחיד
+      const requested = Array.isArray(m.requested_coach_names) && m.requested_coach_names.length > 0
+        ? m.requested_coach_names
+        : (m.requested_coach_name ? [m.requested_coach_name] : [])
+      if (requested.length === 0) {
+        const k = 'ללא מאמן משויך'
+        if (!counts.has(k)) counts.set(k, new Set())
+        counts.get(k).add(m.id)
+        return
+      }
+      requested.filter(Boolean).forEach(name => {
+        if (!counts.has(name)) counts.set(name, new Set())
+        counts.get(name).add(m.id)
+      })
+    })
+    return Array.from(counts.entries())
+      .map(([name, set]) => ({ name, count: set.size }))
+      .sort((a, b) => b.count - a.count)
+  }, [activeMembers, coaches, coachById])
+
+  // 0b) מתאמנים משויכים לפי תחום + פילוח פנימי לפי מאמן.
+  // מבוסס members.group_ids → classes → discipline. כל מתאמן נספר פעם אחת
+  // בכל תחום (גם אם הוא רשום למספר קבוצות באותו תחום).
+  const byAssignedDiscipline = useMemo(() => {
+    const acc = {}
+    DISCIPLINE_ORDER.forEach(d => {
+      acc[d] = { members: new Set(), byCoach: new Map() }
+    })
+    activeMembers.forEach(m => {
+      const groupIds = (Array.isArray(m.group_ids) && m.group_ids.length > 0)
+        ? m.group_ids
+        : (m.group_id ? [m.group_id] : [])
+      if (groupIds.length === 0) return
+
+      // לאסוף לאיזה תחומים ולאיזה מאמנים המתאמן משויך
+      const memberDisciplines = new Set()
+      const memberCoachByDiscipline = new Map() // discipline → Set<coachName>
+      groupIds.forEach(gid => {
+        const cls = classById.get(gid)
+        if (!cls) return
+        const disc = disciplineByClassId.get(gid) || 'אחר'
+        if (!acc[disc]) return
+        memberDisciplines.add(disc)
+
+        let coachName = null
+        if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
+        if (!coachName && cls.coach_name) coachName = cls.coach_name
+        if (!coachName) coachName = 'ללא מאמן'
+
+        if (!memberCoachByDiscipline.has(disc)) memberCoachByDiscipline.set(disc, new Set())
+        memberCoachByDiscipline.get(disc).add(coachName)
+      })
+
+      memberDisciplines.forEach(d => {
+        acc[d].members.add(m.id)
+        const coachSet = memberCoachByDiscipline.get(d) || new Set()
+        coachSet.forEach(coachName => {
+          if (!acc[d].byCoach.has(coachName)) acc[d].byCoach.set(coachName, new Set())
+          acc[d].byCoach.get(coachName).add(m.id)
+        })
+      })
+    })
+    return DISCIPLINE_ORDER.map(d => ({
+      name: d,
+      count: acc[d].members.size,
+      byCoach: Array.from(acc[d].byCoach.entries())
+        .map(([name, set]) => ({ name, count: set.size }))
+        .sort((a, b) => b.count - a.count),
+    }))
+  }, [activeMembers, classById, disciplineByClassId, coachById])
+
   // 1) כמות מתאמנים לפי מאמן — מבוסס נוכחות בפועל (checkins) בטווח הנבחר
   // מחזיר: שם, מתאמנים ייחודיים, וסה"כ אימונים (ספירת כל ה-checkins).
   const byCoach = useMemo(() => {
@@ -542,19 +631,78 @@ export default function ReportsManager({ isAdmin }) {
         ))}
       </div>
 
+      {/* === שיוך פורמלי (לא תלוי נוכחות) === */}
+
+      {/* מתאמנים משויכים לפי מאמן — לפי members.coach_id */}
+      <SectionCard
+        title="מתאמנים משויכים לפי מאמן"
+        icon="🥋"
+        footer="ספירה לפי שיוך פורמלי (members.coach_id) — כל המתאמנים הפעילים, גם אם עדיין לא הגיעו לאימון. לידים שטרם אושרו משויכים לפי שם המאמן שביקשו."
+      >
+        {byAssignedCoach.length === 0 || byAssignedCoach.every(r => r.count === 0) ? (
+          <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
+        ) : (
+          byAssignedCoach.filter(r => r.count > 0).map(row => {
+            const max = byAssignedCoach.reduce((m, r) => Math.max(m, r.count), 0) || 1
+            return <BarRow key={row.name} label={row.name} value={row.count} max={max} color="#0d9488" />
+          })
+        )}
+      </SectionCard>
+
+      {/* מתאמנים משויכים לפי תחום + פילוח לפי מאמן */}
+      <SectionCard
+        title="מתאמנים משויכים לפי תחום לחימה"
+        icon="🥊"
+        footer="ספירה לפי הקבוצות שאליהן משויך כל מתאמן (members.group_ids) — לא תלוי בנוכחות. תחת כל תחום, פילוח לפי המאמן של אותה קבוצה."
+      >
+        {byAssignedDiscipline.every(r => r.count === 0) ? (
+          <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
+        ) : (
+          byAssignedDiscipline.filter(r => r.count > 0 || r.name !== 'אחר').map(row => {
+            const max = byAssignedDiscipline.reduce((m, r) => Math.max(m, r.count), 0) || 1
+            return (
+              <div key={`assigned-${row.name}`} className="mb-4 last:mb-0">
+                <BarRow
+                  label={row.name}
+                  value={row.count}
+                  max={max}
+                  color={DISCIPLINE_COLORS[row.name]}
+                />
+                {row.byCoach.length > 0 && row.count > 0 && (
+                  <div className="mr-3 pl-2 border-r-2 border-gray-200 mt-1">
+                    {row.byCoach.map(coach => (
+                      <div key={`assigned-${row.name}-${coach.name}`} className="flex items-center justify-between text-xs text-gray-700 py-1">
+                        <span className="truncate flex items-center gap-1.5">
+                          <span aria-hidden="true" className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: DISCIPLINE_COLORS[row.name] }} />
+                          <span className="truncate" title={coach.name}>{coach.name}</span>
+                        </span>
+                        <span className="shrink-0 mr-2 font-semibold text-gray-900">{coach.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
+        <p className="text-xs text-gray-500 mt-2">* מתאמן שמשויך לקבוצות בכמה תחומים נספר בכל אחד.</p>
+      </SectionCard>
+
+      {/* === מבוסס נוכחות בפועל (engagement metric) === */}
+
       {/* מתאמנים לפי מאמן — מבוסס נוכחות בפועל */}
-      <SectionCard title="מתאמנים לפי מאמן" icon="🥋" footer={`ספירה מבוססת על נוכחות בפועל ב-${periodDays} הימים האחרונים · מתאמן שהיה אצל מספר מאמנים נספר אצל כל אחד.`}>
+      <SectionCard title={`פעילות בפועל לפי מאמן (${periodDays} ימים)`} icon="✅" footer={`ספירה מבוססת על נוכחות (checkins) ב-${periodDays} הימים האחרונים · מתאמן שהיה אצל מספר מאמנים נספר אצל כל אחד.`}>
         {byCoach.length === 0 ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
         ) : (
-          byCoach.map(row => (
+          byCoach.filter(r => r.count > 0).map(row => (
             <BarRow key={row.name} label={row.name} value={row.count} max={maxCoach} color="#059669" sessions={row.sessions} />
           ))
         )}
       </SectionCard>
 
       {/* מתאמנים לפי תחום — מבוסס נוכחות בפועל, עם פילוח פנימי לפי מאמן */}
-      <SectionCard title="מתאמנים לפי תחום לחימה" icon="🥊" footer={`ספירה מבוססת על רישום בפועל לשיעורים ב-${periodDays} הימים האחרונים. התחום מזוהה אוטומטית לפי שם השיעור.`}>
+      <SectionCard title={`פעילות בפועל לפי תחום לחימה (${periodDays} ימים)`} icon="✅" footer={`ספירה מבוססת על נוכחות (checkins) ב-${periodDays} הימים האחרונים. התחום מזוהה אוטומטית לפי שם השיעור.`}>
         {byDiscipline.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
         ) : (

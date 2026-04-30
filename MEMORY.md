@@ -1,4 +1,116 @@
-# MEMORY - TeamPact App - 24.4.2026
+# MEMORY - TeamPact App
+
+> **🆕 הסשן האחרון: 30.04.2026 — דוחות + תיקון BottomNav iOS PWA**
+>
+> ⚠️ **My last pending task** מוגדר למטה בסעיף "Session 30.04.2026". קרא אותו ראשון.
+
+---
+
+# 📅 Session 30.04.2026 — Reports overhaul + BottomNav iOS fix
+
+## תיקונים שבוצעו בסשן הזה
+
+### 1. סרגל ניווט תחתון (BottomNav) — תיקון iOS PWA "עף למעלה"
+**קבצים:** `src/index.css`, `src/components/BottomNav.jsx`
+
+- `index.css`: `100dvh` במקום `100vh`, `overscroll-behavior-y: none` על html/body, fallback ל-`min-h-screen` של Tailwind.
+- `BottomNav.jsx`: `inset: auto 0 0 0` במקום `bottom: 0`, `transform: translateZ(0)` (האצת חומרה), `WebkitBackfaceVisibility: hidden`.
+
+### 2. דוחות (`ReportsManager.jsx`) — שכתוב מקיף
+
+**שינוי קריטי במקור הנתונים:** מ-`checkins` ל-`class_registrations`. הסיבה: `checkins` יש בה constraint `unique(class_id, athlete_id)` (ב-`supabase-schema.sql` שורה 40), אז יש רק שורה אחת לכל זוג ולכן השדה `checked_in_at` משקף רק את ההצטרפות הראשונה. במודל הנוכחי "רישום = הגעה" — לכן `class_registrations` הוא מקור האמת.
+
+**1000-row limit defensive fix:** הוספתי `.range(0, 99999)` לכל השאילתות + סינון 180 יום בצד השרת על `checkins`, `trial_visits` ו-`class_registrations`.
+
+**זיהוי תחום (`detectDiscipline`):** נורמליזציה מסירה גרשים/רווחים/מקפים, אז כל הצורות (`ג׳יוג׳יטסו`, `גיו גיטסו`, `bjj`, `נו גי`, `גרפלינג`...) מזוהות כ-BJJ. סדר הבדיקות: 3-6 → MMA → Muay Thai → BJJ → ברירת מחדל BJJ.
+
+**ילדים:** רק `3-6` בשם → ילדים. שיעורים אחרים עם "ילדים"/"נוער" → BJJ (זה בכוונה — האקדמיה בעיקרה BJJ).
+
+**סקציות בדוח (סדר נוכחי):**
+1. סיכום מהיר (StatCards)
+2. סלייד טווח זמן (7/30/60/90/180 ימים)
+3. **מתאמנים פעילים לפי תחום לחימה** — פילוח פנימי לפי מאמן + מד יחסי לכל מאמן + הסבר אוטומטי על חפיפה ("X מתאמנים רשומים אצל יותר ממאמן אחד").
+4. **שיעורי ניסיון לפי תחום ולפי מאמן** — בעתיד יחובר לעמודת תשלום.
+5. **מתאמנים שלא הגיעו מעל שבוע** — רשימה עם כפתור 💬 ווצאפ (wa.me link).
+6. נרשמים חדשים.
+7. נטישה לפי מאמן ולפי קבוצה.
+
+**הוסרו:**
+- "מתאמנים פעילים לפי מאמן" (כפילות — הפילוח כבר בתוך התחום).
+- שתי סקציות "פעילות בפועל" (היו שגויות בגלל ה-unique constraint על checkins).
+
+### 3. WhatsApp Reminder
+**פונקציות עזר חדשות בראש `ReportsManager.jsx`:**
+- `toIntlPhone(raw)` — ממיר מספר ישראלי לפורמט בינלאומי (0545551234 → 972545551234).
+- `whatsappLink(phone, message)` — בונה wa.me URL.
+- `inactiveReminderMessage(name, daysSince)` — תבנית שמתאימה את הטון: ≤14 ימים = "נשמח לשמוע ממך", >14 = "קרה משהו?", ללא רישום = "עוד לא התחלת להתאמן איתנו".
+
+---
+
+## ⚠️ My last pending task — התראות אוטומטיות למתאמנים לא פעילים
+
+**הפרומפט המקורי (תרגום של מה שהמשתמש ביקש):**
+> "אני רוצה שברגע שמתאמן שבוע שלם לא נרשם לאף אימון שהמערכת תשלח לו הודעה אישית אוטומטית באפליקציה, אפשרי ללא תשלום? וגם איך בווצאפ או באפליקציה."
+
+**הסכם בין המשתמש לבין Claude:**
+1. **סף הזמן:** שבוע או שבועיים — להחליט יחד מה הסף הנכון "כדי לא להטריד אותם". כרגע בקוד `7 ימים` (קבוע ב-`inactiveMembers` aggregation: `cutoff = Date.now() - 7 * DAY_MS`).
+2. **ערוצים:** ווצאפ + אפליקציה (Push Notification).
+3. **Push חינם לחלוטין** — Supabase Edge Function (500K הפעלות חינם) + Web Push API. תשתית קיימת ב-`src/lib/push.js` ו-`src/lib/notifyPush.js`.
+4. **WhatsApp ידני** קיים (כפתור wa.me ב-ReportsManager). **WhatsApp אוטומטי** דורש Twilio (~0.05$/הודעה) — דחוי לעתיד.
+
+**מה צריך לבנות:**
+
+### שלב א׳ — Push Notification ידני
+- כפתור 📲 **"שלח Push"** ליד כל מתאמן ברשימת הלא-פעילים (ב-ReportsManager).
+- כפתור **"שלח לכל הלא-פעילים"** למעלה של הסקציה.
+- שימוש ב-`notifyPush` הקיים (לבדוק חתימה ב-`src/lib/notifyPush.js`).
+
+### שלב ב׳ — Push אוטומטי יומי
+- **Supabase Edge Function** חדשה: `notify-inactive-members`.
+  - שאילתה: `members` שאין להם `class_registrations.week_start` בטווח X ימים.
+  - שליחת Web Push לכל אחד.
+  - לוג של מי קיבל.
+- **טריגר cron — אופציות חינמיות:**
+  - GitHub Actions עם cron schedule (מומלץ).
+  - cron-job.org.
+  - Supabase Pro pg_cron — לא חינם.
+- **שעה לאישור עם המשתמש:** הצעה 09:00.
+
+### שלב ג׳ — תבנית הודעה
+יש כבר ב-`ReportsManager.jsx` פונקציה `inactiveReminderMessage(name, daysSince)` שמתאימה טון. לאמץ אותה גם ל-Push.
+
+### שלב ד׳ — דו-כיווניות (פתוח להחלטה)
+המשתמש שאל אם המתאמן יכול לענות. תשובה:
+- **WhatsApp** = דו-כיווני באופן טבעי.
+- **Push** = חד-כיווני בלבד. לתשובה תוך-אפליקציה צריך לבנות **צ'אט פנימי** (טבלת `messages` + UI). 1-2 ימי עבודה. דחוי.
+
+**ההצעה הנוכחית:**
+1. שלב 1 (מהר וחינם): Push חד-כיווני שמודיע לא-פעילים. בלחיצה על ההתראה האפליקציה תיפתח על מסך הלו"ז עם כפתור שפותח ווצאפ למאמן. **דו-כיווניות תחת ווצאפ, התראה תחת Push.**
+2. שלב 2 (כשירצה): צ'אט פנימי באפליקציה.
+
+**להחלטה מחר:**
+- סף ימים: 7 או 14?
+- שעה לשליחת ה-Push היומי: 09:00? אחר?
+- האם להתחיל בשלב א׳ (Push ידני) או לקפוץ ישר לשלב ב׳ (Push אוטומטי)?
+
+---
+
+## בעיות ידועות במודל הנתונים (להתייחסות עתידית)
+
+1. **`unique(class_id, athlete_id)` על `checkins`** — `supabase-schema.sql` שורה 40. מונע מעקב נוכחות שבועי אמיתי. אם בעתיד נרצה דוח "כמה פעמים בא דני באמת" — צריך migration: drop של ה-unique הקיים + הוספת `unique(class_id, athlete_id, date(checked_in_at))`. דורש עדכון 4-5 קבצים בקוד שמשתמשים ב-upsert עם `onConflict: 'class_id,athlete_id'`.
+
+2. **`members.coach_id` ו-`members.group_ids`** ריקים אצל ~71 מתוך 73 מתאמנים. לכן עברנו ל-class_registrations. אם תהיה דרישה לדוח לפי שיוך פורמלי, צריך קודם migration שתמלא את השדות (אולי על בסיס ה-class_registrations עצמן).
+
+3. **לוג אבחון בקונסול** — בכל טעינת דוח:
+   ```
+   [Reports] loaded: { members, classes, coaches, checkins_present_180d, trial_visits_180d, class_registrations_180d }
+   [Reports] class classification: { BJJ, Muay Thai, MMA, ילדים, אחר }
+   [Reports] שיעורים שמסווגים כ"אחר": [...]
+   ```
+
+---
+
+# 📅 Session 24.04.2026 (קודם) — מבנה הפרויקט (נשאר בתוקף)
 
 ## מבנה הפרויקט
 - **teampact-app** (React 19 + Vite + Tailwind + Supabase) - מתארח ב-Vercel (auto-deploy מ-`main`)

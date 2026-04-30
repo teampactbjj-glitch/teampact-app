@@ -4,20 +4,42 @@ import { supabase } from '../../lib/supabase'
 // ===== Helpers =====
 const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
-// זיהוי תחום לחימה לפי שם הקבוצה/שיעור (מילות מפתח)
+// נורמליזציה: lowercase + הסרת גרש/גרשיים/רווחים/מקפים — כדי שכל הצורות
+// (ג׳יו ג׳יטסו / ג'יוג'יטסו / גיוגיטסו / ג'יו גיטסו) ימופו לאותה מחרוזת אחת.
+function normalize(s) {
+  return String(s || '').toLowerCase()
+    .replace(/[׳״'’“”"`]/g, '') // ׳ ״ ' ' " " ` (כל סוגי הגרשים)
+    .replace(/[\s\-_·.,]+/g, '')                              // רווחים ומפרידים
+}
+
+// זיהוי תחום לחימה לפי שם הקבוצה/שיעור.
+// סדר הבדיקות חשוב: MMA קודם ל-Muay Thai קודם ל-BJJ — כדי ש"מתחילים מואי טאי"
+// יזוהה כ-Muay Thai ולא ייפול ל-BJJ דרך "מתחילים".
 function detectDiscipline(nameRaw = '') {
-  const n = String(nameRaw).toLowerCase().trim()
-  // ילדים (טף) — אך ורק קבוצת "לחימה משולבת 3-6" של סהר גפלא/איתי ליפשיץ
-  // (שני/חמישי 17:05). קבוצות "א-ג" / "ד-ו" / "ילדים מתקדמים" נשארות בתחום המקורי.
-  if (/\b3[- ]?6\b/.test(n)) return 'ילדים'
-  // MMA — לחימה משולבת/מעורבת
-  if (/\bmma\b|לחימה משולבת|לחימה מעורבת|קרב משולב|קרב מעורב|משולב|מעורב/.test(n)) return 'MMA'
-  // Muay Thai — איגרוף תאילנדי / מואי טאי
-  if (/muay|thai|תאילנדי|תאילנד|איגרוף|מואי[- ]?טאי|מואיטאי/.test(n)) return 'Muay Thai'
-  // BJJ — ג'יו ג'יטסו, נוגי, גראפלינג, ברזיל, מזרן/מזרון פתוח (Open Mat)
-  if (/bjj|jiu|ג['׳]?יו|גיו|ג['׳]?יטסו|ג'יטסו|נו[- ]?גי|no[- ]?gi|ברזיל|גראפלינג|grappling|מזרו?ן|open[- ]?mat|אופן[- ]?מאט/.test(n)) return 'BJJ'
-  // "גי" כמילה עצמאית (למשל "אימון גי" או "גי שחור")
-  if (/(^|[\s·\-·])גי([\s·\-·]|$)/.test(n)) return 'BJJ'
+  const n = normalize(nameRaw)
+  if (!n) return 'אחר'
+
+  // ילדים — אך ורק קבוצת לחימה משולבת לגיל 3-6
+  if (/3.?6/.test(n)) return 'ילדים'
+
+  // MMA / לחימה משולבת — בכל צורה כתיב (עם/בלי רווחים)
+  if (/(^|[^a-z])mma([^a-z]|$)|לחימהמשולבת|לחימהמעורבת|קרבמשולב|קרבמעורב|משולב|מעורב/.test(n)) return 'MMA'
+
+  // Muay Thai / איגרוף תאילנדי — בכל צורה כתיב
+  if (/muaythai|muay|מואיטאי|מואיתאי|מואי|איגרוףתאילנדי|איגרוףתאי|תאילנדי|תאילנד/.test(n)) return 'Muay Thai'
+
+  // BJJ — כל הצורות: ג׳יו ג׳יטסו / ג'יו ג'יטסו / גיו גיטסו / ג'יוג'יטסו / גיוגיטסו /
+  // BJJ / Jiu Jitsu / נוגי / נו גי / גראפלינג / גרפלינג / Grappling / ברזיל / Open Mat
+  if (/bjj|jiujitsu|jiu|jitsu|גיוגיטסו|גיוגי|גיטסו|נוגי|nogi|גראפלינג|גרפלינג|grappling|ברזיל|brazil|openmat|אופנמט|אופןמט/.test(n)) return 'BJJ'
+
+  // "גי" כמילה עצמאית (אימון גי / גי שחור) — בודק על המחרוזת המקורית כדי לא לבלבל
+  // עם "גיא" / "גיל" וכד'.
+  if (/(^|\s)גי(\s|$)/.test(String(nameRaw))) return 'BJJ'
+
+  // ברירת מחדל ל-Team Pact (אקדמיית BJJ): שיעורים גנריים שלא נתפסו למעלה הם BJJ.
+  // שיעורי MMA / Muay Thai עם תיוג ברור כבר נתפסו, אז כאן בטוח.
+  if (/מתחילים|מתחיל|מתקדמים|מתקדם|בינוני|כחול|סגול|חום|שחור|חגורה|נשים|נשי|adult|adv|beg|kids|ילדים|נוער|טף/.test(n)) return 'BJJ'
+
   return 'אחר'
 }
 
@@ -123,15 +145,32 @@ export default function ReportsManager({ isAdmin }) {
     setLoading(true)
     setErr('')
     try {
+      // Supabase מחזיר ברירת מחדל עד 1000 שורות בלבד. כדי שהדוחות לא ייחתכו —
+      // נטענות עד 100,000 רשומות בכל קריאה, וגם מסננים מראש לפי טווח של 180 יום
+      // (הטווח המקסימלי שניתן לבחור) כדי לחסוך תעבורה.
+      const ROW_LIMIT = 100000
+      const sinceMaxISO = new Date(Date.now() - 180 * DAY_MS).toISOString()
+
       const [mRes, cRes, clsRes, bRes, chkRes, tvRes] = await Promise.all([
         supabase
           .from('members')
-          .select('id, full_name, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at'),
-        supabase.from('coaches').select('id, name, branch_id'),
-        supabase.from('classes').select('id, name, class_type, coach_id, branch_id, day_of_week, start_time'),
-        supabase.from('branches').select('id, name'),
-        supabase.from('checkins').select('class_id, athlete_id, status, checked_in_at').eq('status', 'present'),
-        supabase.from('trial_visits').select('id, class_id, visited_at, visitor_name'),
+          .select('id, full_name, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at')
+          .range(0, ROW_LIMIT - 1),
+        supabase.from('coaches').select('id, name, branch_id').range(0, ROW_LIMIT - 1),
+        supabase.from('classes').select('id, name, class_type, coach_id, coach_name, branch_id, day_of_week, start_time').range(0, ROW_LIMIT - 1),
+        supabase.from('branches').select('id, name').range(0, ROW_LIMIT - 1),
+        // checkins: מסנן בצד השרת לפי טווח של 180 יום + מסיר את מגבלת 1000 השורות
+        supabase
+          .from('checkins')
+          .select('class_id, athlete_id, status, checked_in_at')
+          .eq('status', 'present')
+          .gte('checked_in_at', sinceMaxISO)
+          .range(0, ROW_LIMIT - 1),
+        supabase
+          .from('trial_visits')
+          .select('id, class_id, visited_at, visitor_name')
+          .gte('visited_at', sinceMaxISO)
+          .range(0, ROW_LIMIT - 1),
       ])
       if (mRes.error)   throw mRes.error
       if (cRes.error)   throw cRes.error
@@ -148,6 +187,34 @@ export default function ReportsManager({ isAdmin }) {
       setBranches(bRes.data || [])
       setCheckins(chkRes.data || [])
       setTrialVisits(tvRes.data || [])
+
+      // לוג אבחון: מאפשר לוודא בקונסול של הדפדפן (Safari → Develop → Show Web Inspector)
+      // שכל הצ'ק-אינים נטענו ולא נחתכו.
+      // אם מספר ה-checkins מתקרב ל-100000 — צריך להגדיל את ROW_LIMIT או לעבור לדפדוף.
+      console.info('[Reports] loaded:', {
+        members: mRes.data?.length || 0,
+        classes: clsRes.data?.length || 0,
+        coaches: cRes.data?.length || 0,
+        checkins_present_180d: chkRes.data?.length || 0,
+        trial_visits_180d: tvRes.data?.length || 0,
+      })
+
+      // פירוט סיווג שיעורים — עוזר לזהות שיעורים שמסווגים כ"אחר" בטעות
+      // ושצריך להוסיף מילות מפתח עבורם.
+      const cls = clsRes.data || []
+      const classifiedAs = { BJJ: [], 'Muay Thai': [], MMA: [], 'ילדים': [], 'אחר': [] }
+      cls.forEach(c => {
+        const explicit = (c.class_type || '').toLowerCase()
+        let disc = (explicit && explicit !== 'regular') ? detectDiscipline(explicit) : 'אחר'
+        if (disc === 'אחר') disc = detectDiscipline(c.name || '')
+        if (classifiedAs[disc]) classifiedAs[disc].push(c.name)
+      })
+      console.info('[Reports] class classification:',
+        Object.fromEntries(Object.entries(classifiedAs).map(([k, v]) => [k, `${v.length} שיעורים`])))
+      if (classifiedAs['אחר'].length > 0) {
+        console.warn('[Reports] שיעורים שמסווגים כ"אחר" (לא נספרים תחת תחום ספציפי):',
+          [...new Set(classifiedAs['אחר'])])
+      }
     } catch (e) {
       console.error('fetchAll reports error:', e)
       setErr(e.message || 'שגיאה בטעינת הדוחות')
@@ -227,9 +294,12 @@ export default function ReportsManager({ isAdmin }) {
       const cls = classById.get(c.class_id)
       if (!cls) return
       let coachName = null
+      // ניסיון 1: לפי coach_id מקושר לטבלת coaches
       if (cls.coach_id && coachById.has(cls.coach_id)) {
         coachName = coachById.get(cls.coach_id).name
       }
+      // ניסיון 2: fallback ל-coach_name שנשמר ישירות על הקלאס (שיעורים ישנים ללא coach_id)
+      if (!coachName && cls.coach_name) coachName = cls.coach_name
       if (!coachName) coachName = 'ללא מאמן'
       if (!members.has(coachName)) { members.set(coachName, new Set()); sessions.set(coachName, 0) }
       members.get(coachName).add(c.athlete_id)
@@ -240,21 +310,51 @@ export default function ReportsManager({ isAdmin }) {
       .sort((a, b) => b.count - a.count)
   }, [filteredCheckins, coaches, coachById, classById, activeMemberIds])
 
-  // 2) כמות מתאמנים לפי תחום — מבוסס נוכחות בפועל (checkins) בטווח הנבחר
-  // מחזיר: תחום, מתאמנים ייחודיים, וסה"כ אימונים.
+  // 2) כמות מתאמנים לפי תחום + פילוח פנימי לפי מאמן.
+  // לכל תחום: סה"כ מתאמנים ייחודיים + סה"כ אימונים, וגם מערך byCoach
+  // עם אותם נתונים מצומצמים למאמן ספציפי.
   const byDiscipline = useMemo(() => {
-    const membersPerDisc = { BJJ: new Set(), 'Muay Thai': new Set(), MMA: new Set(), 'ילדים': new Set(), 'אחר': new Set() }
-    const sessionsPerDisc = { BJJ: 0, 'Muay Thai': 0, MMA: 0, 'ילדים': 0, 'אחר': 0 }
+    // מבנה עזר: discipline → { members: Set<athleteId>, sessions: number,
+    //                          byCoach: Map<coachName, { members: Set, sessions: number }> }
+    const acc = {}
+    DISCIPLINE_ORDER.forEach(d => {
+      acc[d] = { members: new Set(), sessions: 0, byCoach: new Map() }
+    })
+
     filteredCheckins.forEach(c => {
       if (!c.athlete_id || !c.class_id) return
       if (!activeMemberIds.has(c.athlete_id)) return
+      const cls = classById.get(c.class_id)
+      if (!cls) return
       const disc = disciplineByClassId.get(c.class_id)
-      if (!disc) return
-      membersPerDisc[disc].add(c.athlete_id)
-      sessionsPerDisc[disc] = (sessionsPerDisc[disc] || 0) + 1
+      if (!disc || !acc[disc]) return
+
+      // שיוך מאמן לקלאס: לפי coach_id ואם אין fallback ל-coach_name
+      let coachName = null
+      if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
+      if (!coachName && cls.coach_name) coachName = cls.coach_name
+      if (!coachName) coachName = 'ללא מאמן'
+
+      acc[disc].members.add(c.athlete_id)
+      acc[disc].sessions += 1
+
+      if (!acc[disc].byCoach.has(coachName)) {
+        acc[disc].byCoach.set(coachName, { members: new Set(), sessions: 0 })
+      }
+      const coachAgg = acc[disc].byCoach.get(coachName)
+      coachAgg.members.add(c.athlete_id)
+      coachAgg.sessions += 1
     })
-    return DISCIPLINE_ORDER.map(d => ({ name: d, count: membersPerDisc[d]?.size || 0, sessions: sessionsPerDisc[d] || 0 }))
-  }, [filteredCheckins, disciplineByClassId, activeMemberIds])
+
+    return DISCIPLINE_ORDER.map(d => ({
+      name: d,
+      count: acc[d].members.size,
+      sessions: acc[d].sessions,
+      byCoach: Array.from(acc[d].byCoach.entries())
+        .map(([name, agg]) => ({ name, count: agg.members.size, sessions: agg.sessions }))
+        .sort((a, b) => b.count - a.count),
+    }))
+  }, [filteredCheckins, disciplineByClassId, activeMemberIds, classById, coachById])
 
   // 2.5) שיעורי ניסיון לפי תחום לחימה — בטווח הנבחר.
   // ספירה אנונימית של "ביקורי ניסיון" (טבלת trial_visits — מתאמני ניסיון
@@ -296,9 +396,10 @@ export default function ReportsManager({ isAdmin }) {
       if (!c.athlete_id || !c.class_id) return
       const cls = classById.get(c.class_id)
       if (!cls) return
-      // מאמן לפי הקלאס
+      // מאמן לפי הקלאס — לפי coach_id, ואם אין fallback ל-coach_name
       let coachName = null
       if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
+      if (!coachName && cls.coach_name) coachName = cls.coach_name
       if (!coachName) coachName = 'ללא מאמן'
       if (!coachesByMember.has(c.athlete_id)) coachesByMember.set(c.athlete_id, new Set())
       coachesByMember.get(c.athlete_id).add(coachName)
@@ -452,23 +553,40 @@ export default function ReportsManager({ isAdmin }) {
         )}
       </SectionCard>
 
-      {/* מתאמנים לפי תחום — מבוסס נוכחות בפועל */}
+      {/* מתאמנים לפי תחום — מבוסס נוכחות בפועל, עם פילוח פנימי לפי מאמן */}
       <SectionCard title="מתאמנים לפי תחום לחימה" icon="🥊" footer={`ספירה מבוססת על רישום בפועל לשיעורים ב-${periodDays} הימים האחרונים. התחום מזוהה אוטומטית לפי שם השיעור.`}>
         {byDiscipline.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
         ) : (
-          byDiscipline.map(row => (
-            <BarRow
-              key={row.name}
-              label={row.name}
-              value={row.count}
-              max={maxDiscipline}
-              color={DISCIPLINE_COLORS[row.name]}
-              sessions={row.sessions}
-            />
+          byDiscipline.filter(r => r.count > 0 || r.name !== 'אחר').map(row => (
+            <div key={row.name} className="mb-4 last:mb-0">
+              <BarRow
+                label={row.name}
+                value={row.count}
+                max={maxDiscipline}
+                color={DISCIPLINE_COLORS[row.name]}
+                sessions={row.sessions}
+              />
+              {row.byCoach.length > 0 && row.count > 0 && (
+                <div className="mr-3 pl-2 border-r-2 border-gray-200 mt-1">
+                  {row.byCoach.map(coach => (
+                    <div key={`${row.name}-${coach.name}`} className="flex items-center justify-between text-xs text-gray-700 py-1">
+                      <span className="truncate flex items-center gap-1.5">
+                        <span aria-hidden="true" className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: DISCIPLINE_COLORS[row.name] }} />
+                        <span className="truncate" title={coach.name}>{coach.name}</span>
+                      </span>
+                      <span className="shrink-0 mr-2 font-semibold text-gray-900">
+                        {coach.count}
+                        <span className="text-gray-500 font-normal mr-1">· {coach.sessions} אימונים</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           ))
         )}
-        <p className="text-xs text-gray-500 mt-2">* מתאמן שהיה באימונים במספר תחומים נספר בכל אחד מהם.</p>
+        <p className="text-xs text-gray-500 mt-2">* מתאמן שהיה באימונים במספר תחומים/מאמנים נספר בכל אחד מהם.</p>
       </SectionCard>
 
       {/* שיעורי ניסיון לפי תחום לחימה — דוח שיווקי */}

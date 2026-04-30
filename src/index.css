@@ -3,8 +3,27 @@
 @tailwind utilities;
 
 * { direction: rtl; }
-body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; }
-#root { min-height: 100vh; }
+html, body {
+  /* מונע overscroll bounce ב-iOS שגורם לאלמנטים position:fixed לעוף למעלה */
+  overscroll-behavior-y: none;
+}
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #f1f5f9;
+  /* dvh = dynamic viewport height — מתחשב נכון בסרגל הכתובת/מקלדת ב-iOS */
+  min-height: 100dvh;
+}
+#root {
+  min-height: 100vh;          /* fallback לדפדפנים ישנים */
+  min-height: 100dvh;          /* iOS modern */
+}
+
+/* Tailwind אינו מכיר min-h-dvh בכל הגרסאות — fallback */
+.min-h-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
 
 /* Safe area for PWA — prevents header from hiding behind phone status bar */
 .safe-area-header {

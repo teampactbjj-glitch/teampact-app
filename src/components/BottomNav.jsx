@@ -17,7 +17,26 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
       ]
   return (
     <nav dir="rtl" className="flex" aria-label="ניווט ראשי"
-      style={{ position: 'fixed', bottom: 0, left: 0, right: 0, width: '100%', zIndex: 9999, paddingBottom: 'env(safe-area-inset-bottom)', minHeight: '68px', background: '#ffffff', borderTop: '2px solid #d1d5db', boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.12)' }}>
+      style={{
+        position: 'fixed',
+        // inset במקום bottom בלבד — מנעול חזק יותר לכל הצדדים, מקטין סיכוי ל"עליה" ב-iOS
+        inset: 'auto 0 0 0',
+        width: '100%',
+        zIndex: 9999,
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        minHeight: '68px',
+        background: '#ffffff',
+        borderTop: '2px solid #d1d5db',
+        boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.12)',
+        // האצת חומרה — מעבירה את ה-nav לשכבת קומפוזיציה נפרדת,
+        // ככה היא לא "מטיילת" עם momentum scroll ב-iOS PWA
+        transform: 'translateZ(0)',
+        WebkitTransform: 'translateZ(0)',
+        willChange: 'transform',
+        // מבטיח שגם ב-iOS PWA הסרגל מקובע ל-viewport ולא לקונטיינר
+        WebkitBackfaceVisibility: 'hidden',
+        backfaceVisibility: 'hidden',
+      }}>
       {tabs.map(tab => {
         const active = activeTab === tab.id
 

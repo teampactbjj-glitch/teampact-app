@@ -343,30 +343,6 @@ export default function ReportsManager({ isAdmin }) {
     })
   }, [registrations, periodDays])
 
-  // 0a) מתאמנים פעילים לפי מאמן — לפי class_registrations.
-  // count = מספר מתאמנים ייחודיים שהיו אצל המאמן.
-  // sessions = סך כל הרישומים לקבוצות של המאמן (אותו מתאמן רשום ל-2 קבוצות → 2 sessions).
-  const byAssignedCoach = useMemo(() => {
-    const members = new Map()    // coachName → Set<athleteId>
-    const sessions = new Map()   // coachName → number of registrations
-    filteredRegistrations.forEach(r => {
-      if (!r.athlete_id || !r.class_id) return
-      if (!activeMemberIds.has(r.athlete_id)) return
-      const cls = classById.get(r.class_id)
-      if (!cls) return
-      let coachName = null
-      if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
-      if (!coachName && cls.coach_name) coachName = cls.coach_name
-      if (!coachName) coachName = 'ללא מאמן'
-      if (!members.has(coachName)) { members.set(coachName, new Set()); sessions.set(coachName, 0) }
-      members.get(coachName).add(r.athlete_id)
-      sessions.set(coachName, sessions.get(coachName) + 1)
-    })
-    return Array.from(members.entries())
-      .map(([name, set]) => ({ name, count: set.size, sessions: sessions.get(name) || 0 }))
-      .sort((a, b) => b.count - a.count)
-  }, [filteredRegistrations, classById, coachById, activeMemberIds])
-
   // 0b) מתאמנים פעילים לפי תחום + פילוח לפי מאמן בתוך התחום.
   // count = מספר מתאמנים ייחודיים בתחום, sessions = סך הרישומים לקבוצות בתחום.
   const byAssignedDiscipline = useMemo(() => {
@@ -517,22 +493,45 @@ export default function ReportsManager({ isAdmin }) {
     }))
   }, [filteredCheckins, disciplineByClassId, activeMemberIds, classById, coachById])
 
-  // 2.5) שיעורי ניסיון לפי תחום לחימה — בטווח הנבחר.
-  // ספירה אנונימית של "ביקורי ניסיון" (טבלת trial_visits — מתאמני ניסיון
-  // שלא רשומים ב-members). דוח שיווקי: כמה ניסיונות BJJ/MMA/Muay Thai החודש.
+  // 2.5) שיעורי ניסיון לפי תחום לחימה + פילוח לפי מאמן.
+  // עוזר להבין איזה מאמן מקדם המרת ניסיונות ובאיזה תחום.
+  // בעתיד נחבר לעמודת תשלום כדי לדעת כמה ניסיונות נסגרו במנוי.
   const trialsByDiscipline = useMemo(() => {
     const since = Date.now() - periodDays * DAY_MS
-    const counts = { BJJ: 0, 'Muay Thai': 0, MMA: 0, 'ילדים': 0, 'אחר': 0 }
+    const acc = {}
+    DISCIPLINE_ORDER.forEach(d => {
+      acc[d] = { count: 0, byCoach: new Map() }
+    })
     let total = 0
     trialVisits.forEach(tv => {
       if (!tv.visited_at) return
       if (new Date(tv.visited_at).getTime() < since) return
+      const cls = classById.get(tv.class_id)
       const disc = disciplineByClassId.get(tv.class_id) || 'אחר'
-      counts[disc] = (counts[disc] || 0) + 1
+      if (!acc[disc]) return
+
+      let coachName = null
+      if (cls) {
+        if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
+        if (!coachName && cls.coach_name) coachName = cls.coach_name
+      }
+      if (!coachName) coachName = 'ללא מאמן'
+
+      acc[disc].count += 1
+      acc[disc].byCoach.set(coachName, (acc[disc].byCoach.get(coachName) || 0) + 1)
       total++
     })
-    return { rows: DISCIPLINE_ORDER.map(d => ({ name: d, count: counts[d] || 0 })), total }
-  }, [trialVisits, periodDays, disciplineByClassId])
+    return {
+      rows: DISCIPLINE_ORDER.map(d => ({
+        name: d,
+        count: acc[d].count,
+        byCoach: Array.from(acc[d].byCoach.entries())
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count),
+      })),
+      total,
+    }
+  }, [trialVisits, periodDays, disciplineByClassId, classById, coachById])
 
   // 3) נרשמים חדשים (לפי created_at בטווח הזמן שנבחר) — ללא soft-deleted
   const newMembers = useMemo(() => {
@@ -706,22 +705,6 @@ export default function ReportsManager({ isAdmin }) {
 
       {/* === פעילות מאמנים ותחומים (מודל "רישום=הגעה") === */}
 
-      {/* מתאמנים פעילים לפי מאמן */}
-      <SectionCard
-        title={`מתאמנים פעילים לפי מאמן (${periodDays} ימים)`}
-        icon="🥋"
-        footer="המספר הראשון = מתאמנים ייחודיים אצל המאמן. המספר השני = סה״כ רישומים לקבוצות שלו (מתאמן הרשום ל-2 קבוצות נספר 2)."
-      >
-        {byAssignedCoach.length === 0 || byAssignedCoach.every(r => r.count === 0) ? (
-          <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
-        ) : (
-          byAssignedCoach.filter(r => r.count > 0).map(row => {
-            const max = byAssignedCoach.reduce((m, r) => Math.max(m, r.count), 0) || 1
-            return <BarRow key={row.name} label={row.name} value={row.count} max={max} color="#0d9488" sessions={row.sessions} />
-          })
-        )}
-      </SectionCard>
-
       {/* מתאמנים פעילים לפי תחום + פילוח לפי מאמן */}
       <SectionCard
         title={`מתאמנים פעילים לפי תחום לחימה (${periodDays} ימים)`}
@@ -743,19 +726,32 @@ export default function ReportsManager({ isAdmin }) {
                   sessions={row.sessions}
                 />
                 {row.byCoach.length > 0 && row.count > 0 && (
-                  <div className="mr-3 pl-2 border-r-2 border-gray-200 mt-1">
-                    {row.byCoach.map(coach => (
-                      <div key={`assigned-${row.name}-${coach.name}`} className="flex items-center justify-between text-xs text-gray-700 py-1">
-                        <span className="truncate flex items-center gap-1.5">
-                          <span aria-hidden="true" className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: DISCIPLINE_COLORS[row.name] }} />
-                          <span className="truncate" title={coach.name}>{coach.name}</span>
-                        </span>
-                        <span className="shrink-0 mr-2 font-semibold text-gray-900">
-                          {coach.count}
-                          <span className="text-gray-500 font-normal mr-1">· {coach.sessions} אימונים</span>
-                        </span>
-                      </div>
-                    ))}
+                  <div className="mr-3 pl-2 border-r-2 border-gray-200 mt-1.5 space-y-1.5">
+                    {row.byCoach.map(coach => {
+                      // המד של המאמן יחסי למאמן הבולט בתחום שלו
+                      const maxInDisc = row.byCoach.reduce((m, c) => Math.max(m, c.count), 0) || 1
+                      const pct = Math.round((coach.count / maxInDisc) * 100)
+                      return (
+                        <div key={`assigned-${row.name}-${coach.name}`} className="text-xs">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="truncate flex items-center gap-1.5">
+                              <span aria-hidden="true" className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: DISCIPLINE_COLORS[row.name] }} />
+                              <span className="truncate text-gray-700" title={coach.name}>{coach.name}</span>
+                            </span>
+                            <span className="shrink-0 mr-2 font-semibold text-gray-900">
+                              {coach.count}
+                              <span className="text-gray-500 font-normal mr-1">· {coach.sessions} אימונים</span>
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden" aria-hidden="true">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{ width: `${pct}%`, background: DISCIPLINE_COLORS[row.name], opacity: 0.6 }}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -815,24 +811,53 @@ export default function ReportsManager({ isAdmin }) {
         )}
       </SectionCard>
 
-      {/* שיעורי ניסיון לפי תחום לחימה — דוח שיווקי */}
+      {/* שיעורי ניסיון לפי תחום לחימה + פילוח לפי מאמן — דוח שיווקי */}
       <SectionCard
-        title="שיעורי ניסיון לפי תחום לחימה"
+        title={`שיעורי ניסיון לפי תחום ולפי מאמן (${periodDays} ימים)`}
         icon="🆕"
-        footer={`סה״כ ${trialsByDiscipline.total} ביקורי ניסיון ב-${periodDays} הימים האחרונים. כולל מתאמני ניסיון אנונימיים שלא נרשמו במערכת.`}
+        footer={`סה״כ ${trialsByDiscipline.total} ביקורי ניסיון. תחת כל תחום, פילוח לפי המאמן שאצלו היה הניסיון — עוזר להבין איזה מאמן מקדם הצטרפות.`}
       >
         {trialsByDiscipline.total === 0 ? (
           <p className="text-sm text-gray-500">אין ביקורי ניסיון בתקופה זו.</p>
         ) : (
-          trialsByDiscipline.rows.map(row => (
-            <BarRow
-              key={row.name}
-              label={row.name}
-              value={row.count}
-              max={trialsByDiscipline.rows.reduce((m, r) => Math.max(m, r.count), 0) || 1}
-              color={DISCIPLINE_COLORS[row.name]}
-            />
-          ))
+          trialsByDiscipline.rows.filter(r => r.count > 0 || r.name !== 'אחר').map(row => {
+            const max = trialsByDiscipline.rows.reduce((m, r) => Math.max(m, r.count), 0) || 1
+            return (
+              <div key={`trial-${row.name}`} className="mb-4 last:mb-0">
+                <BarRow
+                  label={row.name}
+                  value={row.count}
+                  max={max}
+                  color={DISCIPLINE_COLORS[row.name]}
+                />
+                {row.byCoach.length > 0 && row.count > 0 && (
+                  <div className="mr-3 pl-2 border-r-2 border-gray-200 mt-1.5 space-y-1.5">
+                    {row.byCoach.map(coach => {
+                      const maxInDisc = row.byCoach.reduce((m, c) => Math.max(m, c.count), 0) || 1
+                      const pct = Math.round((coach.count / maxInDisc) * 100)
+                      return (
+                        <div key={`trial-${row.name}-${coach.name}`} className="text-xs">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="truncate flex items-center gap-1.5">
+                              <span aria-hidden="true" className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: DISCIPLINE_COLORS[row.name] }} />
+                              <span className="truncate text-gray-700" title={coach.name}>{coach.name}</span>
+                            </span>
+                            <span className="shrink-0 mr-2 font-semibold text-gray-900">{coach.count}</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden" aria-hidden="true">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{ width: `${pct}%`, background: DISCIPLINE_COLORS[row.name], opacity: 0.6 }}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })
         )}
       </SectionCard>
 

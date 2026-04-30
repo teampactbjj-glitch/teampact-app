@@ -73,201 +73,251 @@ html.a11y-high-contrast img {
 }
 
 /* ============================================================
-   מצב כהה — Dark Mode אמיתי עם פלטת צבעים מותאמת
-   פלטה: slate-900 רקע, slate-800 surface, slate-700 borders
-   טקסט: slate-100 ראשי, slate-400 משני
-   צבעי תפקיד: emerald-400, blue-400, red-400, amber-400 (גוונים בהירים יותר לקריאות)
+   מצב כהה — Dark Mode קלאסי שחור עם ניגודיות מקסימלית
+   פלטה: שחור (#000) רקע ראשי, אפור-כהה (#1a1a1a) כרטיסים, אפור (#2a2a2a) רקעים משניים
+   טקסט: לבן (#ffffff) ראשי, אפור-בהיר (#cccccc) משני
+   צבעים: גוונים זוהרים בהירים מאוד לקריאות מירבית
    ============================================================ */
 
 html.a11y-dark-mode,
 html.a11y-dark-mode body,
 html.a11y-dark-mode #root {
-  background: #0f172a !important;
-  color: #e2e8f0 !important;
+  background: #000000 !important;
+  color: #ffffff !important;
 }
 
-/* רקעים - כל הוריאציות של white/gray הופכות לכהות */
+/* רקעים - הכל שחור-אפור */
 html.a11y-dark-mode .bg-white,
 html.a11y-dark-mode .bg-gray-50,
 html.a11y-dark-mode .bg-gray-100 {
-  background-color: #1e293b !important;
+  background-color: #1a1a1a !important;
+  color: #ffffff !important;
 }
-html.a11y-dark-mode .bg-gray-200,
+html.a11y-dark-mode .bg-gray-200 {
+  background-color: #2a2a2a !important;
+  color: #ffffff !important;
+}
 html.a11y-dark-mode .bg-gray-300 {
-  background-color: #334155 !important;
+  background-color: #3a3a3a !important;
+  color: #ffffff !important;
 }
 
-/* רקעים צבעוניים בהירים - הופכים לגרסה כהה יותר */
+/* רקעים צבעוניים בהירים - גוון כהה אבל ניתן לזיהוי */
 html.a11y-dark-mode .bg-emerald-50,
-html.a11y-dark-mode .bg-emerald-100 { background-color: #064e3b !important; }
+html.a11y-dark-mode .bg-emerald-100 { background-color: #052e1a !important; }
 html.a11y-dark-mode .bg-blue-50,
-html.a11y-dark-mode .bg-blue-100 { background-color: #1e3a8a !important; }
+html.a11y-dark-mode .bg-blue-100 { background-color: #0a1f3d !important; }
 html.a11y-dark-mode .bg-red-50,
-html.a11y-dark-mode .bg-red-100 { background-color: #7f1d1d !important; }
+html.a11y-dark-mode .bg-red-100 { background-color: #3d0a0a !important; }
 html.a11y-dark-mode .bg-amber-50,
-html.a11y-dark-mode .bg-amber-100 { background-color: #78350f !important; }
+html.a11y-dark-mode .bg-amber-100 { background-color: #3d2810 !important; }
 html.a11y-dark-mode .bg-orange-50,
-html.a11y-dark-mode .bg-orange-100 { background-color: #7c2d12 !important; }
+html.a11y-dark-mode .bg-orange-100 { background-color: #3d1a0a !important; }
 html.a11y-dark-mode .bg-purple-50,
-html.a11y-dark-mode .bg-purple-100 { background-color: #581c87 !important; }
+html.a11y-dark-mode .bg-purple-100 { background-color: #2a0a3d !important; }
 html.a11y-dark-mode .bg-rose-50,
-html.a11y-dark-mode .bg-rose-100 { background-color: #881337 !important; }
+html.a11y-dark-mode .bg-rose-100 { background-color: #3d0a1f !important; }
+html.a11y-dark-mode .bg-green-50,
+html.a11y-dark-mode .bg-green-100 { background-color: #052e1a !important; }
+html.a11y-dark-mode .bg-yellow-50,
+html.a11y-dark-mode .bg-yellow-100 { background-color: #3d2810 !important; }
 
-/* טקסט - גוונים בהירים מותאמים */
+/* טקסט - לבן וגוונים בהירים בלבד */
 html.a11y-dark-mode .text-gray-400,
-html.a11y-dark-mode .text-gray-500,
-html.a11y-dark-mode .text-gray-600 { color: #94a3b8 !important; }
+html.a11y-dark-mode .text-gray-500 { color: #cccccc !important; }
+html.a11y-dark-mode .text-gray-600 { color: #d4d4d4 !important; }
 html.a11y-dark-mode .text-gray-700,
 html.a11y-dark-mode .text-gray-800,
 html.a11y-dark-mode .text-gray-900,
-html.a11y-dark-mode .text-black { color: #e2e8f0 !important; }
+html.a11y-dark-mode .text-black {
+  color: #ffffff !important;
+}
 
-/* צבעי תפקיד - גוונים יותר בהירים לקריאות במצב כהה */
+/* צבעי תפקיד - גוונים זוהרים בהירים מאוד לקריאות מירבית */
+html.a11y-dark-mode .text-emerald-500,
 html.a11y-dark-mode .text-emerald-600,
 html.a11y-dark-mode .text-emerald-700,
 html.a11y-dark-mode .text-emerald-800,
-html.a11y-dark-mode .text-emerald-900 { color: #34d399 !important; }
+html.a11y-dark-mode .text-emerald-900 { color: #4ade80 !important; }
+html.a11y-dark-mode .text-green-500,
+html.a11y-dark-mode .text-green-600,
+html.a11y-dark-mode .text-green-700 { color: #4ade80 !important; }
+html.a11y-dark-mode .text-blue-500,
 html.a11y-dark-mode .text-blue-600,
 html.a11y-dark-mode .text-blue-700,
 html.a11y-dark-mode .text-blue-800,
-html.a11y-dark-mode .text-blue-900 { color: #60a5fa !important; }
+html.a11y-dark-mode .text-blue-900 { color: #7dd3fc !important; }
 html.a11y-dark-mode .text-red-500,
 html.a11y-dark-mode .text-red-600,
-html.a11y-dark-mode .text-red-700 { color: #f87171 !important; }
+html.a11y-dark-mode .text-red-700 { color: #fca5a5 !important; }
+html.a11y-dark-mode .text-amber-600,
 html.a11y-dark-mode .text-amber-700,
 html.a11y-dark-mode .text-amber-800,
-html.a11y-dark-mode .text-amber-900 { color: #fbbf24 !important; }
+html.a11y-dark-mode .text-amber-900 { color: #fcd34d !important; }
+html.a11y-dark-mode .text-yellow-600,
+html.a11y-dark-mode .text-yellow-700 { color: #fcd34d !important; }
 html.a11y-dark-mode .text-orange-600,
-html.a11y-dark-mode .text-orange-700 { color: #fb923c !important; }
+html.a11y-dark-mode .text-orange-700 { color: #fdba74 !important; }
 html.a11y-dark-mode .text-purple-600,
-html.a11y-dark-mode .text-purple-700 { color: #c084fc !important; }
+html.a11y-dark-mode .text-purple-700 { color: #d8b4fe !important; }
 html.a11y-dark-mode .text-rose-600,
-html.a11y-dark-mode .text-rose-700 { color: #fb7185 !important; }
+html.a11y-dark-mode .text-rose-700 { color: #fda4af !important; }
+html.a11y-dark-mode .text-white { color: #ffffff !important; }
 
-/* גבולות - גוון אמצעי שעובד על רקע כהה */
+/* גבולות - אפור-בהיר על רקע שחור */
 html.a11y-dark-mode .border,
 html.a11y-dark-mode .border-2,
 html.a11y-dark-mode .border-gray-100,
 html.a11y-dark-mode .border-gray-200,
 html.a11y-dark-mode .border-gray-300 {
-  border-color: #475569 !important;
+  border-color: #4a4a4a !important;
 }
 html.a11y-dark-mode .border-emerald-200,
-html.a11y-dark-mode .border-emerald-300 { border-color: #047857 !important; }
+html.a11y-dark-mode .border-emerald-300 { border-color: #059669 !important; }
 html.a11y-dark-mode .border-blue-200,
-html.a11y-dark-mode .border-blue-300 { border-color: #1d4ed8 !important; }
+html.a11y-dark-mode .border-blue-300 { border-color: #2563eb !important; }
 html.a11y-dark-mode .border-red-200,
-html.a11y-dark-mode .border-red-300 { border-color: #b91c1c !important; }
+html.a11y-dark-mode .border-red-300 { border-color: #dc2626 !important; }
 html.a11y-dark-mode .border-amber-200,
-html.a11y-dark-mode .border-amber-300 { border-color: #b45309 !important; }
+html.a11y-dark-mode .border-amber-300 { border-color: #d97706 !important; }
+html.a11y-dark-mode .border-rose-200,
+html.a11y-dark-mode .border-rose-300 { border-color: #e11d48 !important; }
 
-/* divide-y / divide-gray וכד׳ */
+/* divide-y / divide-gray */
 html.a11y-dark-mode [class*="divide-gray"] > * + * {
-  border-color: #475569 !important;
+  border-color: #4a4a4a !important;
 }
 
-/* כפתורים מלאים - שמירה על הצבעים אבל החשכת הגוון */
+/* כפתורים מלאים - שמירה על הצבעים בולטים */
 html.a11y-dark-mode .bg-emerald-500,
-html.a11y-dark-mode .bg-emerald-600 { background-color: #059669 !important; color: #ffffff !important; }
-html.a11y-dark-mode .bg-emerald-700 { background-color: #047857 !important; }
+html.a11y-dark-mode .bg-emerald-600 { background-color: #10b981 !important; color: #000000 !important; }
+html.a11y-dark-mode .bg-emerald-700 { background-color: #059669 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-green-500,
+html.a11y-dark-mode .bg-green-600 { background-color: #10b981 !important; color: #000000 !important; }
+html.a11y-dark-mode .bg-green-700 { background-color: #059669 !important; color: #ffffff !important; }
 html.a11y-dark-mode .bg-blue-500,
-html.a11y-dark-mode .bg-blue-600 { background-color: #2563eb !important; color: #ffffff !important; }
-html.a11y-dark-mode .bg-blue-700 { background-color: #1d4ed8 !important; }
+html.a11y-dark-mode .bg-blue-600 { background-color: #3b82f6 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-blue-700 { background-color: #2563eb !important; color: #ffffff !important; }
 html.a11y-dark-mode .bg-red-500,
-html.a11y-dark-mode .bg-red-600 { background-color: #dc2626 !important; color: #ffffff !important; }
-html.a11y-dark-mode .bg-red-700 { background-color: #b91c1c !important; }
+html.a11y-dark-mode .bg-red-600 { background-color: #ef4444 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-red-700 { background-color: #dc2626 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-amber-500,
+html.a11y-dark-mode .bg-amber-600 { background-color: #f59e0b !important; color: #000000 !important; }
+html.a11y-dark-mode .bg-orange-500,
+html.a11y-dark-mode .bg-orange-600 { background-color: #f97316 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-purple-500,
+html.a11y-dark-mode .bg-purple-600 { background-color: #a855f7 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-rose-500,
+html.a11y-dark-mode .bg-rose-600 { background-color: #f43f5e !important; color: #ffffff !important; }
 
-/* Inputs / textareas */
+/* Inputs / textareas - שחור עם טקסט לבן */
 html.a11y-dark-mode input,
 html.a11y-dark-mode textarea,
 html.a11y-dark-mode select {
-  background-color: #1e293b !important;
-  color: #e2e8f0 !important;
-  border-color: #475569 !important;
+  background-color: #0a0a0a !important;
+  color: #ffffff !important;
+  border-color: #4a4a4a !important;
 }
 html.a11y-dark-mode input::placeholder,
 html.a11y-dark-mode textarea::placeholder {
-  color: #94a3b8 !important;
+  color: #888888 !important;
+}
+html.a11y-dark-mode input:focus,
+html.a11y-dark-mode textarea:focus,
+html.a11y-dark-mode select:focus {
+  border-color: #3b82f6 !important;
+  outline-color: #3b82f6 !important;
 }
 
-/* Gradients - מחליף לרקע אחיד כהה */
+/* Gradients - שחור אחיד */
 html.a11y-dark-mode [class*="bg-gradient"] {
-  background: #1e293b !important;
+  background: #1a1a1a !important;
 }
-/* gradient של מסך התחברות נשאר עם הצבעים שלו - הוא כבר כהה */
-html.a11y-dark-mode .from-gray-900,
-html.a11y-dark-mode .via-gray-800 { /* keep */ }
 
 /* shadow - חזק יותר במצב כהה */
 html.a11y-dark-mode .shadow,
+html.a11y-dark-mode .shadow-sm,
 html.a11y-dark-mode .shadow-md,
 html.a11y-dark-mode .shadow-lg,
 html.a11y-dark-mode .shadow-xl,
 html.a11y-dark-mode .shadow-2xl {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
 }
 
-/* Hover states - Tailwind מייצר אותם כ-`:hover { ... }` ללא class רגיל,
-   אז ה-overrides הקודמים לא תופסים. צריך לכוון אליהם ספציפית. */
+/* Hover states - Tailwind מייצר אותם כ-`:hover { ... }` */
 html.a11y-dark-mode [class*="hover:bg-gray"]:hover,
 html.a11y-dark-mode [class*="hover:bg-white"]:hover,
 html.a11y-dark-mode [class*="hover:bg-slate"]:hover {
-  background-color: #334155 !important;
-}
-html.a11y-dark-mode [class*="hover:bg-emerald"]:hover { background-color: #047857 !important; }
-html.a11y-dark-mode [class*="hover:bg-blue"]:hover { background-color: #1d4ed8 !important; }
-html.a11y-dark-mode [class*="hover:bg-red"]:hover { background-color: #b91c1c !important; }
-html.a11y-dark-mode [class*="hover:bg-amber"]:hover { background-color: #b45309 !important; }
-html.a11y-dark-mode [class*="hover:bg-rose"]:hover { background-color: #9f1239 !important; }
-html.a11y-dark-mode [class*="hover:bg-purple"]:hover { background-color: #7e22ce !important; }
-
-/* פסי קצה (ring) — לא לבן זוהר על רקע כהה */
-html.a11y-dark-mode [class*="ring-amber"] { --tw-ring-color: #b45309 !important; }
-html.a11y-dark-mode [class*="ring-rose"] { --tw-ring-color: #9f1239 !important; }
-html.a11y-dark-mode [class*="ring-emerald"] { --tw-ring-color: #047857 !important; }
-html.a11y-dark-mode [class*="ring-blue"] { --tw-ring-color: #1d4ed8 !important; }
-
-/* Modal/Dialog backdrop — הופך שקוף יותר במצב כהה */
-html.a11y-dark-mode .bg-black\/50 { background-color: rgba(0, 0, 0, 0.75) !important; }
-
-/* Toast/popups - לוודא שהם נראים על רקע כהה */
-html.a11y-dark-mode [role="dialog"] {
-  background-color: #1e293b !important;
-  color: #e2e8f0 !important;
-}
-
-/* Skip link - שמירת זהות */
-html.a11y-dark-mode [class*="bg-emerald-600"][class*="text-white"],
-html.a11y-dark-mode [class*="bg-blue-600"][class*="text-white"],
-html.a11y-dark-mode [class*="bg-red-600"][class*="text-white"] {
+  background-color: #2a2a2a !important;
   color: #ffffff !important;
 }
+html.a11y-dark-mode [class*="hover:bg-emerald"]:hover,
+html.a11y-dark-mode [class*="hover:bg-green"]:hover { background-color: #059669 !important; }
+html.a11y-dark-mode [class*="hover:bg-blue"]:hover { background-color: #2563eb !important; }
+html.a11y-dark-mode [class*="hover:bg-red"]:hover { background-color: #dc2626 !important; }
+html.a11y-dark-mode [class*="hover:bg-amber"]:hover { background-color: #d97706 !important; }
+html.a11y-dark-mode [class*="hover:bg-rose"]:hover { background-color: #e11d48 !important; }
+html.a11y-dark-mode [class*="hover:bg-purple"]:hover { background-color: #9333ea !important; }
 
-/* טקסט בתוך כרטיסים צבעוניים — לוודא קריאות */
-html.a11y-dark-mode .bg-amber-50 *,
-html.a11y-dark-mode .bg-amber-100 * { color: #fef3c7 !important; }
-html.a11y-dark-mode .bg-rose-50 *,
-html.a11y-dark-mode .bg-rose-100 * { color: #ffe4e6 !important; }
-html.a11y-dark-mode .bg-emerald-50 *,
-html.a11y-dark-mode .bg-emerald-100 * { color: #d1fae5 !important; }
-html.a11y-dark-mode .bg-blue-50 *,
-html.a11y-dark-mode .bg-blue-100 * { color: #dbeafe !important; }
+/* פסי קצה (ring) */
+html.a11y-dark-mode [class*="ring-amber"] { --tw-ring-color: #d97706 !important; }
+html.a11y-dark-mode [class*="ring-rose"] { --tw-ring-color: #e11d48 !important; }
+html.a11y-dark-mode [class*="ring-emerald"] { --tw-ring-color: #059669 !important; }
+html.a11y-dark-mode [class*="ring-blue"] { --tw-ring-color: #2563eb !important; }
 
-/* יוצא דופן - כפתורים מלאים בתוך כרטיסים צבעוניים שומרים על white */
+/* Modal backdrop - שחור כמעט לגמרי */
+html.a11y-dark-mode .bg-black\/50 { background-color: rgba(0, 0, 0, 0.85) !important; }
+
+/* Dialog/Modal - רקע כהה עם טקסט לבן */
+html.a11y-dark-mode [role="dialog"] {
+  background-color: #1a1a1a !important;
+  color: #ffffff !important;
+  border: 1px solid #4a4a4a !important;
+}
+
+/* טקסט בתוך כרטיסים צבעוניים בהירים — לבן/בהיר ברור */
+html.a11y-dark-mode .bg-amber-50 *:not(button),
+html.a11y-dark-mode .bg-amber-100 *:not(button) { color: #fef3c7 !important; }
+html.a11y-dark-mode .bg-rose-50 *:not(button),
+html.a11y-dark-mode .bg-rose-100 *:not(button) { color: #ffe4e6 !important; }
+html.a11y-dark-mode .bg-emerald-50 *:not(button),
+html.a11y-dark-mode .bg-emerald-100 *:not(button) { color: #d1fae5 !important; }
+html.a11y-dark-mode .bg-green-50 *:not(button),
+html.a11y-dark-mode .bg-green-100 *:not(button) { color: #d1fae5 !important; }
+html.a11y-dark-mode .bg-blue-50 *:not(button),
+html.a11y-dark-mode .bg-blue-100 *:not(button) { color: #dbeafe !important; }
+html.a11y-dark-mode .bg-purple-50 *:not(button),
+html.a11y-dark-mode .bg-purple-100 *:not(button) { color: #f3e8ff !important; }
+html.a11y-dark-mode .bg-orange-50 *:not(button),
+html.a11y-dark-mode .bg-orange-100 *:not(button) { color: #ffedd5 !important; }
+html.a11y-dark-mode .bg-yellow-50 *:not(button),
+html.a11y-dark-mode .bg-yellow-100 *:not(button) { color: #fef3c7 !important; }
+html.a11y-dark-mode .bg-red-50 *:not(button),
+html.a11y-dark-mode .bg-red-100 *:not(button) { color: #fecaca !important; }
+
+/* כפתורים מלאים - טקסט מתאים בהתאם לרקע */
 html.a11y-dark-mode [class*="bg-emerald-500"] *,
 html.a11y-dark-mode [class*="bg-emerald-600"] *,
-html.a11y-dark-mode [class*="bg-emerald-700"] *,
+html.a11y-dark-mode [class*="bg-green-500"] *,
+html.a11y-dark-mode [class*="bg-green-600"] *,
+html.a11y-dark-mode [class*="bg-amber-500"] *,
+html.a11y-dark-mode [class*="bg-amber-600"] * {
+  color: #000000 !important;
+}
 html.a11y-dark-mode [class*="bg-blue-500"] *,
 html.a11y-dark-mode [class*="bg-blue-600"] *,
 html.a11y-dark-mode [class*="bg-blue-700"] *,
 html.a11y-dark-mode [class*="bg-red-500"] *,
 html.a11y-dark-mode [class*="bg-red-600"] *,
 html.a11y-dark-mode [class*="bg-red-700"] *,
-html.a11y-dark-mode [class*="bg-green-500"] *,
-html.a11y-dark-mode [class*="bg-green-600"] *,
+html.a11y-dark-mode [class*="bg-emerald-700"] *,
 html.a11y-dark-mode [class*="bg-green-700"] *,
-html.a11y-dark-mode [class*="bg-amber-500"] *,
-html.a11y-dark-mode [class*="bg-amber-600"] * {
+html.a11y-dark-mode [class*="bg-orange-500"] *,
+html.a11y-dark-mode [class*="bg-orange-600"] *,
+html.a11y-dark-mode [class*="bg-purple-500"] *,
+html.a11y-dark-mode [class*="bg-purple-600"] *,
+html.a11y-dark-mode [class*="bg-rose-500"] *,
+html.a11y-dark-mode [class*="bg-rose-600"] * {
   color: #ffffff !important;
 }
 

@@ -138,6 +138,7 @@ export default function ReportsManager({ isAdmin }) {
   const [branches, setBranches] = useState([])
   const [checkins, setCheckins] = useState([]) // נוכחויות — לצורך דוחות מבוססי נוכחות בפועל
   const [trialVisits, setTrialVisits] = useState([]) // ביקורי ניסיון אנונימיים (טבלה נפרדת)
+  const [registrations, setRegistrations] = useState([]) // class_registrations — מי רשום לאיזו קבוצה
 
   useEffect(() => { if (isAdmin) fetchAll() }, [isAdmin])
 
@@ -151,7 +152,7 @@ export default function ReportsManager({ isAdmin }) {
       const ROW_LIMIT = 100000
       const sinceMaxISO = new Date(Date.now() - 180 * DAY_MS).toISOString()
 
-      const [mRes, cRes, clsRes, bRes, chkRes, tvRes] = await Promise.all([
+      const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes] = await Promise.all([
         supabase
           .from('members')
           .select('id, full_name, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at')
@@ -171,6 +172,14 @@ export default function ReportsManager({ isAdmin }) {
           .select('id, class_id, visited_at, visitor_name')
           .gte('visited_at', sinceMaxISO)
           .range(0, ROW_LIMIT - 1),
+        // class_registrations: רישום שבועי. unique על (athlete_id, class_id) —
+        // לכן לכל זוג יש שורה אחת בלבד, עם week_start של הרישום האחרון.
+        // מסננים בצד השרת לפי 180 יום (date column → string YYYY-MM-DD).
+        supabase
+          .from('class_registrations')
+          .select('class_id, athlete_id, week_start')
+          .gte('week_start', sinceMaxISO.slice(0, 10))
+          .range(0, ROW_LIMIT - 1),
       ])
       if (mRes.error)   throw mRes.error
       if (cRes.error)   throw cRes.error
@@ -181,12 +190,14 @@ export default function ReportsManager({ isAdmin }) {
       if (tvRes.error && !/relation .*trial_visits/i.test(tvRes.error.message || '')) {
         console.error('trial_visits fetch error:', tvRes.error)
       }
+      if (regRes.error) console.error('class_registrations fetch error:', regRes.error)
       setMembers(mRes.data || [])
       setCoaches(cRes.data || [])
       setClasses(clsRes.data || [])
       setBranches(bRes.data || [])
       setCheckins(chkRes.data || [])
       setTrialVisits(tvRes.data || [])
+      setRegistrations(regRes.data || [])
 
       // לוג אבחון: מאפשר לוודא בקונסול של הדפדפן (Safari → Develop → Show Web Inspector)
       // שכל הצ'ק-אינים נטענו ולא נחתכו.
@@ -197,6 +208,7 @@ export default function ReportsManager({ isAdmin }) {
         coaches: cRes.data?.length || 0,
         checkins_present_180d: chkRes.data?.length || 0,
         trial_visits_180d: tvRes.data?.length || 0,
+        class_registrations_180d: regRes.data?.length || 0,
       })
 
       // פירוט סיווג שיעורים — עוזר לזהות שיעורים שמסווגים כ"אחר" בטעות
@@ -283,84 +295,65 @@ export default function ReportsManager({ isAdmin }) {
   }, [classes])
 
   // ============================================================
-  // דוחות שיוך (registration-based) — לא מבוססי נוכחות בפועל.
-  // סופרים את מי שמשויך פורמלית למאמן/לקבוצה, גם אם עדיין לא הגיע
-  // פיזית לאף שיעור (למשל: נרשמים חדשים).
+  // דוחות שיוך — מבוססים על class_registrations (רישום פעיל לקבוצה).
+  // כל זוג (athlete_id, class_id) מהווה שיוך לקבוצה. זה המקום שבו
+  // המתאמן באמת "רשום" — גם בלי תלות בנוכחות בפועל.
+  // הסינון לפי periodDays רלוונטי כדי להציג רק רישומים פעילים לאחרונה
+  // (week_start בטווח), במקום היסטוריה ישנה.
   // ============================================================
 
-  // 0a) מתאמנים משויכים לפי מאמן — לפי שדה members.coach_id (שיוך פורמלי).
-  // אם אין coach_id, ניסיון fallback ל-requested_coach_name(s) (לידים שטרם אושרו).
+  // סינון רישומים לפי טווח periodDays (week_start)
+  const filteredRegistrations = useMemo(() => {
+    const since = Date.now() - periodDays * DAY_MS
+    return registrations.filter(r => {
+      if (!r.week_start) return false
+      return new Date(r.week_start).getTime() >= since
+    })
+  }, [registrations, periodDays])
+
+  // 0a) מתאמנים רשומים לפי מאמן — לפי class_registrations.
+  // לכל זוג (athlete, class) — יורד למאמן של אותה קבוצה.
   const byAssignedCoach = useMemo(() => {
     const counts = new Map()
-    coaches.forEach(c => counts.set(c.name || '—', new Set()))
-    activeMembers.forEach(m => {
-      if (m.coach_id && coachById.has(m.coach_id)) {
-        const name = coachById.get(m.coach_id).name || '—'
-        if (!counts.has(name)) counts.set(name, new Set())
-        counts.get(name).add(m.id)
-        return
-      }
-      // fallback: requested_coach_names array או requested_coach_name יחיד
-      const requested = Array.isArray(m.requested_coach_names) && m.requested_coach_names.length > 0
-        ? m.requested_coach_names
-        : (m.requested_coach_name ? [m.requested_coach_name] : [])
-      if (requested.length === 0) {
-        const k = 'ללא מאמן משויך'
-        if (!counts.has(k)) counts.set(k, new Set())
-        counts.get(k).add(m.id)
-        return
-      }
-      requested.filter(Boolean).forEach(name => {
-        if (!counts.has(name)) counts.set(name, new Set())
-        counts.get(name).add(m.id)
-      })
+    filteredRegistrations.forEach(r => {
+      if (!r.athlete_id || !r.class_id) return
+      if (!activeMemberIds.has(r.athlete_id)) return
+      const cls = classById.get(r.class_id)
+      if (!cls) return
+      let coachName = null
+      if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
+      if (!coachName && cls.coach_name) coachName = cls.coach_name
+      if (!coachName) coachName = 'ללא מאמן'
+      if (!counts.has(coachName)) counts.set(coachName, new Set())
+      counts.get(coachName).add(r.athlete_id)
     })
     return Array.from(counts.entries())
       .map(([name, set]) => ({ name, count: set.size }))
       .sort((a, b) => b.count - a.count)
-  }, [activeMembers, coaches, coachById])
+  }, [filteredRegistrations, classById, coachById, activeMemberIds])
 
-  // 0b) מתאמנים משויכים לפי תחום + פילוח פנימי לפי מאמן.
-  // מבוסס members.group_ids → classes → discipline. כל מתאמן נספר פעם אחת
-  // בכל תחום (גם אם הוא רשום למספר קבוצות באותו תחום).
+  // 0b) מתאמנים רשומים לפי תחום + פילוח לפי מאמן בתוך התחום.
   const byAssignedDiscipline = useMemo(() => {
     const acc = {}
     DISCIPLINE_ORDER.forEach(d => {
       acc[d] = { members: new Set(), byCoach: new Map() }
     })
-    activeMembers.forEach(m => {
-      const groupIds = (Array.isArray(m.group_ids) && m.group_ids.length > 0)
-        ? m.group_ids
-        : (m.group_id ? [m.group_id] : [])
-      if (groupIds.length === 0) return
+    filteredRegistrations.forEach(r => {
+      if (!r.athlete_id || !r.class_id) return
+      if (!activeMemberIds.has(r.athlete_id)) return
+      const cls = classById.get(r.class_id)
+      if (!cls) return
+      const disc = disciplineByClassId.get(r.class_id) || 'אחר'
+      if (!acc[disc]) return
 
-      // לאסוף לאיזה תחומים ולאיזה מאמנים המתאמן משויך
-      const memberDisciplines = new Set()
-      const memberCoachByDiscipline = new Map() // discipline → Set<coachName>
-      groupIds.forEach(gid => {
-        const cls = classById.get(gid)
-        if (!cls) return
-        const disc = disciplineByClassId.get(gid) || 'אחר'
-        if (!acc[disc]) return
-        memberDisciplines.add(disc)
+      let coachName = null
+      if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
+      if (!coachName && cls.coach_name) coachName = cls.coach_name
+      if (!coachName) coachName = 'ללא מאמן'
 
-        let coachName = null
-        if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
-        if (!coachName && cls.coach_name) coachName = cls.coach_name
-        if (!coachName) coachName = 'ללא מאמן'
-
-        if (!memberCoachByDiscipline.has(disc)) memberCoachByDiscipline.set(disc, new Set())
-        memberCoachByDiscipline.get(disc).add(coachName)
-      })
-
-      memberDisciplines.forEach(d => {
-        acc[d].members.add(m.id)
-        const coachSet = memberCoachByDiscipline.get(d) || new Set()
-        coachSet.forEach(coachName => {
-          if (!acc[d].byCoach.has(coachName)) acc[d].byCoach.set(coachName, new Set())
-          acc[d].byCoach.get(coachName).add(m.id)
-        })
-      })
+      acc[disc].members.add(r.athlete_id)
+      if (!acc[disc].byCoach.has(coachName)) acc[disc].byCoach.set(coachName, new Set())
+      acc[disc].byCoach.get(coachName).add(r.athlete_id)
     })
     return DISCIPLINE_ORDER.map(d => ({
       name: d,
@@ -369,7 +362,7 @@ export default function ReportsManager({ isAdmin }) {
         .map(([name, set]) => ({ name, count: set.size }))
         .sort((a, b) => b.count - a.count),
     }))
-  }, [activeMembers, classById, disciplineByClassId, coachById])
+  }, [filteredRegistrations, classById, coachById, disciplineByClassId, activeMemberIds])
 
   // 1) כמות מתאמנים לפי מאמן — מבוסס נוכחות בפועל (checkins) בטווח הנבחר
   // מחזיר: שם, מתאמנים ייחודיים, וסה"כ אימונים (ספירת כל ה-checkins).
@@ -631,13 +624,13 @@ export default function ReportsManager({ isAdmin }) {
         ))}
       </div>
 
-      {/* === שיוך פורמלי (לא תלוי נוכחות) === */}
+      {/* === רישום פעיל לקבוצות (לא תלוי נוכחות) === */}
 
-      {/* מתאמנים משויכים לפי מאמן — לפי members.coach_id */}
+      {/* מתאמנים רשומים לפי מאמן — לפי class_registrations */}
       <SectionCard
-        title="מתאמנים משויכים לפי מאמן"
+        title={`מתאמנים רשומים לפי מאמן (${periodDays} ימים)`}
         icon="🥋"
-        footer="ספירה לפי שיוך פורמלי (members.coach_id) — כל המתאמנים הפעילים, גם אם עדיין לא הגיעו לאימון. לידים שטרם אושרו משויכים לפי שם המאמן שביקשו."
+        footer={`ספירה לפי רישום פעיל לקבוצות (class_registrations) — מי שנרשם לקבוצה כלשהי בטווח של ${periodDays} הימים האחרונים. לא תלוי בנוכחות בפועל.`}
       >
         {byAssignedCoach.length === 0 || byAssignedCoach.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
@@ -649,11 +642,11 @@ export default function ReportsManager({ isAdmin }) {
         )}
       </SectionCard>
 
-      {/* מתאמנים משויכים לפי תחום + פילוח לפי מאמן */}
+      {/* מתאמנים רשומים לפי תחום + פילוח לפי מאמן */}
       <SectionCard
-        title="מתאמנים משויכים לפי תחום לחימה"
+        title={`מתאמנים רשומים לפי תחום לחימה (${periodDays} ימים)`}
         icon="🥊"
-        footer="ספירה לפי הקבוצות שאליהן משויך כל מתאמן (members.group_ids) — לא תלוי בנוכחות. תחת כל תחום, פילוח לפי המאמן של אותה קבוצה."
+        footer={`ספירה לפי רישום פעיל לקבוצות (class_registrations) ב-${periodDays} הימים האחרונים. תחת כל תחום, פילוח לפי המאמן של הקבוצה.`}
       >
         {byAssignedDiscipline.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>

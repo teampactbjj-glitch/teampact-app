@@ -1235,8 +1235,12 @@ export default function AthleteDashboard({ profile }) {
   const memberBranchNames = memberBranchIds.map(id => branchesMap[id]).filter(Boolean)
 
   return (
-    <div className="min-h-screen bg-gray-50" dir="rtl">
-      <header className="bg-gradient-to-br from-gray-900 via-gray-800 to-red-900 text-white px-5 shadow-lg safe-area-header">
+    <div
+      className="bg-gray-50 flex flex-col"
+      dir="rtl"
+      style={{ height: '100dvh', minHeight: '100vh' }}
+    >
+      <header className="shrink-0 bg-gradient-to-br from-gray-900 via-gray-800 to-red-900 text-white px-5 shadow-lg safe-area-header">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center shadow-md">
@@ -1263,7 +1267,7 @@ export default function AthleteDashboard({ profile }) {
           </div>
         )}
       </header>
-      <main className="p-4 max-w-lg mx-auto pb-24">
+      <main className="flex-1 overflow-y-auto p-4 max-w-lg w-full mx-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="mb-3 space-y-2">
           {!isStandalone() && <InstallBanner variant="slim" />}
           <EnablePushBanner profile={profile} />

@@ -223,7 +223,11 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50" dir="rtl">
+    <div
+      className="bg-gray-50 flex flex-col"
+      dir="rtl"
+      style={{ height: '100dvh', minHeight: '100vh' }}
+    >
       {toast && (() => {
         const isDeletion = toast.kind === 'deletion'
         const bg = isDeletion ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
@@ -247,7 +251,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
           </button>
         )
       })()}
-      <header className="bg-blue-700 text-white px-6 shadow safe-area-header">
+      <header className="shrink-0 bg-blue-700 text-white px-6 shadow safe-area-header">
         <div className="flex items-center gap-3">
           <span className="text-2xl">🥋</span>
           <div>
@@ -262,7 +266,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         </div>
       </header>
 
-      <main className="p-4 max-w-3xl mx-auto pb-24">
+      <main className="flex-1 overflow-y-auto p-4 max-w-3xl w-full mx-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="mb-3 space-y-2">
           {!isStandalone() && <InstallBanner variant="slim" />}
           <EnablePushBanner profile={profile} />

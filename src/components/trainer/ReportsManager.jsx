@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { notifyPush } from '../../lib/notifyPush'
+import { useToast, useConfirm } from '../a11y'
 
 // ===== Helpers =====
 const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -83,16 +85,27 @@ function whatsappLink(phone, message) {
   return `https://wa.me/${intl}?text=${encodeURIComponent(message)}`
 }
 
-// תבנית ההודעה לתזכורת מתאמן שלא הגיע
+// שם המועדון — מופיע בהודעות התזכורת (חשוב במיוחד בווצאפ
+// כשהמתאמן לא שמור באנשי הקשר ולא יודע מי שלח לו).
+const CLUB_NAME = 'Team Pact'
+
+// תבנית ההודעה לתזכורת מתאמן שלא הגיע — משמשת גם ווצאפ וגם Push.
+// הקונטקסט: האפליקציה בהרצה. כל מי בטבלת members הוא מתאמן פעיל אצלנו —
+// או שמגיע ולא נרשם, או שעדיין לא הבין שצריך להירשם באפליקציה.
+//
+// daysSince === null → מתאמן רשום שלא נרשם מעולם לאף אימון באפליקציה
+//                       (כנראה לא הבין את התהליך החדש; תמריץ לרישום).
+// daysSince עד 14    → גבולי (כמעט שבועיים) — נדיר כי הסף הוא 14.
+// daysSince > 14     → מעל שבועיים בלי רישום, הטון מעט יותר מודאג.
 function inactiveReminderMessage(name, daysSince) {
   const firstName = String(name || '').trim().split(/\s+/)[0] || 'חבר'
   if (daysSince === null) {
-    return `היי ${firstName}! 🥋\nשמתי לב שעוד לא התחלת להתאמן איתנו. נשמח לראות אותך באימון הקרוב — תודיע לי באיזה יום נוח לך להתחיל.`
+    return `היי ${firstName}! 🥋\nכאן ${CLUB_NAME} — אנחנו עוברים לעבוד עם האפליקציה כדי לעקוב אחרי הנוכחות וההתקדמות 📱\nאני רואה שעדיין לא נרשמת לאימונים באפליקציה — לפני כל אימון פשוט נכנסים, בוחרים את האימון ומסמנים "נרשמתי" ✅\nככה אוכל לעקוב אחרי ההתקדמות שלך ולקדם אותך נכון 💪\nאם צריך עזרה עם האפליקציה — אני כאן 💬`
   }
   if (daysSince <= 14) {
-    return `היי ${firstName}! 🥋\nלא היית השבוע באימונים, נשמח לשמוע ממך — הכל בסדר?\nמחכים לראות אותך שוב על המזרן 💪`
+    return `היי ${firstName}! 🥋\nכאן ${CLUB_NAME} — שמתי לב שלא הגעת להתאמן כבר כמעט שבועיים, מתגעגעים אליך 💙\nנשמח לראות אותך שוב על המזרן באימון הקרוב 💪`
   }
-  return `היי ${firstName}! 🥋\nלא ראיתי אותך כבר ${daysSince} ימים באימונים — קרה משהו? נשמח לשמוע ממך.\nאם צריך הפסקה או התאמה במנוי, בוא נדבר 💬`
+  return `היי ${firstName}! 🥋\nכאן ${CLUB_NAME} — שמתי לב שלא הגעת להתאמן כבר ${daysSince} ימים, מתגעגעים אליך 💙\nאם צריך הפסקה או התאמה במנוי, בוא נדבר 💬\nנשמח לראות אותך שוב על המזרן 💪`
 }
 
 // ===== UI Primitives =====
@@ -171,6 +184,15 @@ export default function ReportsManager({ isAdmin }) {
   const [checkins, setCheckins] = useState([]) // נוכחויות — לצורך דוחות מבוססי נוכחות בפועל
   const [trialVisits, setTrialVisits] = useState([]) // ביקורי ניסיון אנונימיים (טבלה נפרדת)
   const [registrations, setRegistrations] = useState([]) // class_registrations — מי רשום לאיזו קבוצה
+
+  // ===== Push notification state (לסקציית "מתאמנים שלא הגיעו") =====
+  // pushSending: Set של memberIds ששליחת ה-Push אליהם כרגע בתהליך
+  // pushSent: Set של memberIds שכבר נשלח אליהם push בסשן הנוכחי (כדי למנוע ספאם)
+  const [pushSending, setPushSending] = useState(() => new Set())
+  const [pushSent, setPushSent] = useState(() => new Set())
+  const [bulkSending, setBulkSending] = useState(false)
+  const toast = useToast()
+  const confirm = useConfirm()
 
   useEffect(() => { if (isAdmin) fetchAll() }, [isAdmin])
 
@@ -383,9 +405,11 @@ export default function ReportsManager({ isAdmin }) {
     }))
   }, [filteredRegistrations, classById, coachById, disciplineByClassId, activeMemberIds])
 
-  // 0c) מתאמנים שלא נרשמו לאף קבוצה השבוע (>= 7 ימים מאז רישום אחרון).
+  // 0c) מתאמנים שלא נרשמו לאף קבוצה ב-14 הימים האחרונים.
   // מבוסס על MAX(week_start) של class_registrations עבור כל מתאמן פעיל.
-  // רושם=נוכחות במודל החדש, אז "לא נרשם השבוע" = "לא הגיע לאימון השבוע".
+  // רושם=נוכחות במודל החדש, אז "לא נרשם" = "לא הגיע לאימון".
+  // הסף נקבע ל-14 יום כדי להימנע מ-false positives של חופש קצר/מילואים/מחלה.
+  const INACTIVE_THRESHOLD_DAYS = 14
   const inactiveMembers = useMemo(() => {
     const lastByMember = new Map()
     // משתמשים ב-registrations המלאים (לא ה-filtered) — צריכים את כל ה-180 יום
@@ -397,7 +421,7 @@ export default function ReportsManager({ isAdmin }) {
       if (t > prev) lastByMember.set(r.athlete_id, t)
     })
 
-    const cutoff = Date.now() - 7 * DAY_MS
+    const cutoff = Date.now() - INACTIVE_THRESHOLD_DAYS * DAY_MS
     return activeMembers
       .map(m => {
         const last = lastByMember.get(m.id) || null
@@ -418,6 +442,97 @@ export default function ReportsManager({ isAdmin }) {
         return bDays - aDays
       })
   }, [activeMembers, registrations])
+
+  // ===== שליחת Push למתאמן בודד =====
+  // משתמש ב-Edge Function 'send-push' (תשתית קיימת ב-src/lib/notifyPush.js).
+  // לחיצה על ההתראה במכשיר של המתאמן תפתח את לוח הזמנים של האפליקציה.
+  async function sendPushToMember(member) {
+    if (!member?.id) return
+    if (pushSending.has(member.id)) return // הגנה מקליק כפול
+    setPushSending(prev => new Set(prev).add(member.id))
+    try {
+      // אותו טקסט כמו ווצאפ — עקביות בין הערוצים, ושם המועדון מופיע בגוף ההודעה.
+      // הכותרת קצרה כי מערכות הפעלה חותכות אותה במסך נעול.
+      const title = `${CLUB_NAME} 🥋 מתגעגעים אליך`
+      const body = inactiveReminderMessage(member.name, member.daysSince)
+      await notifyPush({
+        userIds: [member.id],
+        title,
+        body,
+        url: '/',                // פותח את האפליקציה במסך הראשי (לוח השיעורים)
+        tag: `inactive-${member.id}`, // מאחד התראות כפולות באותו מכשיר
+        icon: '/icon-192.png',
+      })
+      setPushSent(prev => new Set(prev).add(member.id))
+      toast.success(`התראה נשלחה ל${member.name}`)
+    } catch (e) {
+      console.warn('[ReportsManager] sendPushToMember failed', e)
+      toast.error(`שגיאה בשליחה ל${member.name}`)
+    } finally {
+      setPushSending(prev => {
+        const next = new Set(prev)
+        next.delete(member.id)
+        return next
+      })
+    }
+  }
+
+  // ===== שליחת Push לכל הלא-פעילים בבת אחת =====
+  // דורש אישור של המשתמש (ConfirmDialog) כדי למנוע שליחה בטעות.
+  async function sendPushToAllInactive() {
+    if (bulkSending) return
+    if (!inactiveMembers.length) return
+    const ok = await confirm({
+      title: `לשלוח התראה ל-${inactiveMembers.length} מתאמנים?`,
+      message: 'כל המתאמנים שלא הגיעו ב-14 הימים האחרונים יקבלו התראת Push לאפליקציה. ניתן לשלוח שוב מחר אם תרצה.',
+      confirmLabel: `שלח ל-${inactiveMembers.length}`,
+      cancelLabel: 'ביטול',
+    })
+    if (!ok) return
+    setBulkSending(true)
+    let success = 0
+    let failed = 0
+    try {
+      // שולחים בקריאה אחת ל-Edge Function (הפונקציה תומכת ב-array של user_ids)
+      const ids = inactiveMembers.map(m => m.id).filter(Boolean)
+      // אבל בגלל שטקסט ההודעה משתנה לפי daysSince של כל אחד, נשלח אחד-אחד.
+      // עדיין מקבילי דרך Promise.all כדי שזה לא יחנוק את ה-UI.
+      const results = await Promise.allSettled(
+        inactiveMembers.map(m => {
+          const body = inactiveReminderMessage(m.name, m.daysSince)
+          return notifyPush({
+            userIds: [m.id],
+            title: `${CLUB_NAME} 🥋 מתגעגעים אליך`,
+            body,
+            url: '/',
+            tag: `inactive-${m.id}`,
+            icon: '/icon-192.png',
+          })
+        })
+      )
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          success++
+          setPushSent(prev => new Set(prev).add(inactiveMembers[i].id))
+        } else {
+          failed++
+        }
+      })
+      if (failed === 0) {
+        toast.success(`נשלחו ${success} התראות בהצלחה`)
+      } else {
+        toast.error(`נשלחו ${success} התראות, ${failed} נכשלו`)
+      }
+      // הערה: המכשיר של המתאמן יקבל את ההתראה רק אם הוא נתן הרשאת push
+      // והתקין את האפליקציה כ-PWA. למי שלא — הכפתור הירוק של ווצאפ הוא ה-fallback.
+      void ids // נשמר לעתיד, בעבור batch endpoint יחיד
+    } catch (e) {
+      console.warn('[ReportsManager] sendPushToAllInactive failed', e)
+      toast.error('שגיאה בשליחת ההתראות')
+    } finally {
+      setBulkSending(false)
+    }
+  }
 
   // 1) כמות מתאמנים לפי מאמן — מבוסס נוכחות בפועל (checkins) בטווח הנבחר
   // מחזיר: שם, מתאמנים ייחודיים, וסה"כ אימונים (ספירת כל ה-checkins).
@@ -774,13 +889,30 @@ export default function ReportsManager({ isAdmin }) {
 
       {/* === התראת לא-פעילים (פער בין רשומים לבין מי שמגיע באמת) === */}
       <SectionCard
-        title={`מתאמנים שלא הגיעו מעל שבוע ${inactiveMembers.length > 0 ? `(${inactiveMembers.length})` : ''}`}
+        title={`מתאמנים שלא הגיעו מעל שבועיים ${inactiveMembers.length > 0 ? `(${inactiveMembers.length})` : ''}`}
         icon="⚠️"
-        footer="במודל הנוכחי רישום לקבוצה = הגעה לאימון. רשימה זו מציגה מתאמנים פעילים שלא נרשמו לאף קבוצה במהלך 7 הימים האחרונים. לחיצה על ווצאפ פותחת שיחה עם הודעת תזכורת ממולאת מראש."
+        footer="רישום לקבוצה = הגעה לאימון במודל הנוכחי. הרשימה מציגה מתאמנים פעילים שלא נרשמו לאף קבוצה ב-14 הימים האחרונים. כפתור 📲 שולח התראת Push לאפליקציה (חינמי, מגיע גם אם המתאמן לא בקבוצה אצלך). כפתור 💬 פותח ווצאפ עם הודעה ממולאת מראש — fallback למתאמנים שלא הפעילו Push."
       >
         {inactiveMembers.length === 0 ? (
-          <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3">✅ כל המתאמנים הפעילים נרשמו לאימון בשבוע האחרון.</p>
+          <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3">✅ כל המתאמנים הפעילים נרשמו לאימון ב-14 הימים האחרונים.</p>
         ) : (
+          <>
+            {/* כפתור Bulk: שלח Push לכל הלא-פעילים בלחיצה אחת */}
+            <div className="mb-3 flex flex-wrap items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="text-xs text-blue-900 flex-1 min-w-[160px]">
+                💡 שליחת Push לכולם בלחיצה אחת (חינמי, פנימי באפליקציה).
+              </div>
+              <button
+                type="button"
+                onClick={sendPushToAllInactive}
+                disabled={bulkSending}
+                aria-label={`שלח התראת Push ל-${inactiveMembers.length} מתאמנים שלא הגיעו`}
+                className="shrink-0 inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-blue-300 disabled:cursor-not-allowed text-white text-xs font-bold px-4 py-2 rounded-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-700 transition-colors"
+              >
+                <span aria-hidden="true">📲</span>
+                <span>{bulkSending ? 'שולח…' : `שלח Push ל-${inactiveMembers.length}`}</span>
+              </button>
+            </div>
           <div className="max-h-96 overflow-y-auto -mx-4 px-4">
             <ul className="divide-y divide-gray-100">
               {inactiveMembers.map(m => {
@@ -791,8 +923,10 @@ export default function ReportsManager({ isAdmin }) {
                   days >= 14 ? 'bg-orange-100 text-orange-800' :
                   'bg-yellow-100 text-yellow-800'
                 const waLink = whatsappLink(m.phone, inactiveReminderMessage(m.name, days))
+                const isSending = pushSending.has(m.id)
+                const wasSent = pushSent.has(m.id)
                 return (
-                  <li key={m.id} className="flex items-center gap-3 py-2.5">
+                  <li key={m.id} className="flex items-center gap-2 py-2.5">
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-gray-900 text-sm truncate" title={m.name}>{m.name}</div>
                       {m.phone && <div className="text-xs text-gray-500 mt-0.5" dir="ltr">{m.phone}</div>}
@@ -800,25 +934,44 @@ export default function ReportsManager({ isAdmin }) {
                     <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${toneClass}`}>
                       {daysLabel}
                     </span>
+                    {/* כפתור Push — תמיד מוצג (גם בלי טלפון, כי Push לא דורש טלפון) */}
+                    <button
+                      type="button"
+                      onClick={() => sendPushToMember(m)}
+                      disabled={isSending || bulkSending}
+                      aria-label={wasSent ? `התראה כבר נשלחה ל${m.name}` : `שלח התראת Push ל${m.name}`}
+                      title={wasSent ? 'נשלח בסשן זה' : 'שלח התראת Push לאפליקציה'}
+                      className={`shrink-0 inline-flex items-center gap-1 text-xs font-bold px-2.5 py-2 rounded-lg focus:outline focus:outline-2 focus:outline-offset-2 transition-colors ${
+                        wasSent
+                          ? 'bg-blue-100 text-blue-700 cursor-default'
+                          : isSending
+                            ? 'bg-blue-300 text-white cursor-wait'
+                            : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white focus:outline-blue-700'
+                      }`}
+                    >
+                      <span aria-hidden="true">{wasSent ? '✓' : '📲'}</span>
+                      <span>{wasSent ? 'נשלח' : isSending ? '…' : 'Push'}</span>
+                    </button>
                     {waLink ? (
                       <a
                         href={waLink}
                         target="_blank"
                         rel="noreferrer noopener"
                         aria-label={`שלח הודעת ווצאפ ל${m.name}`}
-                        className="shrink-0 inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold px-3 py-2 rounded-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-700"
+                        className="shrink-0 inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold px-2.5 py-2 rounded-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-700"
                       >
                         <span aria-hidden="true">💬</span>
                         <span>ווצאפ</span>
                       </a>
                     ) : (
-                      <span className="shrink-0 text-xs text-gray-400 italic px-3 py-2">אין טלפון</span>
+                      <span className="shrink-0 text-xs text-gray-400 italic px-2 py-2">—</span>
                     )}
                   </li>
                 )
               })}
             </ul>
           </div>
+          </>
         )}
       </SectionCard>
 

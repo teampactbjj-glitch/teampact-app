@@ -16,26 +16,17 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
         { id: 'profile',       icon: '👤', label: 'פרופיל' },
       ]
   return (
-    <nav dir="rtl" className="flex" aria-label="ניווט ראשי"
+    <nav dir="rtl" className="flex shrink-0" aria-label="ניווט ראשי"
       style={{
-        position: 'fixed',
-        // inset במקום bottom בלבד — מנעול חזק יותר לכל הצדדים, מקטין סיכוי ל"עליה" ב-iOS
-        inset: 'auto 0 0 0',
+        // ללא position:fixed — הסרגל הוא flex item רגיל בתוך wrapper של flex column
+        // עם height: 100dvh. ככה הוא לא יכול "לעוף" כי הוא חלק טבעי מהלייאאוט,
+        // לא תלוי בחישוב viewport של iOS שמתעדכן באיחור.
         width: '100%',
         zIndex: 9999,
         paddingBottom: 'env(safe-area-inset-bottom)',
-        minHeight: '68px',
         background: '#ffffff',
         borderTop: '2px solid #d1d5db',
         boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.12)',
-        // האצת חומרה — מעבירה את ה-nav לשכבת קומפוזיציה נפרדת,
-        // ככה היא לא "מטיילת" עם momentum scroll ב-iOS PWA
-        transform: 'translateZ(0)',
-        WebkitTransform: 'translateZ(0)',
-        willChange: 'transform',
-        // מבטיח שגם ב-iOS PWA הסרגל מקובע ל-viewport ולא לקונטיינר
-        WebkitBackfaceVisibility: 'hidden',
-        backfaceVisibility: 'hidden',
       }}>
       {tabs.map(tab => {
         const active = activeTab === tab.id
@@ -56,8 +47,15 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
           <button key={tab.id} type="button" onClick={() => onTabChange(tab.id)}
             aria-label={ariaLabel}
             aria-current={active ? 'page' : undefined}
-            className="relative flex flex-1 flex-col items-center justify-center gap-1 py-2.5 border-none cursor-pointer transition-all duration-150 focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-emerald-600"
-            style={{ color: active ? '#047857' : '#4b5563', background: active ? 'rgba(5, 150, 105, 0.10)' : 'transparent' }}>
+            className="relative flex flex-1 flex-col items-center justify-center gap-1 border-none cursor-pointer transition-all duration-150 focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-emerald-600"
+            style={{
+              // אספקט-רציו 1:1 כדי שכל כפתור יהיה ריבוע סימטרי, לא מלבן.
+              // המינימום 64px מבטיח שבסניפים עם הרבה טאבים (מנהל) הסרגל לא יקטן מדי.
+              aspectRatio: '1 / 1',
+              minHeight: '64px',
+              color: active ? '#047857' : '#4b5563',
+              background: active ? 'rgba(5, 150, 105, 0.10)' : 'transparent',
+            }}>
             {active && (
               <span aria-hidden="true" style={{ position: 'absolute', top: 0, left: '15%', right: '15%', height: 3, background: '#059669', borderRadius: '0 0 3px 3px' }} />
             )}

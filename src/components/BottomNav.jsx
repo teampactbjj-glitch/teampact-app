@@ -18,15 +18,16 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
   return (
     <nav dir="rtl" className="flex shrink-0" aria-label="ניווט ראשי"
       style={{
-        // ללא position:fixed — הסרגל הוא flex item רגיל בתוך wrapper של flex column
-        // עם height: 100dvh. ככה הוא לא יכול "לעוף" כי הוא חלק טבעי מהלייאאוט,
-        // לא תלוי בחישוב viewport של iOS שמתעדכן באיחור.
+        // ללא position:fixed — flex item רגיל בתוך wrapper של flex column עם 100dvh.
         width: '100%',
         zIndex: 9999,
+        // גובה אחיד מקצועי: 64px בסיס + safe-area-inset-bottom (לאינדיקטור הבית של iPhone).
+        // זה תואם לסטנדרט iOS Tab Bar (49-83pt) ו-Material Design (56-80dp).
+        height: 'calc(64px + env(safe-area-inset-bottom))',
         paddingBottom: 'env(safe-area-inset-bottom)',
         background: '#ffffff',
-        borderTop: '2px solid #d1d5db',
-        boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.12)',
+        borderTop: '1px solid #e5e7eb',
+        boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.06)',
       }}>
       {tabs.map(tab => {
         const active = activeTab === tab.id
@@ -47,23 +48,44 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
           <button key={tab.id} type="button" onClick={() => onTabChange(tab.id)}
             aria-label={ariaLabel}
             aria-current={active ? 'page' : undefined}
-            className="relative flex flex-1 flex-col items-center justify-center gap-1 border-none cursor-pointer transition-all duration-150 focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-emerald-600"
+            className="relative flex flex-1 flex-col items-center justify-center gap-1 border-none cursor-pointer transition-colors duration-150 focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-emerald-600"
             style={{
-              // אספקט-רציו 1:1 כדי שכל כפתור יהיה ריבוע סימטרי, לא מלבן.
-              // המינימום 64px מבטיח שבסניפים עם הרבה טאבים (מנהל) הסרגל לא יקטן מדי.
-              aspectRatio: '1 / 1',
-              minHeight: '64px',
-              color: active ? '#047857' : '#4b5563',
-              background: active ? 'rgba(5, 150, 105, 0.10)' : 'transparent',
+              // המרווח הפנימי מבטיח שהאייקון והתווית מרוכזים יפה בכל גובה הכפתור.
+              padding: '8px 4px',
+              color: active ? '#047857' : '#6b7280',
+              background: 'transparent',
             }}>
+            {/* אינדיקטור פעיל — קו בעל רוחב חצי כפתור בראש, צבע אמרלד */}
             {active && (
-              <span aria-hidden="true" style={{ position: 'absolute', top: 0, left: '15%', right: '15%', height: 3, background: '#059669', borderRadius: '0 0 3px 3px' }} />
+              <span aria-hidden="true" style={{
+                position: 'absolute',
+                top: 0,
+                left: '25%',
+                right: '25%',
+                height: 3,
+                background: '#059669',
+                borderRadius: '0 0 4px 4px',
+              }} />
             )}
-            <span aria-hidden="true" className="leading-none" style={{ fontSize: active ? '1.5rem' : '1.3rem', transition: 'font-size 150ms' }}>{tab.icon}</span>
-            <span className="text-[11px] leading-none" style={{ fontWeight: active ? 700 : 500 }}>{tab.label}</span>
+            <span aria-hidden="true" className="leading-none" style={{
+              fontSize: '22px',           // גודל קבוע — לא משתנה בין active ל-inactive (יותר נקי)
+              lineHeight: 1,
+            }}>{tab.icon}</span>
+            <span className="leading-none" style={{
+              fontSize: '11px',
+              fontWeight: active ? 700 : 500,
+              letterSpacing: '0.01em',
+            }}>{tab.label}</span>
             {badgeCount > 0 && (
-              <span aria-hidden="true" className={`absolute top-1.5 flex items-center justify-center rounded-full ${badgeColor === 'red' ? 'bg-red-600' : 'bg-orange-500'} text-white text-[10px] font-bold`}
-                style={{ right: '22%', width: 16, height: 16 }}>{badgeCount}</span>
+              <span aria-hidden="true" className={`absolute flex items-center justify-center rounded-full ${badgeColor === 'red' ? 'bg-red-600' : 'bg-orange-500'} text-white text-[10px] font-bold`}
+                style={{
+                  top: 6,
+                  right: '50%',
+                  transform: 'translateX(14px)',
+                  width: 16,
+                  height: 16,
+                  border: '2px solid #ffffff',
+                }}>{badgeCount}</span>
             )}
           </button>
         )

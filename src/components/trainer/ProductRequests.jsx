@@ -34,7 +34,8 @@ export default function ProductRequests({ onMarkedDone }) {
     setMarkingId(null)
   }
 
-  const pending = requests.filter(r => r.status !== 'done')
+  // pending = רשומות חדשות (status='pending' או null) או כל מה שלא 'done'/'cancelled'
+  const pending = requests.filter(r => !r.status || r.status === 'pending')
   const done = requests.filter(r => r.status === 'done')
 
   return (

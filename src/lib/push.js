@@ -61,7 +61,9 @@ export async function ensurePushSubscription(user) {
         if (oldEndpoint) {
           await supabase.from('push_subscriptions').delete().eq('endpoint', oldEndpoint)
         }
-      } catch {}
+      } catch (e) {
+        console.warn('Failed to clean stale push subscription:', e)
+      }
       sub = null
     }
   }

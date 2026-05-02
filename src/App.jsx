@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import AthleteLogin from './components/auth/AthleteLogin'
 import TrainerDashboard from './components/trainer/TrainerDashboard'
@@ -16,6 +16,8 @@ export default function App() {
   const [memberStatus, setMemberStatus] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
+  // Version counter למניעת race condition: כשהsession מתחלף מהר, fetchProfile ישן לא ידרוס פרופיל חדש
+  const fetchVersionRef = useRef(0)
 
   if (window.location.pathname === '/register') return (<><RegisterPage /><AccessibilityWidget /></>)
   if (window.location.pathname === '/register-coach') return (<><RegisterCoachPage /><AccessibilityWidget /></>)
@@ -27,26 +29,40 @@ export default function App() {
       setSession(session)
     })
     // רישום service worker ל-PWA + זיהוי עדכון אוטומטי
+    // משתנים חיצוניים ל-promise כדי שה-cleanup יוכל לנקות אותם
+    let intervalId = null
+    let onVis = null
+    let pollFn = null
+    let onControllerChange = null
     if ('serviceWorker' in navigator) {
       const hadControllerOnLoad = !!navigator.serviceWorker.controller
       navigator.serviceWorker.register('/sw.js', { scope: '/' })
         .then(reg => {
           // בדיקת עדכון כל 60 שניות + בכל הפעלה חוזרת של הטאב
-          const poll = () => { reg.update().catch(() => {}) }
-          const intervalId = setInterval(poll, 60 * 1000)
-          const onVis = () => { if (document.visibilityState === 'visible') poll() }
+          pollFn = () => { reg.update().catch(() => {}) }
+          intervalId = setInterval(pollFn, 60 * 1000)
+          onVis = () => { if (document.visibilityState === 'visible') pollFn() }
           document.addEventListener('visibilitychange', onVis)
-          window.addEventListener('focus', poll)
+          window.addEventListener('focus', pollFn)
         })
         .catch(err => console.warn('SW register failed', err))
 
       // כשה-SW החדש השתלט — מציגים באנר "עדכון זמין"
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
+      onControllerChange = () => {
         if (!hadControllerOnLoad) return // התקנה ראשונה — לא נחשב כעדכון
         setUpdateAvailable(true)
-      })
+      }
+      navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
     }
-    return () => subscription.unsubscribe()
+    return () => {
+      subscription.unsubscribe()
+      if (intervalId) clearInterval(intervalId)
+      if (onVis) document.removeEventListener('visibilitychange', onVis)
+      if (pollFn) window.removeEventListener('focus', pollFn)
+      if (onControllerChange && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
+      }
+    }
   }, [])
 
   // כשפרופיל נטען וקיימת כבר הרשאה — נוודא subscription עדכני
@@ -77,11 +93,18 @@ export default function App() {
   }, [session])
 
   async function fetchProfile(user) {
+    // לכוד גרסה לפני ה-fetch. אם session התחלף בזמן ש-fetch זה רץ, נדע שזה stale ולא נדרוס.
+    const myVersion = ++fetchVersionRef.current
     setLoadingProfile(true)
     const [{ data, error }, { data: member }] = await Promise.all([
       supabase.from('profiles').select('*, is_admin, is_approved').eq('id', user.id).maybeSingle(),
       supabase.from('members').select('status').eq('id', user.id).maybeSingle(),
     ])
+    // אם בינתיים נשלחה קריאה חדשה ל-fetchProfile — לא נדרוס.
+    if (myVersion !== fetchVersionRef.current) {
+      console.warn('fetchProfile: stale response ignored (newer fetch in flight)')
+      return
+    }
     if (error) console.error('fetchProfile error:', error)
     // ודא שיש email — לעיתים הוא לא שמור בטבלת profiles, אז ניקח מה-auth
     const merged = { ...(data || { id: user.id }), email: data?.email || user.email }

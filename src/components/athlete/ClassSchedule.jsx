@@ -9,6 +9,15 @@ function formatTime(t) {
   return t ? t.slice(0, 5) : ''
 }
 
+// מחזיר את ה-week_start של השבוע הנוכחי (יום ראשון, פורמט YYYY-MM-DD).
+// חייב להיות תואם ל-getWeekStart ב-AthleteDashboard.jsx.
+function getWeekStart() {
+  const d = new Date()
+  d.setDate(d.getDate() - d.getDay())
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString().split('T')[0]
+}
+
 // מחזיר את ההופעה הקרובה ביותר *בעתיד* של השיעור השבועי.
 // אם היום זה היום-בשבוע של השיעור והוא עדיין לא התחיל — ההופעה הבאה היא היום.
 // אם היום והשיעור כבר התחיל (או הסתיים) — ההופעה הבאה היא השבוע הבא.
@@ -109,7 +118,8 @@ export default function ClassSchedule({ profile, member }) {
       supabase
         .from('class_registrations')
         .select('class_id')
-        .eq('athlete_id', profile.id),
+        .eq('athlete_id', profile.id)
+        .eq('week_start', getWeekStart()),
     ])
 
     console.log('classes result:', classData, classErr)

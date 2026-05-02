@@ -13,7 +13,7 @@ export default function TrainerLogin({ onSwitch }) {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
     if (error) setError(error.message)
     setLoading(false)
   }

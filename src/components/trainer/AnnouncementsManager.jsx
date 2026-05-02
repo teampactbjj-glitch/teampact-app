@@ -153,11 +153,20 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   }
 
   async function approveItem(item) {
-    await supabase.from('announcements').update({
+    // הגנה: שלח push פעם אחת בלבד. אם כבר אושר — אל תשלח שוב (מונע ספאם בלחיצה כפולה).
+    if (item.status === 'approved') {
+      console.warn('approveItem: item already approved, skipping push notification')
+      return
+    }
+    const { error } = await supabase.from('announcements').update({
       status: 'approved',
       approved_by: trainerId,
       approved_at: new Date().toISOString(),
     }).eq('id', item.id)
+    if (error) {
+      console.error('approveItem error:', error)
+      return
+    }
     // התראה למתאמנים על הפרסום (לפי סניף אם הוגדר, אחרת לכולם)
     const branchIds = Array.isArray(item.branch_ids) ? item.branch_ids.filter(Boolean) : []
     const targetIdsPromise = branchIds.length
@@ -171,7 +180,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
         url: '/#announcements',
         tag: `announcement:${item.id}`,
       }))
-      .catch(() => {})
+      .catch(e => console.warn('notifyPush failed:', e))
     fetchAnnouncements()
     onChange?.()
   }

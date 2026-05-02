@@ -52,8 +52,19 @@ export default function LeadsManager({ trainerId = null, isAdmin = false } = {})
   }
 
   async function approveLead(lead, subType) {
+    // הגנה: ודא שה-lead נמצא ברשימה הנוכחית (כלומר עבר את הסינון לפי הרשאה ב-fetchAll).
+    // בלי זה, מאמן רגיל יכול בתיאוריה לקרוא לפונקציה דרך devtools עם id מומצא.
+    if (!leads.some(l => l.id === lead.id)) {
+      toast.error('אין לך הרשאה לאשר את הבקשה הזו')
+      return
+    }
     setActionLoading(p => ({ ...p, [lead.id]: 'approving' }))
-    await supabase.from('members').update({ status: 'active', subscription_type: subType }).eq('id', lead.id)
+    const { error } = await supabase.from('members').update({ status: 'active', subscription_type: subType }).eq('id', lead.id)
+    if (error) {
+      toast.error('שגיאה באישור: ' + (error.message || 'נסה שוב'))
+      setActionLoading(p => ({ ...p, [lead.id]: null }))
+      return
+    }
     // מייל אישור (אם ה-Edge Function לא מוגדרת — פשוט נתעלם משגיאה)
     if (lead.email) {
       supabase.functions.invoke('send-approval-email', {
@@ -65,10 +76,20 @@ export default function LeadsManager({ trainerId = null, isAdmin = false } = {})
   }
 
   async function rejectLead(id) {
+    // הגנה: ודא שה-lead נמצא ברשימה הנוכחית (אותה סיבה כמו ב-approveLead).
+    if (!leads.some(l => l.id === id)) {
+      toast.error('אין לך הרשאה לדחות את הבקשה הזו')
+      return
+    }
     const ok = await confirm({ title: 'מחיקת בקשה', message: 'למחוק את הבקשה?', confirmText: 'מחק', danger: true })
     if (!ok) return
     setActionLoading(p => ({ ...p, [id]: 'rejecting' }))
-    await supabase.from('members').delete().eq('id', id)
+    const { error } = await supabase.from('members').delete().eq('id', id)
+    if (error) {
+      toast.error('שגיאה במחיקה: ' + (error.message || 'נסה שוב'))
+      setActionLoading(p => ({ ...p, [id]: null }))
+      return
+    }
     setLeads(p => p.filter(l => l.id !== id))
     setActionLoading(p => ({ ...p, [id]: null }))
   }

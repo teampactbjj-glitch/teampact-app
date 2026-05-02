@@ -32,13 +32,36 @@ function resolveNextOccurrence(cls) {
   return { daysUntil, displayDay, displayTime, nextDate }
 }
 
-function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) {
+// האם כעת מותר להירשם לשבוע הבא?
+// תנאי: יום שישי (dow=5) מהשעה 06:00 ועד מוצאי שבת/תחילת ראשון.
+// משעת חצות של ראשון — "השבוע הבא" הופך ל"השבוע הנוכחי", ואין צורך בטאב.
+function isNextWeekRegistrationOpen(now = new Date()) {
+  const dow = now.getDay()
+  if (dow === 5) return now.getHours() >= 6 // שישי מ-06:00
+  if (dow === 6) return true                  // כל יום שבת
+  return false
+}
+
+function ScheduleTab({ member, limit, registrations, registrationsNext, onRegister, branchesMap }) {
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeBranch, setActiveBranch] = useState('all')
+  // weekMode: 'current' (השבוע) או 'next' (שבוע הבא). ברירת מחדל: השבוע הנוכחי.
+  const [weekMode, setWeekMode] = useState('current')
+  const nextWeekOpen = isNextWeekRegistrationOpen()
+  // חישוב המונה האפקטיבי כאן — איפה ש-classes זמין בסקופ. (בהורה הוא לא היה זמין
+  // כי הוא נטען בתוך הקומפוננט הזה.) המונה לא כולל מזרן פתוח/ספארינג שאינם נספרים במכסה.
+  const computeCount = (regSet) => [...regSet].filter(id => {
+    const cls = classes.find(c => c.id === id)
+    return cls && !isOpenMatClass(cls)
+  }).length
+  const effectiveCount = computeCount(registrations)
+  const effectiveCountNext = computeCount(registrationsNext)
   // selectedDate=null במצב התחלתי — מציגים רק "השיעורים שנרשמתי אליהם"
   // רק כשהמתאמן לוחץ על תאריך בסלייד — מוצג פירוט השיעורים של אותו יום
   const [selectedDate, setSelectedDate] = useState(null)
+  // איפוס תאריך נבחר כשמחליפים שבוע — כדי שהבחירה לא תזלוג בין שבועות
+  useEffect(() => { setSelectedDate(null) }, [weekMode])
   const todayBtnRef = useRef(null)
   const selectedBtnRef = useRef(null)
   const sliderContainerRef = useRef(null)
@@ -109,6 +132,20 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
   }, [member?.id, member?.branch_ids?.join(','), member?.branch_id, Object.keys(branchesMap || {}).join(',')])
 
   const today = new Date(); today.setHours(0,0,0,0)
+  // referenceDate — נקודת ייחוס לבחירה הנוכחית. ב'שבוע הבא' אנחנו מחשבים תאריך לפי
+  // יום ראשון הבא ולא היום, כדי שהסליידר ושאר התצוגה יציגו את התאריכים הנכונים.
+  const referenceDate = (() => {
+    if (weekMode !== 'next') return today
+    const d = new Date(today)
+    d.setDate(today.getDate() + (7 - today.getDay()))
+    return d
+  })()
+  // האם הצגה זו היא של השבוע הבא (לא היום הנוכחי)
+  const isNextWeekView = weekMode === 'next'
+  // קבוצת הרישומים הרלוונטית לתצוגה הנוכחית
+  const activeRegistrations = isNextWeekView ? registrationsNext : registrations
+  // המונה האפקטיבי לתצוגה הנוכחית (לא כולל מזרן פתוח)
+  const activeEffectiveCount = isNextWeekView ? effectiveCountNext : effectiveCount
 
   if (loading) return <p className="text-center text-gray-400 py-8">טוען...</p>
 
@@ -145,25 +182,25 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
     return false
   }
 
-  // "השיעורים שלי" — השיעורים שהמתאמן נרשם אליהם השבוע, ממוינים לפי יום ושעה
-  const myClasses = [...registrations]
+  // "השיעורים שלי" — השיעורים שהמתאמן נרשם אליהם בשבוע הנוכחי לתצוגה
+  const myClasses = [...activeRegistrations]
     .map(cid => filteredClasses.find(c => c.id === cid))
     .filter(Boolean)
     .sort((a, b) => (a.day_of_week - b.day_of_week) || (a.start_time || '').localeCompare(b.start_time || ''))
 
-  // חישוב תאריך ההופעה הבא של שיעור השבוע (ליום השבוע שלו)
+  // חישוב תאריך ההופעה של שיעור בשבוע המוצג (ליום השבוע שלו)
   const nextOccurrenceThisWeek = (cls) => {
-    const d = new Date(today)
+    const d = new Date(referenceDate)
     const dow = cls.day_of_week
-    const todayDow = today.getDay()
-    const diff = dow - todayDow
-    d.setDate(today.getDate() + diff)
+    const refDow = referenceDate.getDay()
+    const diff = dow - refDow
+    d.setDate(referenceDate.getDate() + diff)
     return d
   }
 
-  // סליידר של שבוע אחד — יום א' עד יום ו' (אין אימונים בשבת)
-  const weekStart = new Date(today)
-  weekStart.setDate(today.getDate() - today.getDay())
+  // סליידר של שבוע אחד — יום א' עד יום ו' (אין אימונים בשבת) של השבוע המוצג
+  const weekStart = new Date(referenceDate)
+  weekStart.setDate(referenceDate.getDate() - referenceDate.getDay())
   const sliderCells = []
   for (let i = 0; i < 6; i++) {
     const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); sliderCells.push(d)
@@ -207,16 +244,47 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
         </div>
       )}
 
+      {/* טאב 'השבוע / שבוע הבא' — מופיע מיום שישי 06:00 עד מוצאי שבת.
+          המגבלה לפי המנוי נספרת נפרדת לכל שבוע. */}
+      {(nextWeekOpen || weekMode === 'next') && (
+        <div className="flex items-center gap-2 bg-white rounded-2xl border shadow-sm p-1.5">
+          <button
+            type="button"
+            onClick={() => setWeekMode('current')}
+            className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold transition ${
+              weekMode === 'current'
+                ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}>
+            השבוע
+          </button>
+          <button
+            type="button"
+            onClick={() => nextWeekOpen && setWeekMode('next')}
+            disabled={!nextWeekOpen}
+            className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold transition ${
+              weekMode === 'next'
+                ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
+                : nextWeekOpen
+                  ? 'text-gray-600 hover:bg-gray-50'
+                  : 'text-gray-300 cursor-not-allowed'
+            }`}>
+            שבוע הבא
+            {!nextWeekOpen && <span className="block text-[10px] font-normal mt-0.5">פתוח מיום שישי 06:00</span>}
+          </button>
+        </div>
+      )}
+
       {/* כותרת + מונה שבועי */}
       <div className="flex items-center justify-between">
         <div className="min-w-0">
           <p className="font-black text-gray-800 text-base leading-tight">
-            {dateLabel || 'השיעורים שלי השבוע'}
+            {dateLabel || (isNextWeekView ? 'השיעורים שלי לשבוע הבא' : 'השיעורים שלי השבוע')}
           </p>
           {!selectedDate && <p className="text-xs text-gray-400 mt-0.5">לחץ על תאריך בסלייד כדי לראות את השיעורים של אותו יום</p>}
         </div>
         <span className="text-xs bg-red-100 text-red-800 px-3 py-1 rounded-full font-bold whitespace-nowrap">
-          {effectiveCount}/{limit === Infinity ? '∞' : limit} השבוע
+          {activeEffectiveCount}/{limit === Infinity ? '∞' : limit} {isNextWeekView ? 'בשבוע הבא' : 'השבוע'}
         </span>
       </div>
 
@@ -276,12 +344,12 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
             </div>
           ) : (
             dayClasses.map(cls => {
-              const isReg = registrations.has(cls.id)
+              const isReg = activeRegistrations.has(cls.id)
               const past = isPastClass(cls, selectedDate)
-              const atRegLimit = !isReg && !isOpenMatClass(cls) && effectiveCount >= limit && limit !== Infinity
+              const atRegLimit = !isReg && !isOpenMatClass(cls) && activeEffectiveCount >= limit && limit !== Infinity
               const disabled = past || (atRegLimit && !isReg)
               return (
-                <button key={cls.id} onClick={() => !past && onRegister(cls)} disabled={disabled}
+                <button key={cls.id} onClick={() => !past && onRegister(cls, weekMode)} disabled={disabled}
                   className={`w-full flex items-center justify-between p-4 rounded-2xl transition shadow-sm ${
                     past
                       ? 'bg-gray-50 text-gray-400 cursor-not-allowed opacity-60'
@@ -336,7 +404,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
             const dateStr = occurrence.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })
             return (
               <button key={cls.id}
-                onClick={() => !past && onRegister(cls)}
+                onClick={() => !past && onRegister(cls, weekMode)}
                 disabled={past}
                 className={`w-full flex items-center justify-between p-4 rounded-2xl shadow-sm transition ${
                   past
@@ -993,6 +1061,16 @@ function getWeekStart() {
   return d.toISOString().split('T')[0]
 }
 
+// תחילת השבוע הבא — היום הראשון הבא (יום ראשון Sunday).
+function getNextWeekStart() {
+  const d = new Date()
+  // קופצים קדימה לראשון הבא: 7 - dow (אם dow=0 קופצים שבוע שלם קדימה).
+  const dow = d.getDay()
+  d.setDate(d.getDate() + (7 - dow))
+  d.setHours(0,0,0,0)
+  return d.toISOString().split('T')[0]
+}
+
 function isOpenMatClass(cls) {
   if ((cls.class_type || '').toLowerCase() === 'open_mat') return true;
   const name = String(cls.name || cls.title || '').toLowerCase();
@@ -1010,6 +1088,7 @@ export default function AthleteDashboard({ profile }) {
   const [member, setMember]                 = useState(null)
   const [branchesMap, setBranchesMap]       = useState({})
   const [registrations, setRegistrations]   = useState(new Set())
+  const [registrationsNext, setRegistrationsNext] = useState(new Set())
 
   // hash → tab (ניווט מהתראת push)
   useEffect(() => {
@@ -1025,10 +1104,8 @@ export default function AthleteDashboard({ profile }) {
 
   const subscriptionType = member?.subscription_type || profile?.subscription_type
   const limit = SUBSCRIPTION_LIMITS[subscriptionType] ?? 2
-  const effectiveCount = [...registrations].filter(id => {
-    const cls = classes.find(c => c.id === id)
-    return cls && !isOpenMatClass(cls)
-  }).length
+  // הערה: ה-effectiveCount/effectiveCountNext (ספירת רישומים לא כולל מזרן פתוח)
+  // מחושבים בתוך ScheduleTab כי שם זמין המשתנה 'classes' לסינון מדויק. אין מקבילה כאן.
   const displayName = member?.full_name || profile?.full_name || profile?.email || 'מתאמן'
   const displaySub = SUBSCRIPTION_LABELS[subscriptionType] || (subscriptionType ? subscriptionType : null)
   // הודעה מיועדת למתאמן אם: אין בה branch_ids (כלומר "לכל הסניפים"), או שאחד הסניפים שלה הוא סניף של המתאמן.
@@ -1135,42 +1212,68 @@ export default function AthleteDashboard({ profile }) {
   }
 
   async function fetchRegistrations() {
+    // מביאים את שני השבועות (נוכחי + הבא) בשאילתה אחת ומפצלים לפי week_start.
+    // ככה לא מבצעים שתי קריאות נפרדות, וקטגוריית הספירה תמיד מסונכרנת.
+    const wsCurrent = getWeekStart()
+    const wsNext = getNextWeekStart()
     const { data } = await supabase.from('class_registrations')
-      .select('class_id').eq('athlete_id', profile.id).eq('week_start', getWeekStart())
-    setRegistrations(new Set((data || []).map(r => r.class_id)))
+      .select('class_id, week_start')
+      .eq('athlete_id', profile.id)
+      .in('week_start', [wsCurrent, wsNext])
+    const cur = new Set()
+    const nxt = new Set()
+    ;(data || []).forEach(r => {
+      if (r.week_start === wsCurrent) cur.add(r.class_id)
+      else if (r.week_start === wsNext) nxt.add(r.class_id)
+    })
+    setRegistrations(cur)
+    setRegistrationsNext(nxt)
   }
 
-  async function handleRegister(cls) {
-    const isRegistered = registrations.has(cls.id)
+  async function handleRegister(cls, weekMode = 'current') {
+    // איזה שבוע אנחנו רושמים/מבטלים — לפי הטאב הפעיל ב-ScheduleTab.
+    const isNext = weekMode === 'next'
+    const targetSet = isNext ? registrationsNext : registrations
+    const setTargetSet = isNext ? setRegistrationsNext : setRegistrations
+    const isRegistered = targetSet.has(cls.id)
 
-    // אם השיעור של היום כבר התחיל — נעול לרישום ולביטול גם יחד.
-    // (אחרי start_time של השיעור — אין יותר שינוי.)
-    const isLockedNow = (() => {
-      const now = new Date()
-      if (now.getDay() !== cls.day_of_week) return false
-      const [hh = 0, mm = 0, ss = 0] = (cls.start_time || '00:00:00').split(':').map(Number)
-      const todayStart = new Date(now); todayStart.setHours(hh, mm, ss || 0, 0)
-      return now >= todayStart
-    })()
-    if (isLockedNow) {
-      toast.error(isRegistered
-        ? 'השיעור כבר התחיל — לא ניתן לבטל את הרישום.'
-        : 'השיעור כבר התחיל — לא ניתן להירשם.')
-      return
+    // נעילה רק על השבוע הנוכחי. עבור שבוע הבא — אין נעילה כי השיעור עוד לא התחיל.
+    if (!isNext) {
+      const isLockedNow = (() => {
+        const now = new Date()
+        if (now.getDay() !== cls.day_of_week) return false
+        const [hh = 0, mm = 0, ss = 0] = (cls.start_time || '00:00:00').split(':').map(Number)
+        const todayStart = new Date(now); todayStart.setHours(hh, mm, ss || 0, 0)
+        return now >= todayStart
+      })()
+      if (isLockedNow) {
+        toast.error(isRegistered
+          ? 'השיעור כבר התחיל — לא ניתן לבטל את הרישום.'
+          : 'השיעור כבר התחיל — לא ניתן להירשם.')
+        return
+      }
     }
 
-    const isOpenMat = isOpenMatClass(cls)
-    if (!isRegistered && !isOpenMat && effectiveCount >= limit && limit !== Infinity) {
-      toast.error('הגעת למגבלת ' + limit + ' שיעורים שבועיים לפי המנוי שלך'); return
-    }
-    // לכידת week_start פעם אחת — מונע race condition בגבול שבוע (חצות שבת/ראשון)
-    const weekStart = getWeekStart()
+    // הערה: גריידוט מגבלת המנוי מבוצע ב-UI (atRegLimit ב-ScheduleTab) איפה
+    // שיש גישה לרשימת השיעורים המלאה לחישוב מדויק (לא כולל מזרן פתוח).
+    // כאן רק לוגיקה של יצירה/מחיקה.
+    // לכידת week_start פעם אחת — מונע race condition בגבול שבוע (חצות שבת/ראשון).
+    // תלוי במצב הטאב: שבוע נוכחי או הבא.
+    const weekStart = isNext ? getNextWeekStart() : getWeekStart()
 
-    // חישוב תאריך/שעת ההופעה הבאה של השיעור (היום אם עוד לא התחיל, אחרת השבוע הבא).
-    // משמש לכתיבת checkin אוטומטי בעת רישום, וכמסנן בעת מחיקת checkin בעת ביטול.
+    // חישוב תאריך/שעת ההופעה של השיעור — לצרכי checkin.
+    // לשבוע הנוכחי: היום אם עוד לא התחיל, אחרת השבוע הבא.
+    // לשבוע הבא: ההופעה ב-week_start + day_of_week של השיעור.
     const computeOccurrenceStart = () => {
-      const now = new Date()
       const [hh = 0, mm = 0, ss = 0] = (cls.start_time || '00:00:00').split(':').map(Number)
+      if (isNext) {
+        const base = new Date(weekStart) // יום ראשון של השבוע הבא ב-UTC midnight
+        const occ = new Date(base)
+        occ.setDate(base.getDate() + cls.day_of_week)
+        occ.setHours(hh, mm, ss || 0, 0)
+        return occ
+      }
+      const now = new Date()
       const todayDow = now.getDay()
       if (todayDow === cls.day_of_week) {
         const todayStart = new Date(now)
@@ -1189,7 +1292,7 @@ export default function AthleteDashboard({ profile }) {
     // כך אם המשתמש מחליף טאב/יוצא מיד אחרי לחיצה — ה-UI כבר נכון,
     // וגם אם הבקשה נכשלת ברקע, ה-visibilitychange listener יסנכרן עם השרת.
     if (isRegistered) {
-      setRegistrations(p => { const n = new Set(p); n.delete(cls.id); return n })
+      setTargetSet(p => { const n = new Set(p); n.delete(cls.id); return n })
       try {
         const { error } = await supabase.from('class_registrations').delete()
           .eq('class_id', cls.id).eq('athlete_id', profile.id).eq('week_start', weekStart)
@@ -1208,42 +1311,43 @@ export default function AthleteDashboard({ profile }) {
       } catch (e) {
         console.error('unregister error:', e)
         // rollback — מחזיר את הרישום אם הביטול נכשל
-        setRegistrations(p => new Set([...p, cls.id]))
+        setTargetSet(p => new Set([...p, cls.id]))
         toast.error('ביטול הרישום נכשל. נסה שוב.')
       }
     } else {
-      setRegistrations(p => new Set([...p, cls.id]))
+      setTargetSet(p => new Set([...p, cls.id]))
       try {
-        // ה-UNIQUE constraint בפועל הוא class_registrations_athlete_id_class_id_key
-        // על (athlete_id, class_id) בלבד — בלי week_start.
-        // משמעות: יש שורה אחת לכל (אתלט, שיעור), ו-week_start מציין את השבוע
-        // הנוכחי שבו הוא רשום.
-        // לכן upsert עם UPDATE על קונפליקט: אם הוא רשום משבוע ישן, מעדכנים את
-        // week_start לשבוע הנוכחי ככה שהרישום מופיע בלוח של השבוע הזה.
-        // ignoreDuplicates: false (default) — מעדכן את השורה הקיימת.
+        // ה-UNIQUE constraint העדכני הוא (athlete_id, class_id, week_start) —
+        // לכן יכולה להיות שורה לכל שבוע נפרדת, ויכול להיות רישום בו זמנית
+        // לשבוע הנוכחי וגם לשבוע הבא לאותו שיעור.
         const { error } = await supabase.from('class_registrations').upsert(
           { class_id: cls.id, athlete_id: profile.id, week_start: weekStart },
-          { onConflict: 'athlete_id,class_id' }
+          { onConflict: 'athlete_id,class_id,week_start' }
         )
         if (error) throw error
         // רישום → checkin אוטומטי 'present' עם תאריך/שעת השיעור הקרוב.
         // ככה המאמן רואה את כולם נוכחים כברירת מחדל, ומסמן ✕ נעדר רק לחריגים.
         // ignoreDuplicates=true: אם כבר קיים checkin (כולל absent) לא דורסים אותו.
-        const occStart = computeOccurrenceStart()
-        const checkedAt = new Date(occStart); checkedAt.setHours(12, 0, 0, 0)
-        await supabase.from('checkins').upsert(
-          {
-            class_id: cls.id,
-            athlete_id: profile.id,
-            status: 'present',
-            checked_in_at: checkedAt.toISOString(),
-          },
-          { onConflict: 'class_id,athlete_id', ignoreDuplicates: true }
-        )
+        // עבור רישום לשבוע הבא — לא יוצרים checkin עכשיו, כי ה-onConflict על
+        // (class_id, athlete_id) ידרוס/יחסום את ה-checkin של השבוע הנוכחי.
+        // ה-checkin ייווצר אוטומטית כשהמתאמן ייכנס בשבוע הבא (visibility refresh).
+        if (!isNext) {
+          const occStart = computeOccurrenceStart()
+          const checkedAt = new Date(occStart); checkedAt.setHours(12, 0, 0, 0)
+          await supabase.from('checkins').upsert(
+            {
+              class_id: cls.id,
+              athlete_id: profile.id,
+              status: 'present',
+              checked_in_at: checkedAt.toISOString(),
+            },
+            { onConflict: 'class_id,athlete_id', ignoreDuplicates: true }
+          )
+        }
       } catch (e) {
         console.error('register error:', e)
         // rollback רק כשנכשל ממש
-        setRegistrations(p => { const n = new Set(p); n.delete(cls.id); return n })
+        setTargetSet(p => { const n = new Set(p); n.delete(cls.id); return n })
         toast.error('הרישום נכשל. נסה שוב.')
       }
     }
@@ -1292,7 +1396,7 @@ export default function AthleteDashboard({ profile }) {
           {!isStandalone() && <InstallBanner variant="slim" />}
           <EnablePushBanner profile={profile} />
         </div>
-        {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} onRegister={handleRegister} branchesMap={branchesMap} />}
+        {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} registrationsNext={registrationsNext} onRegister={handleRegister} branchesMap={branchesMap} />}
         {activeTab === 'shop' && <ShopTab profile={profile} member={member} allAnnouncements={announcements} />}
         {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} />}
         {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}

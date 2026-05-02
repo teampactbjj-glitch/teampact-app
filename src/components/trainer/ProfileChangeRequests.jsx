@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useToast } from '../a11y'
 
 const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
 export default function ProfileChangeRequests({ onChange }) {
+  const toast = useToast()
   const [requests, setRequests] = useState([])
   const [branchesMap, setBranchesMap] = useState({})
   const [membersMap, setMembersMap] = useState({})
@@ -39,16 +41,31 @@ export default function ProfileChangeRequests({ onChange }) {
 
   async function approve(req) {
     setProcessingId(req.id)
+    let memberError = null
     if (req.change_type === 'email') {
-      await supabase.from('members').update({ email: req.requested_value }).eq('id', req.athlete_id)
+      const { error } = await supabase.from('members').update({ email: req.requested_value }).eq('id', req.athlete_id)
+      memberError = error
     } else if (req.change_type === 'subscription') {
       const update = { subscription_type: req.requested_value }
       if (Array.isArray(req.requested_branch_ids) && req.requested_branch_ids.length > 0) {
         update.branch_ids = req.requested_branch_ids
       }
-      await supabase.from('members').update(update).eq('id', req.athlete_id)
+      const { error } = await supabase.from('members').update(update).eq('id', req.athlete_id)
+      memberError = error
     }
-    await supabase.from('profile_change_requests').update({ status: 'approved' }).eq('id', req.id)
+    if (memberError) {
+      console.error('approve member update error:', memberError)
+      toast.error('שגיאה בעדכון פרטי המתאמן: ' + (memberError.message || 'נסה שוב'))
+      setProcessingId(null)
+      return
+    }
+    const { error: reqError } = await supabase.from('profile_change_requests').update({ status: 'approved' }).eq('id', req.id)
+    if (reqError) {
+      console.error('approve request update error:', reqError)
+      toast.error('שגיאה בעדכון סטטוס הבקשה: ' + (reqError.message || 'נסה שוב'))
+      setProcessingId(null)
+      return
+    }
     setProcessingId(null)
     load()
     onChange?.()
@@ -56,7 +73,13 @@ export default function ProfileChangeRequests({ onChange }) {
 
   async function reject(id) {
     setProcessingId(id)
-    await supabase.from('profile_change_requests').update({ status: 'rejected' }).eq('id', id)
+    const { error } = await supabase.from('profile_change_requests').update({ status: 'rejected' }).eq('id', id)
+    if (error) {
+      console.error('reject error:', error)
+      toast.error('שגיאה בדחיית הבקשה: ' + (error.message || 'נסה שוב'))
+      setProcessingId(null)
+      return
+    }
     setProcessingId(null)
     load()
     onChange?.()

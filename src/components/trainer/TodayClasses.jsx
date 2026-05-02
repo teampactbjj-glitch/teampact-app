@@ -230,10 +230,12 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     if (!classIds.length) return
     const counts = Object.fromEntries(classIds.map(id => [id, 0]))
     const regCounts = Object.fromEntries(classIds.map(id => [id, 0]))
+    // INNER JOIN עם members + סינון deleted_at — מתאמנים שנמחקו (soft-delete) לא נספרים
     const { data, error } = await supabase
       .from('member_classes')
-      .select('class_id')
+      .select('class_id, members!inner(id, deleted_at)')
       .in('class_id', classIds)
+      .is('members.deleted_at', null)
     if (error) console.error('fetchMemberCounts error:', error)
     ;(data || []).forEach(r => { counts[r.class_id] = (counts[r.class_id] || 0) + 1 })
     // רישומים שבועיים של המתאמנים (class_registrations) לשבוע של היום הנבחר
@@ -261,8 +263,9 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     const allAthleteIds = Array.from(new Set((regs || []).map(r => r.athlete_id).filter(Boolean)))
     let validIds = new Set(allAthleteIds)
     if (allAthleteIds.length > 0) {
+      // סינון deleted_at — מתאמנים שנמחקו (soft-delete) לא נחשבים תקפים
       const { data: existing } = await supabase
-        .from('members').select('id').in('id', allAthleteIds)
+        .from('members').select('id').in('id', allAthleteIds).is('deleted_at', null)
       if (existing) validIds = new Set(existing.map(m => m.id))
     }
 
@@ -436,11 +439,13 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     })()
 
     // 1. רישום שבועי
+    // onConflict על שלוש העמודות (athlete_id, class_id, week_start) — תואם
+    // למיגרציה class_registrations_per_week.sql, מאפשר רישום נפרד לכל שבוע.
     const { error: regErr } = await supabase
       .from('class_registrations')
       .upsert(
         { class_id: classId, athlete_id: member.id, week_start: weekStartStr },
-        { onConflict: 'athlete_id,class_id' }
+        { onConflict: 'athlete_id,class_id,week_start' }
       )
     if (regErr) {
       console.error('addRegisteredMember reg error:', regErr)
@@ -463,14 +468,22 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
 
   // הסרת מתאמן רשום מהשיעור (מתאמן שהמאמן הוסיף בטעות, או שהוא לא הגיע).
   // מוחק את ה-class_registrations ואת ה-checkin המוטמע 'present' של אותו יום.
+  // חשוב: מסננים לפי week_start של selectedDate כדי לא למחוק רישום של שבוע אחר
+  // (למשל אם המתאמן רשום גם השבוע וגם בשבוע הבא — נמחקת רק ההופעה של השבוע הנבחר).
   async function removeRegistration(classId, memberId) {
     const ok = await confirm({ title: 'הסרת מתאמן', message: 'להסיר את המתאמן מהשיעור?', confirmText: 'הסר', danger: true })
     if (!ok) return
+    const weekStartStr = (() => {
+      const d = startOfDay(selectedDate)
+      d.setDate(d.getDate() - d.getDay())
+      return d.toISOString().split('T')[0]
+    })()
     const { error: delErr } = await supabase
       .from('class_registrations')
       .delete()
       .eq('class_id', classId)
       .eq('athlete_id', memberId)
+      .eq('week_start', weekStartStr)
     if (delErr) {
       console.error('removeRegistration error:', delErr)
       toast.error('שגיאה בהסרה: ' + (delErr.message || ''))

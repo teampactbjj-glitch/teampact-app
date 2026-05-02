@@ -1391,15 +1391,19 @@ export default function AthleteDashboard({ profile }) {
           </div>
         )}
       </header>
-      <main className="flex-1 overflow-y-auto p-4 max-w-lg w-full mx-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <div className="mb-3 space-y-2">
-          {!isStandalone() && <InstallBanner variant="slim" />}
-          <EnablePushBanner profile={profile} />
+      {/* main ברוחב מלא — scrollbar מופיע בקצה המסך, לא באמצע (כפי שהיה ב-desktop רחב).
+          התוכן עצמו עדיין מרוכז ב-max-w-lg כדי לשמור על UX מובייל-first. */}
+      <main className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="p-4 max-w-lg w-full mx-auto">
+          <div className="mb-3 space-y-2">
+            {!isStandalone() && <InstallBanner variant="slim" />}
+            <EnablePushBanner profile={profile} />
+          </div>
+          {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} registrationsNext={registrationsNext} onRegister={handleRegister} branchesMap={branchesMap} />}
+          {activeTab === 'shop' && <ShopTab profile={profile} member={member} allAnnouncements={announcements} />}
+          {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} />}
+          {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}
         </div>
-        {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} registrationsNext={registrationsNext} onRegister={handleRegister} branchesMap={branchesMap} />}
-        {activeTab === 'shop' && <ShopTab profile={profile} member={member} allAnnouncements={announcements} />}
-        {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} />}
-        {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}
       </main>
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} isTrainer={false} announcementsCount={announcementsCount} />
     </div>

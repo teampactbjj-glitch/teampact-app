@@ -1,5 +1,52 @@
 # MEMORY - TeamPact App
 
+> ## ✅ Session 02.05.2026 (לילה — המשך 6) — תיקון שורש לדוחות: שורה לכל יום ב-checkins
+>
+> **commit `1603acd` ב-`origin/main` ✅** — אומת (`git push origin main` הצליח: `aaf6208..1603acd`).
+>
+> **התלונה:** "שוב פעם בדוחות המספרים לא תואמים. ב-נחח היו רק 4. תסדר אחת ולתמיד."
+>
+> **שורש הבעיה (שורה 40 ב-`src/lib/supabase-schema.sql`):**
+> `unique(class_id, athlete_id)` על `checkins` — לכל זוג (מתאמן+שיעור) **שורה אחת לכל החיים**. כשאותו מתאמן חזר לאותו שיעור בשבוע אחר, ה-upsert עם `ignoreDuplicates: true` (ב-3 קבצים) **השליך את ההגעה השנייה ואילך**. הדוחות סופרים `filteredCheckins.length` → קיבלו רק את כמות הזוגות הייחודיים, לא את כמות ההגעות בפועל. זה הסביר למה המספרים נראו "נמוכים מהצפוי" ולמה תיקונים בקוד הדוח לא עזרו — הבעיה בשכבת ה-DB.
+>
+> **התיקון (DB + 3 קבצי קוד):**
+>
+> **1. Migration:** `supabase/migrations/2026-05-02-checkins-per-day-unique.sql` — **דודי הריץ ידנית ב-Supabase SQL Editor** ✅
+>   - הוספת `checkin_date date` ב-`checkins`.
+>   - Backfill לפי שעון ישראל: `(checked_in_at AT TIME ZONE 'Asia/Jerusalem')::date`.
+>   - Trigger `trg_set_checkin_date` BEFORE INSERT/UPDATE OF checked_in_at — תמיד מסנכרן.
+>   - DROP `unique(class_id, athlete_id)` הישן (זיהוי דינמי לפי pg_constraint).
+>   - ADD `unique(class_id, athlete_id, checkin_date)` חדש — שורה לכל יום.
+>   - אינדקס נוסף: `idx_checkins_present_checked_at WHERE status='present'`.
+>   - `NOTIFY pgrst, 'reload schema'` כדי שהלקוח יכיר את העמודה מיד.
+>   - כולל בלוק rollback מלא בסוף הקובץ.
+>
+> **2. שינויי קוד (3 קבצים, כל אחד עם `checkin_date` ב-payload + `onConflict: 'class_id,athlete_id,checkin_date'`):**
+>   - `src/components/trainer/TodayClasses.jsx` (שורה 471-481) — מאמן מוסיף מתאמן רשום לשיעור (יוצר checkin אוטומטי).
+>   - `src/components/athlete/ClassSchedule.jsx` (שורה 209-223) — מתאמן רושם את עצמו (variant A — לפי computeNextOccurrence).
+>   - `src/components/athlete/AthleteDashboard.jsx` (שורה 1357-1369) — מתאמן רושם את עצמו (variant B — לפי weekStart). **הסרתי את ה-`if (!isNext)` workaround** שהיה שם — היום אפשר ליצור checkin גם לרישום שבוע הבא, כי ה-constraint החדש מתיר שורה נפרדת לכל יום. הדוחות מסננים `t <= now` ולכן צ'ק-אין עתידי לא נספר עד שהיום עובר.
+>
+> **3. סכימה לעתיד:** `src/lib/supabase-schema.sql` עודכן (`unique(class_id, athlete_id, checkin_date)` במקום הישן) — לסטאפ חדש מאפס.
+>
+> **4. CLAUDE.md — כלל חדש לכל החיים:**
+>   > **SQL תמיד בבלוק קוד להעתקה בתוך התשובה (```` ```sql ```` ), לעולם לא רק נתיב לקובץ.** Supabase SQL Editor לא מקבל נתיבי קבצים. ❌ אסור לשלוח רק `/Users/.../migration.sql` ולצפות מהמשתמש להעתיק. ✅ גם אם הקובץ נשמר בריפו — חובה להציג את התוכן המלא בתשובה.
+>   ההוראה הזו נכנסה כי דודי הדגיש שכבר ביקש את זה בעבר.
+>
+> **גיבוי:** `backup_20260502_203452_checkins_per_day/` — TodayClasses.jsx, ClassSchedule.jsx, AthleteDashboard.jsx, supabase-schema.sql, migration-checkins-fk-members.sql (גרסאות לפני שינוי).
+>
+> **Build:** `npx vite build --outDir dist-checkins-perday` ✅ (98 modules, 995KB JS).
+>
+> **דרוש לבדוק אחרי deploy ב-Vercel:**
+> 1. Hard-refresh (Cmd+Shift+R) או Service Worker → Unregister ב-DevTools.
+> 2. דשבורד מנהל → טאב דוחות → טווח 30 ימים → "מתאמנים פעילים לפי תחום".
+> 3. ספירת "אימונים" צריכה להיות גבוהה משמעותית מקודם (כי כל הגעה נספרת).
+> 4. לבדוק שצ'ק-אין חדש עובד: להוסיף מתאמן לשיעור היום, לראות שאין שגיאה בקונסול ושהוא מופיע ברשימת הנוכחים.
+> 5. לבדוק רישום עצמי של מתאמן (גם variant ClassSchedule וגם AthleteDashboard) — שלא נשבר.
+>
+> **הערה חשובה לעתיד:** המיגרציה לא מייצרת רטרואקטיבית את כל ההגעות שאבדו לפני התיקון — כל שורה בעבר תישאר כפי שהיא. הספירה תיהיה מדויקת **מהיום והלאה בלבד**. אם נחוץ לראות מספרים נכונים על העבר — יש את `class_registrations` שיש לה `week_start` נפרד לכל שבוע, וניתן להציג דוח היברידי שמשתמש בה למספרים היסטוריים. תיקון נפרד אם נדרש.
+>
+> ---
+
 > ## ✅ Session 02.05.2026 (לילה — המשך 5) — דוחות פעילות עברו למודל "נוכחות בפועל"
 >
 > **commit `aaf6208` ב-`origin/main` ✅** — אומת.

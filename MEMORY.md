@@ -1,8 +1,150 @@
 # MEMORY - TeamPact App
 
-> **🆕 הסשן האחרון: 01.05.2026 — Push Notification ידני למתאמנים לא-פעילים (שלב א׳)**
+> **🆕 עדכון 02.05.2026 (המשך) — תיקון "סלייד באמצע המסך" גם בממשק מאמן**
 >
-> ⚠️ **My last pending task** מוגדר למטה בסעיף "Session 01.05.2026". קרא אותו ראשון.
+> **מה תוקן עכשיו:** התיקון של scrollbar/סלייד באמצע המסך ב-desktop הוחל גם על `TrainerDashboard.jsx` (שורות 271-316). לפני: `<main className="flex-1 overflow-y-auto p-4 max-w-3xl w-full mx-auto">` — main עצמו צר ולכן הסקרולבר באמצע. עכשיו: `<main className="flex-1 overflow-y-auto">` ברוחב מלא, והתוכן עטוף ב-`<div className="p-4 max-w-3xl w-full mx-auto">`. כך הסקרולבר חוזר לקצה המסך גם בטאב **פרופיל** וגם בטאב **מתאמנים** (ובכל הטאבים האחרים של המאמן/מנהל).
+>
+> **עברנו build ב-vite — הצליח** (97 modules, ללא שגיאות).
+>
+> **טרם נדחף לפרודקשן** — לדחוף יחד עם התיקון של AthleteDashboard.jsx (ראה משימה 2 למטה).
+>
+> ⚠️ **My last pending task** מוגדר בסעיף "Session 02.05.2026" למטה. **קרא אותו ראשון.**
+>
+> 📁 גיבויים זמינים: `backup_20260502_100509/` (לפני סקירה), `backup_20260502_135229_before_new_session/` (לפני שיחה חדשה)
+> 📄 דוח באגים מלא: `BUGS_REPORT.md` בשורש הפרויקט
+
+---
+
+# 📅 Session 02.05.2026 — סקירת באגים מקיפה + תיקוני קריסה
+
+## הקשר ומה קרה
+
+המשתמש ביקש סקירה יסודית של כל הקוד עם דגש על שלושת הממשקים (מתאמן/מאמן/מנהל) והרשאות.
+
+### ✅ מה הושלם בסשן הזה
+
+**1. סקירת באגים מקיפה (BUGS_REPORT.md):**
+- נסקרו ~25 קבצי קוד + 14 קבצי SQL migrations
+- נמצאו **למעלה מ-60 בעיות**, מתוכן **9 קריטיות**
+- הדוח המלא נשמר ב-`/Users/dudibenzaken/teampact-app/BUGS_REPORT.md`
+
+**2. תיקון משבר "מסך שחור" (Production Crash):**
+- **הבעיה:** `Uncaught ReferenceError: effectiveCount is not defined` בפרודקשן ב-Vercel
+- **הסיבה:** ב-commit הקודם (`4b220ca`) `effectiveCount` הוגדר ב-`AthleteDashboard` (שורה 1028) אבל משומש ב-`ScheduleTab` (שורות 219, 281). פונקציה נפרדת = לא רואה את המשתנה.
+- **התיקון (כבר קיים בקוד הלוקאלי שלך):** העברת `effectiveCount` + `effectiveCountNext` לתוך `ScheduleTab`, העברה כ-props של `registrations`/`registrationsNext`.
+- **נדחף לפרודקשן** (commit חדש שכלל גם 11 קבצים אחרים).
+
+**3. תיקון "סלייד באמצע המסך" ב-desktop:**
+- **הבעיה:** scrollbar של `<main>` הופיע באמצע המסך כי main היה `max-w-lg mx-auto` עם `overflow-y-auto`
+- **התיקון:** main עכשיו רוחב מלא, התוכן הפנימי ב-`<div className="p-4 max-w-lg w-full mx-auto">`. קובץ: `src/components/athlete/AthleteDashboard.jsx:1394-1406`
+- **טרם נדחף לפרודקשן** ⚠️
+
+**4. גיבויים שנוצרו:**
+- `backup_20260502_100509/` — לפני התחלת התיקונים
+- `backup_20260502_135229_before_new_session/` — לפני סוף השיחה
+
+### 🔄 שינויים שנעשו ובוטלו (חזרה לאחור)
+
+ניסיתי בתחילת הסשן להוסיף את התיקונים הבאים, אבל **שיחזרתי אותם אחרי שהמשתמש דיווח על מסך שחור** (התברר אחר כך שהמסך השחור היה באג ישן ולא קשור לתיקונים שלי). אלה תיקונים שעדיין צריך להחיל:
+- ❌ ErrorBoundary ב-main.jsx
+- ❌ Rules of Hooks ב-App.jsx
+- ❌ is_approved=null נחשב לא-מאושר
+- ❌ DELETE רישומים עם week_start ב-ClassSchedule.jsx (חלק תוקן ע"י המשתמש קודם)
+
+---
+
+## ⏳ My last pending task
+
+המשתמש ביקש להמשיך בשיחה חדשה לתיקון שאר הבאגים. **לפני שמתחילים בשיחה החדשה, יש שתי משימות פתוחות:**
+
+### 🔴 משימה 1 — להריץ migration ב-Supabase (חובה!)
+
+**הרישום נכשל בפרודקשן** כי הקוד מצפה ל-constraint חדש שלא קיים ב-DB.
+
+**איך להריץ:**
+1. Supabase Dashboard → SQL Editor → New Query
+2. הדבק את התוכן של `supabase/migrations/class_registrations_per_week.sql`
+3. לחץ Run
+
+```sql
+-- נמצא ב-supabase/migrations/class_registrations_per_week.sql
+-- מסיר את ה-UNIQUE הישן על (athlete_id, class_id)
+-- ומוסיף UNIQUE על (athlete_id, class_id, week_start)
+-- + שני indexes עבור ביצועים
+```
+
+### 🟡 משימה 2 — דחיפת תיקון scrollbar ל-Vercel
+
+```bash
+cd /Users/dudibenzaken/teampact-app
+git add src/components/athlete/AthleteDashboard.jsx MEMORY.md
+git commit -m "fix(athlete): scrollbar at viewport edge on desktop + memory update"
+git push origin main
+```
+
+---
+
+## 📋 רשימת הבאגים שעוד נשארו לתקן (בסדר עדיפות)
+
+### 🔥 קריטי - אבטחה (חובה לתקן בהקדם)
+
+| # | בעיה | קובץ | פעולה |
+|---|---|---|---|
+| 1 | מאמן יכול להפוך לעצמו ל-`is_admin=true` (חסר WITH CHECK) | `migration-coach-approval.sql:74-81` | יצירת migration חדש עם WITH CHECK |
+| 2 | `members_select_anon` חושף את כל המתאמנים ל-anon | `migration-rls.sql:100-101` | RPC ייעודי לחיפוש לפי טלפון |
+| 3 | RLS לא בודק `is_admin` בפעולות מנהל | `migration-coach-approval.sql:38-64` | policies נפרדות עם is_admin=true |
+| 4 | טבלת `profile_change_requests` ללא RLS | (חסר migration) | יצירת migration חדש |
+| 5 | השתלטות חשבון דרך עדכון `members.id` | `AthleteDashboard.jsx:1093-1107` | RPC server-side עם בדיקת בעלות |
+| 6 | `member_classes` פתוח לחלוטין ל-anon | `migration-rls.sql:124-134` | תיקון policies |
+
+### ⚠️ גבוה - יציבות
+
+| # | בעיה | קובץ | פעולה |
+|---|---|---|---|
+| 7 | הפרת Rules of Hooks ב-App.jsx | `App.jsx:22-24` | להעביר את ה-routing לפני App() function |
+| 8 | ErrorBoundary לא בשימוש (מסך לבן בקריסה) | `main.jsx` | לעטוף `<App />` ב-ErrorBoundary |
+| 9 | `is_approved=null` נחשב מאושר | `App.jsx:138, 188` | החלפה ל-`!== true` |
+| 10 | חוסר עקביות ב-status של members ('approved' vs 'active') | מספר קבצים | קובץ קבועים מרכזי |
+| 11 | `ProfileChangeRequests` מוצג למאמן רגיל | `TrainerDashboard.jsx:284-291` | עטיפה ב-`{isAdmin && ...}` |
+| 12 | race condition ב-`approveTrainer` | `CoachesManager.jsx:91-148` | RPC עם טרנזקציה |
+| 13 | חישוב weekStart שגוי בקצוות זמן | `AthleteDashboard.jsx:989-994` | UTC או server-side |
+| 14 | `nextOccurrenceThisWeek` מחזיר עבר | `AthleteDashboard.jsx:155-162` | להשתמש ב-`computeNextOccurrence` הקיים |
+
+### 🟢 בינוני - הרשאות UI
+
+| # | בעיה | קובץ |
+|---|---|---|
+| 15 | חסרי `isAdmin` checks ב-AthleteManagement | `AthleteManagement.jsx` (כמה פונקציות) |
+| 16 | `ImportAthletes` ללא בדיקת branch | `ImportAthletes.jsx:159-185` |
+| 17 | שיעורים pending נשלחים כ-push | `TodayClasses.jsx:615-624` |
+| 18 | console.log בפרודקשן | מספר קבצים |
+
+### 🔵 נמוך - שיפורי UX
+
+- הצגת error.message ישיר ל-user
+- polling כל 5 שניות ללא backoff
+- ilike עם wildcards לא מסוננים
+- חוסר loading states ו-confirms
+
+---
+
+## 🎯 המלצות לסשן הבא
+
+1. **לפני כל פעולה - לוודא שהאפליקציה עובדת** (להריץ את 2 המשימות הפתוחות למעלה)
+2. **תיקון אחד בכל פעם** + בדיקה אחרי כל אחד
+3. **להתחיל עם תיקוני SQL/RLS** (קריטיים, אבל ב-migrations חדשים בלבד - לא לערוך migrations קיימים)
+4. אחר כך - תיקוני React (ErrorBoundary, Rules of Hooks)
+5. בסוף - שיפורי UX
+
+**תיקונים מסוכנים שדורשים שיחה ייעודית:**
+- אחידות `status` של members (יכול לשבור נתונים קיימים)
+- שינויי RLS שעלולים לחסום פעולות לגיטימיות
+
+---
+
+## 🔐 הערת אבטחה
+
+ב-`.git/config` יש GitHub Personal Access Token חשוף. **ממליץ בחום להחליף אותו** ב-https://github.com/settings/tokens אחרי שהאפליקציה תהיה יציבה.
 
 ---
 

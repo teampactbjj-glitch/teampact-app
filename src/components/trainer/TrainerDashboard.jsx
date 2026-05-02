@@ -266,49 +266,53 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-4 max-w-3xl w-full mx-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <div className="mb-3 space-y-2">
-          {!isStandalone() && <InstallBanner variant="slim" />}
-          <EnablePushBanner profile={profile} />
-        </div>
-        {activeTab === 'schedule' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} onChange={refreshCounts} />}
-
-        {activeTab === 'athletes' && (
-          <div className="space-y-6">
-            <AthleteManagement
-              trainerId={profile?.id}
-              isAdmin={isAdmin}
-              hideSchedule
-              stackedLayout
-              registerLinkCard={<RegisterLinkCard />}
-              extraTop={
-                requestsCount > 0 ? (
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
-                    <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי מנוי ({requestsCount})</h3>
-                    <ProfileChangeRequests onChange={refreshCounts} />
-                  </div>
-                ) : null
-              }
-              onPendingChange={refreshCounts}
-            />
+      {/* main ברוחב מלא — scrollbar מופיע בקצה המסך, לא באמצע (כפי שהיה ב-desktop רחב).
+          התוכן עצמו עדיין מרוכז ב-max-w-3xl כדי לשמור על קריאות במסכים רחבים. */}
+      <main className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="p-4 max-w-3xl w-full mx-auto">
+          <div className="mb-3 space-y-2">
+            {!isStandalone() && <InstallBanner variant="slim" />}
+            <EnablePushBanner profile={profile} />
           </div>
-        )}
+          {activeTab === 'schedule' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} onChange={refreshCounts} />}
 
-        {activeTab === 'reports' && isAdmin && (
-          <ReportsManager isAdmin={isAdmin} />
-        )}
+          {activeTab === 'athletes' && (
+            <div className="space-y-6">
+              <AthleteManagement
+                trainerId={profile?.id}
+                isAdmin={isAdmin}
+                hideSchedule
+                stackedLayout
+                registerLinkCard={<RegisterLinkCard />}
+                extraTop={
+                  requestsCount > 0 ? (
+                    <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
+                      <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי מנוי ({requestsCount})</h3>
+                      <ProfileChangeRequests onChange={refreshCounts} />
+                    </div>
+                  ) : null
+                }
+                onPendingChange={refreshCounts}
+              />
+            </div>
+          )}
 
-        {activeTab === 'coaches' && isAdmin && (
-          <CoachesManager profile={profile} onChange={refreshCounts} />
-        )}
+          {activeTab === 'reports' && isAdmin && (
+            <ReportsManager isAdmin={isAdmin} />
+          )}
 
-        {activeTab === 'shop' && (
-          <ShopManager isAdmin={isAdmin} trainerId={profile?.id} onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />
-        )}
+          {activeTab === 'coaches' && isAdmin && (
+            <CoachesManager profile={profile} onChange={refreshCounts} />
+          )}
 
-        {activeTab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} isAdmin={isAdmin} onChange={refreshCounts} />}
+          {activeTab === 'shop' && (
+            <ShopManager isAdmin={isAdmin} trainerId={profile?.id} onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />
+          )}
 
-        {activeTab === 'profile' && <TrainerProfile profile={profile} isAdmin={isAdmin} />}
+          {activeTab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} isAdmin={isAdmin} onChange={refreshCounts} />}
+
+          {activeTab === 'profile' && <TrainerProfile profile={profile} isAdmin={isAdmin} />}
+        </div>
       </main>
 
       <BottomNav

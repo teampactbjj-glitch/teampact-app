@@ -11,7 +11,7 @@ export default function RegisterCoachPage() {
     full_name: '',
     email: '',
     phone: '',
-    branch_id: '',
+    branch_ids: [],
     password: '',
     passwordConfirm: '',
   })
@@ -63,10 +63,17 @@ export default function RegisterCoachPage() {
     return () => { cancelled = true; clearInterval(interval) }
   }, [done])
 
+  function toggleBranch(id) {
+    setForm(p => {
+      const already = p.branch_ids.includes(id)
+      return { ...p, branch_ids: already ? p.branch_ids.filter(b => b !== id) : [...p.branch_ids, id] }
+    })
+  }
+
   async function handleSubmit() {
     setError(null)
-    if (!form.full_name.trim() || !form.email.trim() || !form.phone.trim() || !form.branch_id) {
-      setError('נא למלא שם, אימייל, טלפון וסניף')
+    if (!form.full_name.trim() || !form.email.trim() || !form.phone.trim() || form.branch_ids.length === 0) {
+      setError('נא למלא שם, אימייל, טלפון ולבחור לפחות סניף אחד')
       return
     }
     if (!form.password || form.password.length < 6) {
@@ -112,7 +119,10 @@ export default function RegisterCoachPage() {
       full_name: form.full_name.trim(),
       phone: form.phone.trim(),
       role: 'trainer',
-      requested_branch_id: form.branch_id,
+      // requested_branch_ids — מערך כל הסניפים שהמאמן ביקש (1 או יותר)
+      requested_branch_ids: form.branch_ids,
+      // requested_branch_id — נשאר לתאימות אחורה (הסניף הראשון ברשימה)
+      requested_branch_id: form.branch_ids[0],
       is_approved: false,
     }
     const { data: upsertData, error: profileErr } = await supabase
@@ -227,21 +237,31 @@ export default function RegisterCoachPage() {
               )}
             </Field>
 
-            <Field label="סניף" required>
-              {(props) => (
-                <select
-                  {...props}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={form.branch_id}
-                  onChange={e => setForm(p => ({ ...p, branch_id: e.target.value }))}
-                >
-                  <option value="">בחר סניף</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-              )}
-            </Field>
+            <fieldset>
+              <legend className="text-xs font-semibold text-gray-700 block mb-2">
+                סניף <span aria-hidden="true">*</span><span className="sr-only"> (חובה)</span> (ניתן לבחור יותר מאחד)
+              </legend>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="בחירת סניפים">
+                {branches.map(b => {
+                  const selected = form.branch_ids.includes(b.id)
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => toggleBranch(b.id)}
+                      className={`px-4 py-2 rounded-xl text-sm font-medium border transition focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-500 ${
+                        selected
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-blue-500'
+                      }`}
+                    >
+                      <span aria-hidden="true">{selected ? '✓ ' : ''}</span>{b.name}
+                    </button>
+                  )
+                })}
+              </div>
+            </fieldset>
 
             <Field label="סיסמה" required hint="לפחות 6 תווים">
               {(props) => (

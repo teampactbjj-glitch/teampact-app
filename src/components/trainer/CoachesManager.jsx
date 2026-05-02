@@ -43,7 +43,7 @@ export default function CoachesManager({ profile, onChange }) {
     const [pendingRes, coachesRes, branchesRes, classesRes] = await Promise.all([
       supabase
         .from('profiles')
-        .select('id, full_name, email, phone, requested_branch_id, created_at')
+        .select('id, full_name, email, phone, requested_branch_id, requested_branch_ids, created_at')
         .eq('role', 'trainer')
         .eq('is_approved', false)
         .order('created_at', { ascending: false }),
@@ -100,24 +100,50 @@ export default function CoachesManager({ profile, onChange }) {
       showMsg('err', `שגיאה באישור: ${profErr.message}`)
       return
     }
-    // 2. יוצרים רשומת coaches המקושרת ל-user_id (אם לא קיימת כבר עם השם הזה)
-    const { data: existing } = await supabase
-      .from('coaches')
-      .select('id, user_id')
-      .eq('name', t.full_name)
-      .maybeSingle()
 
-    if (existing && !existing.user_id) {
-      await supabase.from('coaches').update({ user_id: t.id, branch_id: t.requested_branch_id || null }).eq('id', existing.id)
-    } else if (!existing) {
-      await supabase.from('coaches').insert({
-        name: t.full_name,
-        user_id: t.id,
-        branch_id: t.requested_branch_id || null,
-      })
+    // 2. בונים רשימת סניפים מבוקשים — תומך בריבוי סניפים (requested_branch_ids)
+    //    עם נפילה אחורה ל-requested_branch_id (יחיד) אם המערך לא קיים.
+    const requestedIds = Array.isArray(t.requested_branch_ids) && t.requested_branch_ids.length > 0
+      ? t.requested_branch_ids
+      : (t.requested_branch_id ? [t.requested_branch_id] : [null])
+
+    // 3. שולפים את כל רשומות coaches עם אותו שם — לזיהוי כפילויות
+    const { data: existingRows } = await supabase
+      .from('coaches')
+      .select('id, user_id, branch_id')
+      .eq('name', t.full_name)
+
+    const existingByBranch = new Map()
+    let unboundRow = null // רשומה שכבר קיימת עם השם, ללא user_id וללא סניף — נשתמש בה לראשון
+    for (const row of (existingRows || [])) {
+      if (row.branch_id) existingByBranch.set(row.branch_id, row)
+      else if (!row.user_id && !unboundRow) unboundRow = row
     }
+
+    // 4. לכל סניף — או שמעדכנים רשומה קיימת ל-user_id, או שיוצרים חדשה
+    for (const branchId of requestedIds) {
+      const existing = branchId ? existingByBranch.get(branchId) : null
+      if (existing) {
+        // הרשומה כבר קיימת לסניף הזה — רק לקשר ל-user_id (אם חסר)
+        if (!existing.user_id) {
+          await supabase.from('coaches').update({ user_id: t.id }).eq('id', existing.id)
+        }
+      } else if (unboundRow) {
+        // ניצול רשומה קיימת ללא קישור — מעדכנים אותה לסניף הראשון
+        await supabase.from('coaches').update({ user_id: t.id, branch_id: branchId || null }).eq('id', unboundRow.id)
+        unboundRow = null
+      } else {
+        // יצירת רשומה חדשה
+        await supabase.from('coaches').insert({
+          name: t.full_name,
+          user_id: t.id,
+          branch_id: branchId || null,
+        })
+      }
+    }
+
     setBusyId(null)
-    showMsg('ok', `${t.full_name} אושר כמאמן`)
+    showMsg('ok', `${t.full_name} אושר כמאמן (${requestedIds.filter(Boolean).length} סניפים)`)
     fetchAll()
   }
 
@@ -287,14 +313,24 @@ export default function CoachesManager({ profile, onChange }) {
         ) : (
           <div className="space-y-2">
             {pendingTrainers.map(t => {
-              const branch = branches.find(b => b.id === t.requested_branch_id)
+              // תומך גם במערך (requested_branch_ids) וגם בשדה הישן (requested_branch_id)
+              const requestedIds = Array.isArray(t.requested_branch_ids) && t.requested_branch_ids.length > 0
+                ? t.requested_branch_ids
+                : (t.requested_branch_id ? [t.requested_branch_id] : [])
+              const requestedBranchNames = requestedIds
+                .map(id => branches.find(b => b.id === id)?.name)
+                .filter(Boolean)
               return (
                 <div key={t.id} className="border border-orange-200 bg-orange-50 rounded-xl p-3">
                   <div className="font-bold text-gray-800">{t.full_name}</div>
                   <div className="text-xs text-gray-600 mt-1 space-y-0.5">
                     <div>📧 {t.email}</div>
                     {t.phone && <div>📱 {t.phone}</div>}
-                    {branch && <div>📍 ביקש שיוך לסניף: {branch.name}</div>}
+                    {requestedBranchNames.length > 0 && (
+                      <div>
+                        📍 ביקש שיוך {requestedBranchNames.length === 1 ? 'לסניף' : `ל-${requestedBranchNames.length} סניפים`}: {requestedBranchNames.join(' · ')}
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-2 mt-3">
                     <button

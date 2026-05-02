@@ -204,6 +204,10 @@ export default function ClassSchedule({ profile, member }) {
         if (cls) {
           const { start } = computeNextOccurrence(cls, new Date())
           const checkedAt = new Date(start); checkedAt.setHours(12, 0, 0, 0)
+          // המודל החדש: שורה לכל יום (class_id, athlete_id, checkin_date) — לכן רישום
+          // בשבוע הבא לא דורס את הצ'ק-אין של השבוע הנוכחי. עמודת checkin_date
+          // נמלאת גם ע"י טריגר ב-DB; שולחים גם מהלקוח כדי ש-onConflict יזהה מיד.
+          const checkinDate = `${checkedAt.getFullYear()}-${String(checkedAt.getMonth() + 1).padStart(2, '0')}-${String(checkedAt.getDate()).padStart(2, '0')}`
           // upsert עם ignoreDuplicates=true: אם המאמן כבר סימן absent
           // אנחנו לא רוצים להחליף את זה ב-present אוטומטית.
           await supabase.from('checkins').upsert(
@@ -212,8 +216,9 @@ export default function ClassSchedule({ profile, member }) {
               athlete_id: profile.id,
               status: 'present',
               checked_in_at: checkedAt.toISOString(),
+              checkin_date: checkinDate,
             },
-            { onConflict: 'class_id,athlete_id', ignoreDuplicates: true }
+            { onConflict: 'class_id,athlete_id,checkin_date', ignoreDuplicates: true }
           )
         }
       } catch (e) {

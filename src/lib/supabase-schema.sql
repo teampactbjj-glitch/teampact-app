@@ -32,12 +32,17 @@ create table if not exists registrations (
 );
 
 -- Check-ins
+-- שורה לכל יום (לא לכל זוג שיעור+מתאמן). checkin_date נמלא ע"י טריגר (Asia/Jerusalem).
+-- ראה migration: supabase/migrations/2026-05-02-checkins-per-day-unique.sql
 create table if not exists checkins (
   id uuid default gen_random_uuid() primary key,
   class_id uuid references classes(id) on delete cascade,
   athlete_id uuid references profiles(id) on delete cascade,
+  status text default 'present' check (status in ('present', 'absent')),
   checked_in_at timestamptz default now(),
-  unique(class_id, athlete_id)
+  checkin_date date,
+  created_at timestamptz default now(),
+  unique(class_id, athlete_id, checkin_date)
 );
 
 -- Announcements & seminars

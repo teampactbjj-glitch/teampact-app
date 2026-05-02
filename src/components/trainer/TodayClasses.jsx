@@ -468,10 +468,14 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     }
 
     // 2. checkin אוטומטי 'present' (כדי שיופיע בדוחות בלי שהמאמן יסמן ידנית)
+    // המודל החדש: שורה לכל יום (לא לכל זוג שיעור+מתאמן). כל הגעה נספרת בדוחות.
+    // העמודה checkin_date נמלאת אוטומטית ע"י טריגר ב-DB (set_checkin_date_from_ts),
+    // אבל שולחים אותה גם בלקוח כדי ש-onConflict ימצא את ה-unique הנכון.
     const checkedAt = new Date(selectedDate); checkedAt.setHours(12, 0, 0, 0)
+    const checkinDate = `${checkedAt.getFullYear()}-${String(checkedAt.getMonth() + 1).padStart(2, '0')}-${String(checkedAt.getDate()).padStart(2, '0')}`
     await supabase.from('checkins').upsert(
-      { class_id: classId, athlete_id: member.id, status: 'present', checked_in_at: checkedAt.toISOString() },
-      { onConflict: 'class_id,athlete_id', ignoreDuplicates: true }
+      { class_id: classId, athlete_id: member.id, status: 'present', checked_in_at: checkedAt.toISOString(), checkin_date: checkinDate },
+      { onConflict: 'class_id,athlete_id,checkin_date', ignoreDuplicates: true }
     )
 
     // ניקוי חיפוש + רענון פרטי השיעור

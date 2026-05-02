@@ -1351,20 +1351,22 @@ export default function AthleteDashboard({ profile }) {
         // רישום → checkin אוטומטי 'present' עם תאריך/שעת השיעור הקרוב.
         // ככה המאמן רואה את כולם נוכחים כברירת מחדל, ומסמן ✕ נעדר רק לחריגים.
         // ignoreDuplicates=true: אם כבר קיים checkin (כולל absent) לא דורסים אותו.
-        // עבור רישום לשבוע הבא — לא יוצרים checkin עכשיו, כי ה-onConflict על
-        // (class_id, athlete_id) ידרוס/יחסום את ה-checkin של השבוע הנוכחי.
-        // ה-checkin ייווצר אוטומטית כשהמתאמן ייכנס בשבוע הבא (visibility refresh).
-        if (!isNext) {
+        // המודל החדש: unique(class_id, athlete_id, checkin_date) — שורה לכל יום.
+        // לכן גם רישום לשבוע הבא יוצר checkin משלו (לא דורס את השבוע הנוכחי).
+        // הדוחות מסננים `t <= now` ולכן צ'ק-אין עתידי לא נספר עד שהיום עובר.
+        {
           const occStart = computeOccurrenceStart()
           const checkedAt = new Date(occStart); checkedAt.setHours(12, 0, 0, 0)
+          const checkinDate = `${checkedAt.getFullYear()}-${String(checkedAt.getMonth() + 1).padStart(2, '0')}-${String(checkedAt.getDate()).padStart(2, '0')}`
           await supabase.from('checkins').upsert(
             {
               class_id: cls.id,
               athlete_id: profile.id,
               status: 'present',
               checked_in_at: checkedAt.toISOString(),
+              checkin_date: checkinDate,
             },
-            { onConflict: 'class_id,athlete_id', ignoreDuplicates: true }
+            { onConflict: 'class_id,athlete_id,checkin_date', ignoreDuplicates: true }
           )
         }
       } catch (e) {

@@ -1,5 +1,40 @@
 # MEMORY - TeamPact App
 
+> ## 🔴 My last pending task — 02.05.2026 לילה (הסשן הסתיים ב-90% usage)
+>
+> **באג חדש שדודי דיווח עליו אחרי deploy של Bug 1.3 (`commit b060834`):**
+>
+> מאמן רגיל פתח עריכה של מתאמן, **שינה את סוג המנוי**, וזה **השתמר ישירות** במקום לשלוח בקשת אישור למנהל. זה פוגע במודל ההרשאות — שינוי מנוי אמור לעבור דרך `profile_change_requests` עם אישור אדמין.
+>
+> **מה כן עובד אחרי Bug 1.3:**
+> - ✅ מאמן רגיל לא רואה כפתורי מחיקה — אומת בייצור.
+> - ✅ DELETE על members/coaches חסום לרמת DB למאמן רגיל.
+>
+> **מה הבעיה החדשה (לסשן הבא):**
+> - מאמן רגיל יכול לבצע UPDATE ישיר על `members.subscription_type` / `membership_type` (ה-policy `members_update_trainer` מתיר את זה לכל מאמן מאושר).
+> - לפי הלוגיקה העסקית, **שינוי מנוי דורש אישור אדמין**. צריך לעבור דרך `profile_change_requests` כמו בממשק המתאמן.
+>
+> **איפה לחפש בקוד:**
+> - `src/components/trainer/AthleteManagement.jsx` — פונקציית `saveEdit` (סביב שורה 130-145, נקראת מתוך `<EditAthleteForm>`). שם נעשה ה-`supabase.from('members').update(patch).eq('id', id)` הישיר.
+> - הקובץ `ProfileChangeRequests.jsx` כבר קיים ועושה את ה-flow לאתלט. צריך לחקות אותו אצל המאמן.
+>
+> **גישה מומלצת לסשן הבא:**
+> 1. **DB:** להוסיף trigger/policy שחוסם UPDATE על `subscription_type` ו-`membership_type` ב-`members` למאמן רגיל (לפי `is_approved_admin()`). או לחילופין לפצל `members_update_trainer` לעמודות מותרות בלבד (אבל זה קשה ב-RLS — עדיף trigger עם RAISE EXCEPTION).
+> 2. **קוד `AthleteManagement.jsx`:** ב-`saveEdit`, אם `!isAdmin` ויש שינוי בעמודות מנוי → לא לשלוח UPDATE; במקום זאת, ליצור שורה ב-`profile_change_requests` עם הבקשה.
+> 3. **לבחון:** האם להגביל גם עמודות אחרות (group_ids, branch_ids, active, status) — לשאול את דודי איזה שינויים מאמן רגיל **כן** יכול לעשות לבד ואיזה דורשים אישור.
+>
+> **קבצים מהסשן הזה (כבר ב-main, commit b060834):**
+> - `supabase/migrations/2026-05-02-fix-admin-trainer-split.sql`
+> - `src/components/trainer/AthleteManagement.jsx`
+> - `src/components/trainer/CoachesManager.jsx`
+> - `src/components/trainer/LeadsManager.jsx`
+> - `MEMORY.md`
+>
+> **DB — מה שינינו ידנית ב-Supabase SQL Editor (לא ב-migration files):**
+> - DROP `coaches_write`, `members_trainer_write`, `מאמן יכול לנהל מתאמנים`, `members_admin` (כולן היו `ALL` ל-`{public}` ודרסו את התיקון). אם תהיה pull-from-prod או reset DB — צריך לחזור על זה.
+>
+> ---
+
 > **🆕 הסשן האחרון: 02.05.2026 (לילה) — באג 1.3: הפרדת הרשאות מאמן/מנהל**
 >
 > **מה הושלם בסשן הזה:**

@@ -56,6 +56,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
+  // weekMode: 'current' (השבוע) או 'next' (שבוע הבא). מאפשר למאמן/מנהל לראות את לוח השבוע הבא.
+  const [weekMode, setWeekMode] = useState('current')
   const todayBtnRef = useRef(null)
   const selectedBtnRef = useRef(null)
   const sliderContainerRef = useRef(null)
@@ -123,6 +125,18 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     setClassData({})
     fetchDayClasses(selectedDate)
   }, [trainerId, selectedDate])
+
+  // ברגע שמחליפים בין "השבוע" ל"שבוע הבא" — selectedDate קופץ ליום שמתאים
+  // (יום של היום בשבוע, אבל בשבוע היעד), כדי שה-slider יציג את השבוע הנכון.
+  useEffect(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const weekStart = new Date(today)
+    weekStart.setDate(today.getDate() - today.getDay())
+    if (weekMode === 'next') weekStart.setDate(weekStart.getDate() + 7)
+    const target = new Date(weekStart)
+    target.setDate(weekStart.getDate() + today.getDay())
+    setSelectedDate(target)
+  }, [weekMode])
 
   // רענון ספירת רישומים כל 15 שניות (כדי שמאמן יראה רישום שנרשם בזמן אמת)
   useEffect(() => {
@@ -794,6 +808,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   const today0 = startOfDay(new Date())
   const weekStart0 = new Date(today0)
   weekStart0.setDate(today0.getDate() - today0.getDay())
+  if (weekMode === 'next') weekStart0.setDate(weekStart0.getDate() + 7)
   const sliderCells = []
   for (let i = 0; i < 6; i++) {
     const d = new Date(weekStart0)
@@ -914,6 +929,30 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
             + הוסף שיעור
           </button>
         </div>
+      </div>
+
+      {/* Toggle: השבוע / שבוע הבא — תמיד זמין למאמן/מנהל */}
+      <div className="flex items-center gap-2 bg-white rounded-2xl border shadow-sm p-1.5">
+        <button
+          type="button"
+          onClick={() => setWeekMode('current')}
+          className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold transition ${
+            weekMode === 'current'
+              ? 'bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-md'
+              : 'text-gray-600 hover:bg-gray-50'
+          }`}>
+          השבוע
+        </button>
+        <button
+          type="button"
+          onClick={() => setWeekMode('next')}
+          className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold transition ${
+            weekMode === 'next'
+              ? 'bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-md'
+              : 'text-gray-600 hover:bg-gray-50'
+          }`}>
+          שבוע הבא
+        </button>
       </div>
 
       {/* Horizontal date slider */}

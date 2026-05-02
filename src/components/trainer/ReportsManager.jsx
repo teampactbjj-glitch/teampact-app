@@ -322,12 +322,17 @@ export default function ReportsManager({ isAdmin }) {
     )
   }, [filteredMembers])
 
-  // Checkins מסוננים לפי טווח הזמן של דוחות הנוכחות
+  // Checkins מסוננים לפי טווח הזמן של דוחות הנוכחות.
+  // הגנה כפולה: רק checkins שכבר התרחשו (checked_in_at <= עכשיו) ובטווח הנבחר.
+  // כך אימונים עתידיים/טיימסטמפ פגום לא נספרים כהגעה.
   const filteredCheckins = useMemo(() => {
-    const since = Date.now() - periodDays * DAY_MS
+    const now = Date.now()
+    const since = now - periodDays * DAY_MS
     return checkins.filter(c => {
       if (!c.checked_in_at) return false
-      return new Date(c.checked_in_at).getTime() >= since
+      const t = new Date(c.checked_in_at).getTime()
+      if (!Number.isFinite(t)) return false
+      return t >= since && t <= now
     })
   }, [checkins, periodDays])
 
@@ -349,35 +354,26 @@ export default function ReportsManager({ isAdmin }) {
   }, [classes])
 
   // ============================================================
-  // דוחות שיוך — מבוססים על class_registrations (רישום פעיל לקבוצה).
-  // כל זוג (athlete_id, class_id) מהווה שיוך לקבוצה. זה המקום שבו
-  // המתאמן באמת "רשום" — גם בלי תלות בנוכחות בפועל.
-  // הסינון לפי periodDays רלוונטי כדי להציג רק רישומים פעילים לאחרונה
-  // (week_start בטווח), במקום היסטוריה ישנה.
+  // דוחות פעילות — מבוססים על נוכחות בפועל (checkins, status='present').
+  // ⚠️ שונה מהמודל הישן שהסתמך על class_registrations:
+  // רישום מראש לקבוצה אינו נספר כהגעה. נספרים רק אימונים שכבר התקיימו
+  // (checked_in_at <= עכשיו) ושבהם המאמן סימן את המתאמן כנוכח.
+  // הפילטר `filteredCheckins` כבר אוכף "אימון שהסתיים" + טווח periodDays.
   // ============================================================
 
-  // סינון רישומים לפי טווח periodDays (week_start)
-  const filteredRegistrations = useMemo(() => {
-    const since = Date.now() - periodDays * DAY_MS
-    return registrations.filter(r => {
-      if (!r.week_start) return false
-      return new Date(r.week_start).getTime() >= since
-    })
-  }, [registrations, periodDays])
-
   // 0b) מתאמנים פעילים לפי תחום + פילוח לפי מאמן בתוך התחום.
-  // count = מספר מתאמנים ייחודיים בתחום, sessions = סך הרישומים לקבוצות בתחום.
+  // count = מתאמנים ייחודיים שנכחו בתחום, sessions = סך הצ'ק-אינים בתחום.
   const byAssignedDiscipline = useMemo(() => {
     const acc = {}
     DISCIPLINE_ORDER.forEach(d => {
       acc[d] = { members: new Set(), sessions: 0, byCoach: new Map() }
     })
-    filteredRegistrations.forEach(r => {
-      if (!r.athlete_id || !r.class_id) return
-      if (!activeMemberIds.has(r.athlete_id)) return
-      const cls = classById.get(r.class_id)
+    filteredCheckins.forEach(c => {
+      if (!c.athlete_id || !c.class_id) return
+      if (!activeMemberIds.has(c.athlete_id)) return
+      const cls = classById.get(c.class_id)
       if (!cls) return
-      const disc = disciplineByClassId.get(r.class_id) || 'אחר'
+      const disc = disciplineByClassId.get(c.class_id) || 'אחר'
       if (!acc[disc]) return
 
       let coachName = null
@@ -385,14 +381,14 @@ export default function ReportsManager({ isAdmin }) {
       if (!coachName && cls.coach_name) coachName = cls.coach_name
       if (!coachName) coachName = 'ללא מאמן'
 
-      acc[disc].members.add(r.athlete_id)
+      acc[disc].members.add(c.athlete_id)
       acc[disc].sessions += 1
 
       if (!acc[disc].byCoach.has(coachName)) {
         acc[disc].byCoach.set(coachName, { members: new Set(), sessions: 0 })
       }
       const coachAgg = acc[disc].byCoach.get(coachName)
-      coachAgg.members.add(r.athlete_id)
+      coachAgg.members.add(c.athlete_id)
       coachAgg.sessions += 1
     })
     return DISCIPLINE_ORDER.map(d => ({
@@ -403,25 +399,29 @@ export default function ReportsManager({ isAdmin }) {
         .map(([name, agg]) => ({ name, count: agg.members.size, sessions: agg.sessions }))
         .sort((a, b) => b.count - a.count),
     }))
-  }, [filteredRegistrations, classById, coachById, disciplineByClassId, activeMemberIds])
+  }, [filteredCheckins, classById, coachById, disciplineByClassId, activeMemberIds])
 
-  // 0c) מתאמנים שלא נרשמו לאף קבוצה ב-14 הימים האחרונים.
-  // מבוסס על MAX(week_start) של class_registrations עבור כל מתאמן פעיל.
-  // רושם=נוכחות במודל החדש, אז "לא נרשם" = "לא הגיע לאימון".
+  // 0c) מתאמנים שלא נכחו באימון ב-14 הימים האחרונים.
+  // מבוסס על MAX(checked_in_at) של checkins (status='present') עבור כל מתאמן פעיל.
+  // רישום עתידי לא נספר — נדרשת נוכחות בפועל באימון שכבר הסתיים.
   // הסף נקבע ל-14 יום כדי להימנע מ-false positives של חופש קצר/מילואים/מחלה.
   const INACTIVE_THRESHOLD_DAYS = 14
   const inactiveMembers = useMemo(() => {
+    const now = Date.now()
     const lastByMember = new Map()
-    // משתמשים ב-registrations המלאים (לא ה-filtered) — צריכים את כל ה-180 יום
-    // כדי לדעת מתי באמת היה הרישום האחרון, גם אם הוא ישן.
-    registrations.forEach(r => {
-      if (!r.athlete_id || !r.week_start) return
-      const t = new Date(r.week_start).getTime()
-      const prev = lastByMember.get(r.athlete_id) || 0
-      if (t > prev) lastByMember.set(r.athlete_id, t)
+    // משתמשים ב-checkins המלאים (לא ה-filtered) — צריכים את כל ה-180 יום
+    // כדי לדעת מתי באמת היה הצ'ק-אין האחרון, גם אם הוא ישן.
+    // התעלמות מטיימסטמפ עתידי (אם איכשהו נשמר) — לא יכול להיות "הגעה" שטרם קרתה.
+    checkins.forEach(c => {
+      if (!c.athlete_id || !c.checked_in_at) return
+      const t = new Date(c.checked_in_at).getTime()
+      if (!Number.isFinite(t)) return
+      if (t > now) return
+      const prev = lastByMember.get(c.athlete_id) || 0
+      if (t > prev) lastByMember.set(c.athlete_id, t)
     })
 
-    const cutoff = Date.now() - INACTIVE_THRESHOLD_DAYS * DAY_MS
+    const cutoff = now - INACTIVE_THRESHOLD_DAYS * DAY_MS
     return activeMembers
       .map(m => {
         const last = lastByMember.get(m.id) || null
@@ -430,18 +430,18 @@ export default function ReportsManager({ isAdmin }) {
           name: m.full_name || '—',
           phone: m.phone || null,
           email: m.email || null,
-          lastRegistration: last,
-          daysSince: last ? Math.floor((Date.now() - last) / DAY_MS) : null,
+          lastAttendance: last,
+          daysSince: last ? Math.floor((now - last) / DAY_MS) : null,
         }
       })
-      .filter(m => !m.lastRegistration || m.lastRegistration < cutoff)
-      // לפי כמות הימים בלי רישום, יורד (הכי מנותקים בראש)
+      .filter(m => !m.lastAttendance || m.lastAttendance < cutoff)
+      // לפי כמות הימים בלי הגעה, יורד (הכי מנותקים בראש)
       .sort((a, b) => {
         const aDays = a.daysSince ?? 999999
         const bDays = b.daysSince ?? 999999
         return bDays - aDays
       })
-  }, [activeMembers, registrations])
+  }, [activeMembers, checkins])
 
   // ===== שליחת Push למתאמן בודד =====
   // משתמש ב-Edge Function 'send-push' (תשתית קיימת ב-src/lib/notifyPush.js).
@@ -824,7 +824,7 @@ export default function ReportsManager({ isAdmin }) {
       <SectionCard
         title={`מתאמנים פעילים לפי תחום לחימה (${periodDays} ימים)`}
         icon="🥊"
-        footer="המספר הראשון = מתאמנים ייחודיים בתחום. השני = סה״כ רישומים לקבוצות באותו תחום. תחת כל תחום, פילוח לפי המאמן של הקבוצה."
+        footer="מבוסס על נוכחות בפועל (צ'ק-אין באימון שהתקיים). המספר הראשון = מתאמנים ייחודיים שנכחו בתחום. השני = סה״כ אימונים בתחום. תחת כל תחום, פילוח לפי המאמן."
       >
         {byAssignedDiscipline.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
@@ -887,14 +887,14 @@ export default function ReportsManager({ isAdmin }) {
         </p>
       </SectionCard>
 
-      {/* === התראת לא-פעילים (פער בין רשומים לבין מי שמגיע באמת) === */}
+      {/* === התראת לא-פעילים — מבוסס על נוכחות בפועל בלבד === */}
       <SectionCard
         title={`מתאמנים שלא הגיעו מעל שבועיים ${inactiveMembers.length > 0 ? `(${inactiveMembers.length})` : ''}`}
         icon="⚠️"
-        footer="רישום לקבוצה = הגעה לאימון במודל הנוכחי. הרשימה מציגה מתאמנים פעילים שלא נרשמו לאף קבוצה ב-14 הימים האחרונים. כפתור 📲 שולח התראת Push לאפליקציה (חינמי, מגיע גם אם המתאמן לא בקבוצה אצלך). כפתור 💬 פותח ווצאפ עם הודעה ממולאת מראש — fallback למתאמנים שלא הפעילו Push."
+        footer="מבוסס על נוכחות בפועל (צ'ק-אין באימון שהתקיים). הרשימה מציגה מתאמנים פעילים שלא נכחו בשום אימון ב-14 הימים האחרונים. רישום מראש לאימון עתידי לא נחשב הגעה. כפתור 📲 שולח התראת Push לאפליקציה (חינמי, מגיע גם אם המתאמן לא בקבוצה אצלך). כפתור 💬 פותח ווצאפ עם הודעה ממולאת מראש — fallback למתאמנים שלא הפעילו Push."
       >
         {inactiveMembers.length === 0 ? (
-          <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3">✅ כל המתאמנים הפעילים נרשמו לאימון ב-14 הימים האחרונים.</p>
+          <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3">✅ כל המתאמנים הפעילים נכחו באימון ב-14 הימים האחרונים.</p>
         ) : (
           <>
             {/* כפתור Bulk: שלח Push לכל הלא-פעילים בלחיצה אחת */}
@@ -917,7 +917,7 @@ export default function ReportsManager({ isAdmin }) {
             <ul className="divide-y divide-gray-100">
               {inactiveMembers.map(m => {
                 const days = m.daysSince
-                const daysLabel = days === null ? 'לא נרשם מעולם' : `${days} ימים`
+                const daysLabel = days === null ? 'לא נכח מעולם' : `${days} ימים`
                 const toneClass = days === null ? 'bg-gray-100 text-gray-700' :
                   days >= 30 ? 'bg-red-100 text-red-800' :
                   days >= 14 ? 'bg-orange-100 text-orange-800' :

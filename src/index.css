@@ -296,13 +296,13 @@ html.a11y-dark-mode .bg-black\/50 { background-color: rgba(0, 0, 0, 0.85) !impor
    ספציפיות גבוהה יותר (שני מטאצ'רים) + מסגרת בולטת.
    ============================================================ */
 
-/* היום הנוכחי בסליידר תאריכים — אדום זוהר עם מסגרת לבנה-ורודה */
+/* היום הנוכחי בסליידר תאריכים — אדום-יין כהה ועדין, לא שורף עיניים */
 html.a11y-dark-mode [class*="from-red-600"][class*="to-red-700"],
 html.a11y-dark-mode [class*="from-red-600"][class*="to-red-800"] {
-  background: linear-gradient(to bottom right, #dc2626, #7f1d1d) !important;
-  color: #ffffff !important;
-  border: 2px solid #fecaca !important;
-  box-shadow: 0 0 0 3px rgba(252, 165, 165, .35), 0 4px 14px rgba(220, 38, 38, .5) !important;
+  background: linear-gradient(to bottom right, #5b1717, #2a0808) !important;
+  color: #f5f5f5 !important;
+  border: 2px solid #991b1b !important;
+  box-shadow: 0 0 0 2px rgba(153, 27, 27, .25), 0 2px 6px rgba(0, 0, 0, .4) !important;
 }
 
 /* תאריך נבחר / "שבוע הבא" — כחול ברור עם מסגרת בהירה */

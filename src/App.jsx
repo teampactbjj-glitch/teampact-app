@@ -19,10 +19,9 @@ export default function App() {
   // Version counter למניעת race condition: כשהsession מתחלף מהר, fetchProfile ישן לא ידרוס פרופיל חדש
   const fetchVersionRef = useRef(0)
 
-  if (window.location.pathname === '/register') return (<><RegisterPage /><AccessibilityWidget /></>)
-  if (window.location.pathname === '/register-coach') return (<><RegisterCoachPage /><AccessibilityWidget /></>)
-  if (window.location.pathname === '/accessibility') return <AccessibilityPage />
-
+  // Rules of Hooks fix (Bug 1.7): כל ה-hooks חייבים לרוץ באותו סדר בכל render.
+  // ה-early-returns של נתיבים מיוחדים (/register, /register-coach, /accessibility)
+  // הוזזו לסוף הקומפוננטה — *אחרי* כל קריאות ה-useEffect.
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
@@ -175,6 +174,11 @@ export default function App() {
       </div>
     </div>
   ) : null
+
+  // נתיבים ציבוריים — אחרי כל ה-hooks כדי לקיים את Rules of Hooks (Bug 1.7).
+  if (window.location.pathname === '/register') return (<><RegisterPage /><AccessibilityWidget /></>)
+  if (window.location.pathname === '/register-coach') return (<><RegisterCoachPage /><AccessibilityWidget /></>)
+  if (window.location.pathname === '/accessibility') return <AccessibilityPage />
 
   if (!session) return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><AthleteLogin /></>)
 

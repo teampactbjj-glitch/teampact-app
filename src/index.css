@@ -287,6 +287,69 @@ html.a11y-dark-mode [class*="ring-blue"] { --tw-ring-color: #2563eb !important; 
 /* Modal backdrop - שחור כמעט לגמרי */
 html.a11y-dark-mode .bg-black\/50 { background-color: rgba(0, 0, 0, 0.85) !important; }
 
+/* ============================================================
+   מצב כהה — הדגשות "היום הנוכחי" ובוררי סניף/שבוע
+   ----------------------------------------------------------------
+   הבעיה: בכהה הכלל הגורף `[class*="bg-gradient"] { background:#1a1a1a }`
+   משטח את כל הכפתורים מבוססי-גרדיאנט — כך שהיום הנוכחי, התאריך הנבחר
+   והסניף הפעיל נראים זהה ל-non-active. כאן מחזירים את ההדגשה ע"י
+   ספציפיות גבוהה יותר (שני מטאצ'רים) + מסגרת בולטת.
+   ============================================================ */
+
+/* היום הנוכחי בסליידר תאריכים — אדום זוהר עם מסגרת לבנה-ורודה */
+html.a11y-dark-mode [class*="from-red-600"][class*="to-red-700"],
+html.a11y-dark-mode [class*="from-red-600"][class*="to-red-800"] {
+  background: linear-gradient(to bottom right, #dc2626, #7f1d1d) !important;
+  color: #ffffff !important;
+  border: 2px solid #fecaca !important;
+  box-shadow: 0 0 0 3px rgba(252, 165, 165, .35), 0 4px 14px rgba(220, 38, 38, .5) !important;
+}
+
+/* תאריך נבחר / "שבוע הבא" — כחול ברור עם מסגרת בהירה */
+html.a11y-dark-mode [class*="from-blue-600"][class*="to-blue-700"],
+html.a11y-dark-mode [class*="from-blue-600"][class*="to-blue-800"] {
+  background: linear-gradient(to bottom right, #2563eb, #1e3a8a) !important;
+  color: #ffffff !important;
+  border: 2px solid #93c5fd !important;
+  box-shadow: 0 0 0 3px rgba(147, 197, 253, .25), 0 4px 14px rgba(37, 99, 235, .4) !important;
+}
+
+/* תאריך נבחר אפור (סלייד מתאמן) — מסגרת בהירה ברורה */
+html.a11y-dark-mode [class*="from-gray-800"][class*="to-gray-900"] {
+  background: linear-gradient(to bottom right, #374151, #111827) !important;
+  color: #ffffff !important;
+  border: 2px solid #d1d5db !important;
+  box-shadow: 0 0 0 3px rgba(209, 213, 219, .2) !important;
+}
+
+/* סניף פעיל בצ'יפים (TodayClasses / ReportsManager / dropdown) — כחול עם מסגרת בהירה */
+html.a11y-dark-mode button[class*="bg-blue-600"][class*="text-white"][class*="border-blue-600"] {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+  border: 2px solid #93c5fd !important;
+  box-shadow: 0 0 0 2px rgba(147, 197, 253, .35) !important;
+}
+
+/* סניף לא-פעיל בצ'יפים — מסגרת אפורה ברורה כדי להבדיל מהפעיל */
+html.a11y-dark-mode button[class*="bg-white"][class*="border-gray-300"][class*="text-gray-600"] {
+  background-color: #1a1a1a !important;
+  color: #d4d4d4 !important;
+  border: 1px dashed #6b7280 !important;
+}
+
+/* select של מסנן סניף בדוחות — מסגרת בהירה כדי שהתפריט יראה */
+html.a11y-dark-mode select {
+  border: 2px solid #6b7280 !important;
+}
+html.a11y-dark-mode select:focus {
+  border-color: #93c5fd !important;
+  box-shadow: 0 0 0 3px rgba(147, 197, 253, .25) !important;
+}
+
+/* ring-red-300 / ring-blue-400 — מחזירים גוון בהיר מודגש לטבעת ההדגשה */
+html.a11y-dark-mode [class*="ring-red"] { --tw-ring-color: #fca5a5 !important; }
+html.a11y-dark-mode [class*="ring-gray-400"] { --tw-ring-color: #9ca3af !important; }
+
 /* Dialog/Modal - רקע כהה עם טקסט לבן */
 html.a11y-dark-mode [role="dialog"] {
   background-color: #1a1a1a !important;

@@ -1,5 +1,83 @@
 # MEMORY - TeamPact App
 
+> ## ✅ Session 02.05.2026 (לילה — המשך 4) — סגירת Bug 1.7: Rules of Hooks ב-App.jsx
+>
+> **שאלת המשתמש:** "תסיים את מה שלא סיימנו ותגבה ואז תריץ שוב בדיקה נראה שאתה טועה כי למאמן אין גישה לערוך דברים."
+>
+> **בדיקה חוזרת לטענה של המשתמש (וצדק!):**
+> - בדקתי `src/components/trainer/AthleteManagement.jsx` שורות 706-714: גם כפתור "עריכה" וגם כפתור "מחק" עטופים ב-`{isAdmin && (...)}`. למאמן רגיל **אין כפתור עריכה כלל בממשק**.
+> - הבאג שתואר ב-MEMORY.md הקודם ("מאמן רגיל פתח עריכה ושינה מנוי") **נסגר ב-`977ff5d`** — כפתור העריכה הוסתר. הרשומה הקודמת ב-MEMORY הייתה לא עדכנית.
+> - ה-DB trigger ב-`supabase/migrations/2026-05-02-fix-trainer-cannot-edit-member-fields.sql` עדיין רלוונטי כ-defense-in-depth (חוסם UPDATE ישיר ב-API/PostgREST), והוא מוכן להרצה ידנית ב-Supabase SQL Editor.
+>
+> **מה הושלם בסשן הזה — תיקון Bug 1.7 (Rules of Hooks):**
+> - **קובץ:** `src/App.jsx`
+> - **לפני:** שורות 22-24 כללו 3 `return` מוקדמים לנתיבים `/register`, `/register-coach`, `/accessibility` — *לפני* 6 קריאות `useEffect`. זו הפרה של Rules of Hooks: בנתיב אחד hooks רצים, בנתיב אחר לא — מספר ה-hooks משתנה בין renders → React מקרס/מתנהג לא צפוי.
+> - **אחרי:** ה-3 early-returns הוזזו לסוף הקומפוננטה, *אחרי* כל ה-hooks. כל קריאה ל-`useEffect` רצה תמיד באותו סדר.
+> - **Build:** `npx vite build --outDir dist-fix-bug17 --emptyOutDir` עבר ✅ (98 modules, 995KB JS).
+>
+> **גיבוי:** `backup_20260502_finish_session/` שומר את App.jsx, index.css, ReportsManager.jsx ו-MEMORY.md לפני השינוי.
+>
+> **🟢 סטטוס אבטחה כולל אחרי הסשן:** **10 תיקונים הושלמו** (1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7 ✅, 1.9 + Email Confirmation + ErrorBoundary). 1.8 — סגור (לא משומש בקוד).
+>
+> **שינוי לא דחוף שעדיין לא נדחף:** `src/components/trainer/ReportsManager.jsx` — הגנה כפולה על checkins (filter `t <= now`). ממתין להחלטת המשתמש על קומיט נפרד.
+>
+> ---
+
+> ## ✅ Session 02.05.2026 (לילה — המשך 3) — שבת בסליידר בכל 3 הממשקים
+>
+> **commit `30bb5f5` ב-`origin/main` ✅** — אומת.
+>
+> דודי ביקש: שבת תוצג בסליידר הימים גם אם אין בה אימונים, כדי שהמשתמש לא יתבלבל. בכל 3 הממשקים.
+>
+> **קבצים:**
+> - `src/components/trainer/TodayClasses.jsx` — `for (let i = 0; i < 6 → 7; i++)` (משמש מאמן + מנהל)
+> - `src/components/athlete/AthleteDashboard.jsx` — אותו שינוי (משמש אתלט)
+>
+> ---
+
+> ## ✅ Session 02.05.2026 (לילה — המשך 2) — Toggle "שבוע הבא" למאמן/מנהל
+>
+> **commit `a4686e3` ב-`origin/main` ✅** — אומת מול הגיטהאב.
+>
+> דודי דיווח שלמאמן ולמנהל אין כפתור "שבוע הבא" כמו שיש למתאמן בלוח השבועי (TodayClasses). תוקן.
+>
+> **קובץ:** `src/components/trainer/TodayClasses.jsx`
+> - State חדש: `weekMode: 'current' | 'next'`
+> - `weekStart0` מתקדם +7 ימים כשהמצב הוא 'next' → ה-slider מציג את ימי השבוע הבא
+> - useEffect שקופץ את `selectedDate` ליום-בשבוע המקביל בשבוע היעד
+> - UI Toggle (gradient כחול) מעל ה-date slider — שני כפתורים: "השבוע" / "שבוע הבא"
+> - תמיד זמין למאמן/מנהל (להבדיל מהאתלט שיש לו חלון זמן שישי-מוצ"ש)
+>
+> ---
+
+> ## ✅ Session 02.05.2026 (לילה — המשך) — Bug-followup לאחר Bug 1.3: תוקן
+>
+> **commit `977ff5d` ב-`origin/main` ✅** — אומת מול הגיטהאב.
+>
+> **מה הושלם:**
+> 1. **DB trigger `trg_enforce_member_edit_admin_only`** — `BEFORE UPDATE` על `members`. חוסם שינוי שדות אישיים/מנוי (`full_name, email, phone, membership_type, subscription_type, group_ids/group_id, branch_ids/branch_id, active, coach_id, group_name`) למאמן רגיל. **מתיר** שינוי `status`/`deleted_at`/`id` כדי לא לשבור workflows קיימים (אישור pending, בקשת מחיקה, soft-delete, המרת lead, self-link). קובץ migration: `supabase/migrations/2026-05-02-fix-trainer-cannot-edit-member-fields.sql` עם rollback.
+> 2. **UI ב-`AthleteManagement.jsx`** — כפתורי "עריכה", "+ הוסף מתאמן", ו-Import הוסתרו למאמן רגיל (`{isAdmin && ...}`). מאמן רגיל רואה רק תצוגה — בהתאם להוראת המשתמש "מאמן רגיל = קריאה בלבד".
+>
+> **⚠️ דרוש מהמשתמש (ידני) — SQL אחד להריץ ב-Supabase SQL Editor:**
+> 1. ✅ `supabase/migrations/2026-05-02-fix-trainer-cannot-edit-member-fields.sql` (החסימה — defense-in-depth ב-DB).
+> 2. ❌ `supabase/migrations/2026-05-02-sync-profiles-subscription-type.sql` — **לא להריץ!** ב-02.05.2026 דודי ניסה והתקבל `ERROR 42703: column p.subscription_type does not exist`. ההנחה במיגרציה (שיש עמודה `subscription_type` ב-`profiles`) שגויה. ה-migration הזה מיותר — אין מה לסנכרן. הקוד ב-`AthleteDashboard.jsx`/`ClassSchedule.jsx` שהוסר ה-fallback אליה — לא מזיק (היה תמיד `undefined`).
+>
+> **קבצים נוספים שנכללו בקומיט (מסשן קודם, לא נדחפו עד עכשיו):**
+> - `src/components/athlete/AthleteDashboard.jsx` — מקור אמת יחיד `members.subscription_type` (היה fallback ל-profiles שיצר חוסר התאמה בין תצוגת מנהל לאתלט).
+> - `src/components/athlete/ClassSchedule.jsx` — אותו תיקון.
+> - `supabase/migrations/2026-05-02-sync-profiles-subscription-type.sql` — UPDATE לסנכרון נתונים.
+>
+> **קבצים מקומיים שלא נדחפו (להחליט בנפרד):**
+> - `src/components/trainer/ReportsManager.jsx` — שינוי בהגנה כפולה על checkins (filter `t <= now`). שינוי לוגי שמתקן באג של "אימונים עתידיים נספרים כהגעה". **לא בקומיט הנוכחי** — מומלץ לבדוק אותו ולקומיט בנפרד.
+>
+> **בדיקות אחרי deploy ב-Vercel:**
+> 1. Hard-refresh (Cmd+Shift+R) או Service Worker → Unregister ב-DevTools.
+> 2. כניסה כמאמן רגיל (לא admin) → טאב מתאמנים → לוודא **אין** כפתור עריכה, אין "+ הוסף", אין Import.
+> 3. כניסה כמנהל → לוודא שכל הכפתורים שם.
+> 4. אחרי הרצת ה-SQL — לנסות UPDATE ידני מ-API/Console כמאמן רגיל על `subscription_type` → צריך לקבל `42501` עם הודעה בעברית.
+>
+> ---
+
 > ## 🔴 My last pending task — 02.05.2026 לילה (הסשן הסתיים ב-90% usage)
 >
 > **באג חדש שדודי דיווח עליו אחרי deploy של Bug 1.3 (`commit b060834`):**

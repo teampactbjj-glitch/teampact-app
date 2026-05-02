@@ -56,8 +56,6 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
-  // weekMode: 'current' (השבוע) או 'next' (שבוע הבא). מאפשר למאמן/מנהל לראות את לוח השבוע הבא.
-  const [weekMode, setWeekMode] = useState('current')
   const todayBtnRef = useRef(null)
   const selectedBtnRef = useRef(null)
   const sliderContainerRef = useRef(null)
@@ -125,18 +123,6 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     setClassData({})
     fetchDayClasses(selectedDate)
   }, [trainerId, selectedDate])
-
-  // ברגע שמחליפים בין "השבוע" ל"שבוע הבא" — selectedDate קופץ ליום שמתאים
-  // (יום של היום בשבוע, אבל בשבוע היעד), כדי שה-slider יציג את השבוע הנכון.
-  useEffect(() => {
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-    const weekStart = new Date(today)
-    weekStart.setDate(today.getDate() - today.getDay())
-    if (weekMode === 'next') weekStart.setDate(weekStart.getDate() + 7)
-    const target = new Date(weekStart)
-    target.setDate(weekStart.getDate() + today.getDay())
-    setSelectedDate(target)
-  }, [weekMode])
 
   // רענון ספירת רישומים כל 15 שניות (כדי שמאמן יראה רישום שנרשם בזמן אמת)
   useEffect(() => {
@@ -808,20 +794,19 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     if (!classData[id]) fetchClassDetails(id)
   }
 
-  // סליידר של שבוע אחד — יום א' עד יום ו' (אין אימונים בשבת)
+  // סטריפ ימים רציף: 7 ימים אחורה + היום + 13 ימים קדימה = 21 ימים סה"כ.
+  // עבר מוצג ב-opacity 0.5 (לא חוסם, אבל מעומעם — לתיקון נוכחות בדיעבד).
+  // עתיד מוצג רגיל. כך אין צורך ב-toggle "השבוע / שבוע הבא".
   const today0 = startOfDay(new Date())
-  const weekStart0 = new Date(today0)
-  weekStart0.setDate(today0.getDate() - today0.getDay())
-  if (weekMode === 'next') weekStart0.setDate(weekStart0.getDate() + 7)
   const sliderCells = []
-  // 7 ימים — כולל שבת. שבת מוצגת גם אם אין בה שיעורים, כדי שהמשתמש לא יתבלבל.
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart0)
-    d.setDate(weekStart0.getDate() + i)
+  for (let i = -7; i <= 13; i++) {
+    const d = new Date(today0)
+    d.setDate(today0.getDate() + i)
     sliderCells.push(d)
   }
   const isSelected = (d) => d.toDateString() === selectedDate.toDateString()
   const isToday = (d) => d.toDateString() === new Date().toDateString()
+  const isPast = (d) => d.getTime() < today0.getTime()
 
   // ניווט אל היום של השבוע של השיעור (ההופעה הבאה של day_of_week)
   function jumpToClassDay(dayOfWeek) {
@@ -936,36 +921,22 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         </div>
       </div>
 
-      {/* Toggle: השבוע / שבוע הבא — תמיד זמין למאמן/מנהל */}
-      <div className="flex items-center gap-2 bg-white rounded-2xl border shadow-sm p-1.5">
-        <button
-          type="button"
-          onClick={() => setWeekMode('current')}
-          className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold transition ${
-            weekMode === 'current'
-              ? 'bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-md'
-              : 'text-gray-600 hover:bg-gray-50'
-          }`}>
-          השבוע
-        </button>
-        <button
-          type="button"
-          onClick={() => setWeekMode('next')}
-          className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold transition ${
-            weekMode === 'next'
-              ? 'bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-md'
-              : 'text-gray-600 hover:bg-gray-50'
-          }`}>
-          שבוע הבא
-        </button>
-      </div>
-
-      {/* Horizontal date slider */}
-      <div ref={sliderContainerRef} className="bg-white rounded-2xl border shadow-sm p-3 overflow-x-auto" dir="ltr">
-        <div className="flex gap-1.5 justify-center" dir="rtl">
+      {/* סטריפ ימים רציף — pill chips. אדום עמוק להיום, כחול עמוק לבחור, opacity 0.5 לעבר.
+          7 ימים אחורה + 14 ימים קדימה. בלי toggle של "שבוע הבא" — גלילה אופקית. */}
+      <div ref={sliderContainerRef} className="overflow-x-auto -mx-1 px-1" dir="ltr" style={{ scrollbarWidth: 'none' }}>
+        <style>{`.no-scrollbar::-webkit-scrollbar { display: none }`}</style>
+        <div className="flex gap-1.5" dir="rtl" style={{ minWidth: 'max-content' }}>
           {sliderCells.map((d, i) => {
             const today = isToday(d)
             const selected = isSelected(d)
+            const past = isPast(d)
+            // עדיפות: היום (אדום) → נבחר (כחול) → רגיל
+            const bgClass = today
+              ? 'bg-red-800'
+              : selected
+                ? 'bg-blue-700'
+                : 'bg-gray-800/40 border border-white/5'
+            const subtitle = today ? 'היום' : d.toLocaleDateString('he-IL', { month: 'short' })
             return (
               <button key={i} onClick={() => setSelectedDate(startOfDay(d))}
                 ref={el => {
@@ -973,23 +944,16 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                   if (today) todayBtnRef.current = el
                   if (selected) selectedBtnRef.current = el
                 }}
-                className={`flex-shrink-0 rounded-xl transition text-center ${
-                  today
-                    ? 'bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg ring-4 ring-red-300 scale-110 py-2.5 px-3.5 min-w-[68px] font-black'
-                    : selected
-                      ? 'bg-gradient-to-br from-blue-600 to-blue-800 text-white shadow-md ring-2 ring-blue-400 py-2 px-3 min-w-[56px]'
-                      : 'bg-white border border-gray-100 text-gray-600 hover:bg-gray-50 py-2 px-3 min-w-[56px]'
-                }`}>
-                <p className={`text-[10px] font-semibold ${today || selected ? 'opacity-95' : 'text-gray-400'}`}>
-                  {DAYS_HE_SHORT[d.getDay()]}
+                className={`flex-shrink-0 rounded-2xl transition py-2.5 px-3 min-w-[58px] text-center ${bgClass} ${past && !selected ? 'opacity-50' : ''}`}>
+                <p className={`text-[10px] font-semibold ${today ? 'text-red-200' : selected ? 'text-blue-200' : 'text-gray-400'}`}>
+                  {DAYS_HE[d.getDay()]}
                 </p>
-                <p className={`font-black leading-none mt-0.5 ${today ? 'text-2xl' : 'text-lg'}`}>
+                <p className="font-bold leading-none mt-1 text-lg text-white">
                   {d.getDate()}
                 </p>
-                <p className={`text-[9px] mt-0.5 ${today || selected ? 'opacity-80' : 'text-gray-400'}`}>
-                  {d.toLocaleDateString('he-IL', { month: 'short' })}
+                <p className={`text-[9px] mt-1 font-medium ${today ? 'text-red-200' : selected ? 'text-blue-200' : 'text-gray-500'}`}>
+                  {subtitle}
                 </p>
-                {today && <p className="text-[9px] font-black mt-1 bg-white/30 rounded px-1">היום</p>}
               </button>
             )
           })}

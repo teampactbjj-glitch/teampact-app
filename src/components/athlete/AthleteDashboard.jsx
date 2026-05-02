@@ -216,7 +216,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
           {!selectedDate && <p className="text-xs text-gray-400 mt-0.5">לחץ על תאריך בסלייד כדי לראות את השיעורים של אותו יום</p>}
         </div>
         <span className="text-xs bg-red-100 text-red-800 px-3 py-1 rounded-full font-bold whitespace-nowrap">
-          {registrations.size}/{limit === Infinity ? '∞' : limit} השבוע
+          {effectiveCount}/{limit === Infinity ? '∞' : limit} השבוע
         </span>
       </div>
 
@@ -278,7 +278,7 @@ function ScheduleTab({ member, limit, registrations, onRegister, branchesMap }) 
             dayClasses.map(cls => {
               const isReg = registrations.has(cls.id)
               const past = isPastClass(cls, selectedDate)
-              const atRegLimit = !isReg && registrations.size >= limit && limit !== Infinity
+              const atRegLimit = !isReg && !isOpenMatClass(cls) && effectiveCount >= limit && limit !== Infinity
               const disabled = past || (atRegLimit && !isReg)
               return (
                 <button key={cls.id} onClick={() => !past && onRegister(cls)} disabled={disabled}
@@ -993,6 +993,14 @@ function getWeekStart() {
   return d.toISOString().split('T')[0]
 }
 
+function isOpenMatClass(cls) {
+  if ((cls.class_type || '').toLowerCase() === 'open_mat') return true;
+  const name = String(cls.name || cls.title || '').toLowerCase();
+  if (/מזרו?ן\s*פתוח/.test(name)) return true;
+  if (/ספר?י?נג|sparring/i.test(name)) return true;
+  return false;
+}
+
 export default function AthleteDashboard({ profile }) {
   const toast = useToast()
   const confirm = useConfirm()
@@ -1017,6 +1025,10 @@ export default function AthleteDashboard({ profile }) {
 
   const subscriptionType = member?.subscription_type || profile?.subscription_type
   const limit = SUBSCRIPTION_LIMITS[subscriptionType] ?? 2
+  const effectiveCount = [...registrations].filter(id => {
+    const cls = classes.find(c => c.id === id)
+    return cls && !isOpenMatClass(cls)
+  }).length
   const displayName = member?.full_name || profile?.full_name || profile?.email || 'מתאמן'
   const displaySub = SUBSCRIPTION_LABELS[subscriptionType] || (subscriptionType ? subscriptionType : null)
   // הודעה מיועדת למתאמן אם: אין בה branch_ids (כלומר "לכל הסניפים"), או שאחד הסניפים שלה הוא סניף של המתאמן.
@@ -1095,8 +1107,15 @@ export default function AthleteDashboard({ profile }) {
         const { error: linkErr } = await supabase.from('members')
           .update({ id: profile.id })
           .eq('id', memberData.id)
-        if (linkErr) console.error('[athlete] link error:', linkErr)
-        else memberData = { ...memberData, id: profile.id }
+        if (linkErr) {
+          // קישור נכשל — הנתונים האלה לא בטוחים לשימוש כי שאילתות עתידיות לפי profile.id לא ימצאו אותם.
+          // עדיף לא להציג מתאמן שגוי מאשר להציג רשומה עם ID לא תואם.
+          console.error('[athlete] link error — refusing to use mismatched member data:', linkErr)
+          toast.error('שגיאה בקישור החשבון — פנה למאמן')
+          memberData = null
+        } else {
+          memberData = { ...memberData, id: profile.id }
+        }
       }
       setMember(memberData || null)
     } catch (e) {
@@ -1140,7 +1159,8 @@ export default function AthleteDashboard({ profile }) {
       return
     }
 
-    if (!isRegistered && registrations.size >= limit && limit !== Infinity) {
+    const isOpenMat = isOpenMatClass(cls)
+    if (!isRegistered && !isOpenMat && effectiveCount >= limit && limit !== Infinity) {
       toast.error('הגעת למגבלת ' + limit + ' שיעורים שבועיים לפי המנוי שלך'); return
     }
     // לכידת week_start פעם אחת — מונע race condition בגבול שבוע (חצות שבת/ראשון)

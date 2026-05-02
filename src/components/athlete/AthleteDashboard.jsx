@@ -1121,7 +1121,10 @@ export default function AthleteDashboard({ profile }) {
     return () => window.removeEventListener('hashchange', syncFromHash)
   }, [])
 
-  const subscriptionType = member?.subscription_type || profile?.subscription_type
+  // מקור אמת יחיד: members.subscription_type. אסור לעשות fallback ל-profiles.subscription_type
+  // כי זה שדה לגאסי שנשמר רק ברישום ולא מתעדכן כשהמנהל משנה מנוי — מה שיצר באג שמנהל
+  // ראה 2× ומתאמן ראה 4× לאותו אדם.
+  const subscriptionType = member?.subscription_type
   const limit = SUBSCRIPTION_LIMITS[subscriptionType] ?? 2
   // הערה: ה-effectiveCount/effectiveCountNext (ספירת רישומים לא כולל מזרן פתוח)
   // מחושבים בתוך ScheduleTab כי שם זמין המשתנה 'classes' לסינון מדויק. אין מקבילה כאן.

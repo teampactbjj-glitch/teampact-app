@@ -360,12 +360,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-800">ניהול מתאמנים</h2>
-        <div className="flex gap-2">
-          <ImportAthletes onImported={fetchAthletes} isAdmin={isAdmin} />
-          <button onClick={openAdd} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
-            + הוסף מתאמן
-          </button>
-        </div>
+        {/* הוספה/ייבוא — מנהל בלבד. מאמן רגיל = קריאה בלבד */}
+        {isAdmin && (
+          <div className="flex gap-2">
+            <ImportAthletes onImported={fetchAthletes} isAdmin={isAdmin} />
+            <button onClick={openAdd} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
+              + הוסף מתאמן
+            </button>
+          </div>
+        )}
       </div>
 
       {stackedLayout && registerLinkCard && <div>{registerLinkCard}</div>}
@@ -700,12 +703,14 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                         </div>
                       </div>
                       <div className="flex gap-3 shrink-0">
-                        <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>
-                        {/* כפתור מחיקה — מוצג רק למנהל (Bug 1.3) */}
+                        {/* עריכה ומחיקה — מוצגות רק למנהל. מאמן רגיל = קריאה בלבד (Bug 1.3 + Bug-followup) */}
                         {isAdmin && (
-                          <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">
-                            מחק
-                          </button>
+                          <>
+                            <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>
+                            <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">
+                              מחק
+                            </button>
+                          </>
                         )}
                       </div>
                     </li>

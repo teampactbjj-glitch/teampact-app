@@ -68,7 +68,8 @@ export default function ClassSchedule({ profile, member }) {
     return () => clearInterval(id)
   }, [])
 
-  const subType = profile?.subscription_type || member?.subscription_type || member?.membership_type
+  // מקור אמת יחיד: members. profiles.subscription_type הוא לגאסי (לא מתעדכן בשינוי מנוי).
+  const subType = member?.subscription_type || member?.membership_type
   const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
 
   useEffect(() => {

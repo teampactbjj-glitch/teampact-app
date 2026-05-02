@@ -46,8 +46,7 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeBranch, setActiveBranch] = useState('all')
-  // weekMode: 'current' (השבוע) או 'next' (שבוע הבא). ברירת מחדל: השבוע הנוכחי.
-  const [weekMode, setWeekMode] = useState('current')
+  // weekMode כעת נגזר מ-selectedDate (אין יותר טאב יד-ידני). אם אין תאריך נבחר — current.
   const nextWeekOpen = isNextWeekRegistrationOpen()
   // חישוב המונה האפקטיבי כאן — איפה ש-classes זמין בסקופ. (בהורה הוא לא היה זמין
   // כי הוא נטען בתוך הקומפוננט הזה.) המונה לא כולל מזרן פתוח/ספארינג שאינם נספרים במכסה.
@@ -60,8 +59,6 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
   // selectedDate=null במצב התחלתי — מציגים רק "השיעורים שנרשמתי אליהם"
   // רק כשהמתאמן לוחץ על תאריך בסלייד — מוצג פירוט השיעורים של אותו יום
   const [selectedDate, setSelectedDate] = useState(null)
-  // איפוס תאריך נבחר כשמחליפים שבוע — כדי שהבחירה לא תזלוג בין שבועות
-  useEffect(() => { setSelectedDate(null) }, [weekMode])
   const todayBtnRef = useRef(null)
   const selectedBtnRef = useRef(null)
   const sliderContainerRef = useRef(null)
@@ -132,8 +129,15 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
   }, [member?.id, member?.branch_ids?.join(','), member?.branch_id, Object.keys(branchesMap || {}).join(',')])
 
   const today = new Date(); today.setHours(0,0,0,0)
-  // referenceDate — נקודת ייחוס לבחירה הנוכחית. ב'שבוע הבא' אנחנו מחשבים תאריך לפי
-  // יום ראשון הבא ולא היום, כדי שהסליידר ושאר התצוגה יציגו את התאריכים הנכונים.
+  // weekMode נגזר אוטומטית מהתאריך הנבחר. אין טאב ידני — המשתמש פשוט לוחץ על תאריך
+  // בסטריפ הרציף (21 ימים), והמערכת זוכרת לאיזה שבוע השיעור משויך לצורך הרישום ומגבלת המנוי.
+  const weekMode = (() => {
+    if (!selectedDate) return 'current'
+    const ws = new Date(today); ws.setDate(today.getDate() - today.getDay())
+    const wsNext = new Date(ws); wsNext.setDate(ws.getDate() + 7)
+    return selectedDate >= wsNext ? 'next' : 'current'
+  })()
+  // referenceDate משמש לחישוב הופעות שיעורים בשבוע הרלוונטי
   const referenceDate = (() => {
     if (weekMode !== 'next') return today
     const d = new Date(today)
@@ -198,16 +202,16 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
     return d
   }
 
-  // סליידר של שבוע אחד — יום א' עד שבת (7 ימים). שבת מוצגת גם אם אין בה שיעורים,
-  // כדי שהמשתמש לא יתבלבל וידע שאין אימונים בשבת.
-  const weekStart = new Date(referenceDate)
-  weekStart.setDate(referenceDate.getDate() - referenceDate.getDay())
+  // סטריפ ימים רציף: 7 ימים אחורה + היום + 13 ימים קדימה = 21 ימים סה"כ.
+  // עבר מוצג ב-opacity 0.5 (קריאה בלבד — אי אפשר להירשם לאחור).
+  // עתיד מוצג רגיל. שבועות עתידיים מעבר לשבוע הבא — לא מוצגים (להגביל ל-2 שבועות).
   const sliderCells = []
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); sliderCells.push(d)
+  for (let i = -7; i <= 13; i++) {
+    const d = new Date(today); d.setDate(today.getDate() + i); sliderCells.push(d)
   }
   const isSelected = (d) => selectedDate && d.toDateString() === selectedDate.toDateString()
   const isTodayDate = (d) => d.toDateString() === today.toDateString()
+  const isPastDateForSlider = (d) => d.getTime() < today.getTime()
 
   const dateLabel = selectedDate ? (() => {
     const diff = Math.round((selectedDate - today) / 86400000)
@@ -245,36 +249,6 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
         </div>
       )}
 
-      {/* טאב 'השבוע / שבוע הבא' — מופיע מיום שישי 06:00 עד מוצאי שבת.
-          המגבלה לפי המנוי נספרת נפרדת לכל שבוע. */}
-      {(nextWeekOpen || weekMode === 'next') && (
-        <div className="flex items-center gap-2 bg-white rounded-2xl border shadow-sm p-1.5">
-          <button
-            type="button"
-            onClick={() => setWeekMode('current')}
-            className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold transition ${
-              weekMode === 'current'
-                ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
-                : 'text-gray-600 hover:bg-gray-50'
-            }`}>
-            השבוע
-          </button>
-          <button
-            type="button"
-            onClick={() => nextWeekOpen && setWeekMode('next')}
-            disabled={!nextWeekOpen}
-            className={`flex-1 py-2 px-3 rounded-xl text-sm font-bold transition ${
-              weekMode === 'next'
-                ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
-                : nextWeekOpen
-                  ? 'text-gray-600 hover:bg-gray-50'
-                  : 'text-gray-300 cursor-not-allowed'
-            }`}>
-            שבוע הבא
-            {!nextWeekOpen && <span className="block text-[10px] font-normal mt-0.5">פתוח מיום שישי 06:00</span>}
-          </button>
-        </div>
-      )}
 
       {/* כותרת + מונה שבועי */}
       <div className="flex items-center justify-between">
@@ -289,12 +263,21 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
         </span>
       </div>
 
-      {/* סליידר תאריכים אופקי */}
-      <div ref={sliderContainerRef} className="bg-white rounded-2xl border shadow-sm p-3 overflow-x-auto" dir="ltr">
-        <div className="flex gap-1.5 justify-center" dir="rtl">
+      {/* סטריפ ימים רציף — pill chips. אדום עמוק להיום, כחול עמוק לבחור, opacity 0.5 לעבר.
+          7 ימים אחורה + 14 ימים קדימה. בלי toggle של "שבוע הבא" — גלילה אופקית. */}
+      <div ref={sliderContainerRef} className="overflow-x-auto -mx-1 px-1" dir="ltr" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex gap-1.5" dir="rtl" style={{ minWidth: 'max-content' }}>
           {sliderCells.map((d, i) => {
             const todayFlag = isTodayDate(d)
             const selected = isSelected(d)
+            const past = isPastDateForSlider(d)
+            // עדיפות: היום (אדום) → נבחר (כחול) → רגיל
+            const bgClass = todayFlag
+              ? 'bg-red-800'
+              : selected
+                ? 'bg-blue-700'
+                : 'bg-gray-800/40 border border-white/5'
+            const subtitle = todayFlag ? 'היום' : d.toLocaleDateString('he-IL', { month: 'short' })
             return (
               <button key={i} onClick={() => setSelectedDate(new Date(d))}
                 ref={el => {
@@ -302,23 +285,16 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
                   if (selected) selectedBtnRef.current = el
                   if (todayFlag) todayBtnRef.current = el
                 }}
-                className={`flex-shrink-0 rounded-xl transition text-center ${
-                  selected
-                    ? 'bg-gradient-to-br from-gray-800 to-gray-900 text-white shadow-md ring-2 ring-gray-400 py-2 px-3 min-w-[56px]'
-                    : todayFlag
-                      ? 'bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg ring-4 ring-red-300 scale-110 py-2.5 px-3.5 min-w-[68px]'
-                      : 'bg-white border border-gray-100 text-gray-600 hover:bg-gray-50 py-2 px-3 min-w-[56px]'
-                }`}>
-                <p className={`text-[10px] font-semibold ${todayFlag || selected ? 'opacity-95' : 'text-gray-400'}`}>
-                  {DAYS_HE_SHORT[d.getDay()]}
+                className={`flex-shrink-0 rounded-2xl transition py-2.5 px-3 min-w-[58px] text-center ${bgClass} ${past && !selected ? 'opacity-50' : ''}`}>
+                <p className={`text-[10px] font-semibold ${todayFlag ? 'text-red-200' : selected ? 'text-blue-200' : 'text-gray-400'}`}>
+                  {DAYS_HE[d.getDay()]}
                 </p>
-                <p className={`font-black leading-none mt-0.5 ${todayFlag && !selected ? 'text-2xl' : 'text-lg'}`}>
+                <p className="font-bold leading-none mt-1 text-lg text-white">
                   {d.getDate()}
                 </p>
-                <p className={`text-[9px] mt-0.5 ${todayFlag || selected ? 'opacity-80' : 'text-gray-400'}`}>
-                  {d.toLocaleDateString('he-IL', { month: 'short' })}
+                <p className={`text-[9px] mt-1 font-medium ${todayFlag ? 'text-red-200' : selected ? 'text-blue-200' : 'text-gray-500'}`}>
+                  {subtitle}
                 </p>
-                {todayFlag && !selected && <p className="text-[9px] font-black mt-1 bg-white/30 rounded px-1">היום</p>}
               </button>
             )
           })}
@@ -1256,6 +1232,11 @@ export default function AthleteDashboard({ profile }) {
   async function handleRegister(cls, weekMode = 'current') {
     // איזה שבוע אנחנו רושמים/מבטלים — לפי הטאב הפעיל ב-ScheduleTab.
     const isNext = weekMode === 'next'
+    // הגנה: רישום לשבוע הבא פתוח רק מיום שישי 06:00 ואילך (היה נאכף על ידי הטאב שהוסר).
+    if (isNext && !isNextWeekRegistrationOpen()) {
+      toast.error('הרישום לשבוע הבא נפתח ביום שישי 06:00')
+      return
+    }
     const targetSet = isNext ? registrationsNext : registrations
     const setTargetSet = isNext ? setRegistrationsNext : setRegistrations
     const isRegistered = targetSet.has(cls.id)

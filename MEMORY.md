@@ -1,17 +1,135 @@
 # MEMORY - TeamPact App
 
-> **🆕 עדכון 02.05.2026 (המשך) — תיקון "סלייד באמצע המסך" גם בממשק מאמן**
+> **🆕 הסשן האחרון: 02.05.2026 (ערב) — תיקון "סלייד באמצע המסך" סגור בכל 3 הממשקים**
 >
-> **מה תוקן עכשיו:** התיקון של scrollbar/סלייד באמצע המסך ב-desktop הוחל גם על `TrainerDashboard.jsx` (שורות 271-316). לפני: `<main className="flex-1 overflow-y-auto p-4 max-w-3xl w-full mx-auto">` — main עצמו צר ולכן הסקרולבר באמצע. עכשיו: `<main className="flex-1 overflow-y-auto">` ברוחב מלא, והתוכן עטוף ב-`<div className="p-4 max-w-3xl w-full mx-auto">`. כך הסקרולבר חוזר לקצה המסך גם בטאב **פרופיל** וגם בטאב **מתאמנים** (ובכל הטאבים האחרים של המאמן/מנהל).
+> **מצב סופי — ✅ אומת ע"י המשתמש שתוקן בשני הממשקים (מאמן + מנהל), והאתלט תוקן בקומיט קודם:**
+> - ✅ ממשק מתאמן (`src/components/athlete/AthleteDashboard.jsx:1415-1426`) — קומיט `0627eee`, נדחף.
+> - ✅ ממשק מאמן (`src/components/trainer/TrainerDashboard.jsx:271-316`, `isAdmin=false`) — קומיט `68e6090`, נדחף.
+> - ✅ ממשק מנהל (אותו `TrainerDashboard.jsx` עם `isAdmin=true`) — אותו קומיט `68e6090`. **אין רכיב נפרד למנהל**, האימות ב-`App.jsx:191`.
 >
-> **עברנו build ב-vite — הצליח** (97 modules, ללא שגיאות).
+> **הדפוס שתוקן (לזכור):** היה `<main className="flex-1 overflow-y-auto p-4 max-w-3xl w-full mx-auto">` — ה-`max-w-*` על ה-`<main>` עצמו גרם ל-scrollbar להופיע באמצע ה-desktop. תוקן ל-`<main className="flex-1 overflow-y-auto">` רוחב מלא + `<div className="p-4 max-w-3xl w-full mx-auto">` פנימי.
 >
-> **טרם נדחף לפרודקשן** — לדחוף יחד עם התיקון של AthleteDashboard.jsx (ראה משימה 2 למטה).
+> **התקלה הטכנית שעיכבה את הסשן הזה:** `.git/index.lock` תקוע מנע push (Vercel קיבל "Everything up-to-date"). נמחק ידנית. **הוסף ל-`CLAUDE.md` חדש בשורש הפרויקט** כלל שמחייב אימות `git log --oneline -3` אחרי כל push.
 >
-> ⚠️ **My last pending task** מוגדר בסעיף "Session 02.05.2026" למטה. **קרא אותו ראשון.**
+> **קובץ חדש בשורש:** `CLAUDE.md` — פרוטוקול חובה לתיקון קוד→פרודקשן, כללים לבקשות רב-ממשקיות, קונטקסט עסקי.
 >
-> 📁 גיבויים זמינים: `backup_20260502_100509/` (לפני סקירה), `backup_20260502_135229_before_new_session/` (לפני שיחה חדשה)
-> 📄 דוח באגים מלא: `BUGS_REPORT.md` בשורש הפרויקט
+> **תזכורת PWA לכל deploy עתידי:** לאחר Vercel deploy → DevTools → Application → Service Workers → Unregister → Cmd+Shift+R. אחרת רואים גרסה ישנה מהקאש.
+>
+> 📁 גיבויים זמינים: `backup_20260502_142525_before_security_fixes/`
+> 📄 migrations של אבטחה (סשן קודם): `supabase/migrations/2026-05-02-*.sql`
+>
+> ⚠️ **My last pending task** למטה (מסשן הקודם, עוד לא נסגר): תיקון אבטחה #6 — `member_classes` פתוח ל-anon.
+
+---
+
+# 📅 Session 02.05.2026 (אחה"צ) — תיקוני אבטחה קריטיים ב-DB
+
+## ✅ מה הושלם בסשן הזה
+
+### 1. Migration שהורצה: `class_registrations_per_week.sql`
+- **למה זה היה דחוף:** הקוד דרש constraint שלא היה ב-DB — הרישום נכשל בפרודקשן.
+- **מה זה עושה:** מסיר UNIQUE(athlete_id, class_id) הישן, מוסיף UNIQUE(athlete_id, class_id, week_start) + 2 indexes.
+- **מאומת:** `SELECT pg_get_constraintdef ...` החזיר `UNIQUE (athlete_id, class_id, week_start)`.
+
+### 2. תיקון אבטחה #1 — חסימת הסלמת מאמן→מנהל
+**קובץ:** `supabase/migrations/2026-05-02-fix-profile-self-escalation.sql`
+- **הבעיה:** `profiles_update` policy עם `USING` בלבד, ללא `WITH CHECK` → מאמן רגיל יכול לעדכן את עצמו ולשנות `is_admin=true` דרך JS console.
+- **התיקון:** trigger `trg_enforce_profile_no_self_escalation` (BEFORE UPDATE על `public.profiles`) שחוסם שינוי של `is_admin`/`is_approved`/`role` אם הקורא לא אדמין מאושר. SECURITY DEFINER עם search_path=''.
+- **מאומת:** trigger קיים ופעיל (`tgenabled='O'`).
+
+### 3. תיקון אבטחה #2 — צמצום חשיפת members ל-anon (Phase A בלבד)
+**קובץ:** `supabase/migrations/2026-05-02-fix-members-anon-exposure.sql`
+- **הבעיה:** `members_select_anon` עם `USING (true)` → כל אנונימי יכול לקרוא את כל המתאמנים.
+- **Phase A (הושלם):**
+  - יצרתי RPC `public.check_member_registration_exists(p_phone, p_full_name)` → מחזיר רק `{exists, status}`, GRANTed ל-anon.
+  - יצרתי policy `members_select_self_authenticated` — משתמש מאומת רואה רק שורה משלו (לפי id או email).
+- **Phase B (לא הושלם — דחוי):** עדכון `src/components/auth/RegisterPage.jsx` להשתמש ב-RPC + drop של `members_select_anon`. **עד שזה לא נעשה — anon עדיין יכול לקרוא את כל הטבלה.**
+
+### 4. תיקון אבטחה #4 — RLS על `profile_change_requests`
+**קובץ:** `supabase/migrations/2026-05-02-fix-profile-change-requests-rls.sql`
+- **הבעיה:** ה-policies הקיימים (`read profile requests`, `update profile requests`) היו עם `USING (true)` → כל מאומת רואה ויכול לעדכן את כל הבקשות.
+- **התיקון:** הוחלפו ב-4 policies:
+  - `pcr_select_owner_or_trainer` — בעל הבקשה רואה את שלו, מאמן מאושר רואה הכל
+  - `pcr_insert_self` — אתלט יכול ליצור רק לעצמו
+  - `pcr_update_admin` — רק אדמין מאושר
+  - `pcr_delete_admin` — רק אדמין מאושר
+- **בונוס:** יצרתי 2 פונקציות עזר שיהיו שימושיות בעתיד: `public.is_approved_admin()`, `public.is_approved_trainer()` (שתיהן SECURITY DEFINER, search_path='').
+
+### 5. תיקון אבטחה #5 — חסימת השתלטות חשבון דרך `members.id`
+**קובץ:** `supabase/migrations/2026-05-02-fix-members-id-takeover.sql`
+- **הבעיה:** ב-`AthleteDashboard.jsx:1190-1213` יש flow של "linking" שמעדכן `members.id = auth.uid()`. תוקף יכול לקרוא לאותו API עם id של קורבן ולהשתלט על חשבונו.
+- **התיקון:** trigger `trg_enforce_member_id_self_link` (BEFORE UPDATE OF id על `public.members`) שמתיר עדכון id רק אם:
+  - הקורא הוא מאמן מאושר, **או**
+  - `NEW.id = auth.uid()` ו-`lower(OLD.email) = lower(auth.jwt() ->> 'email')` (קלייימינג של הרשומה שלך עם אימייל תואם).
+- **תלות חיצונית:** Supabase Auth חייב לאכוף email verification (אחרת אפשר ליצור משתמש auth עם אימייל של קורבן). **לאמת בהגדרות Supabase Auth!**
+
+### 6. תיקון אבטחה #6 — סגירת `member_classes` ל-anon
+**קובץ:** `supabase/migrations/2026-05-02-fix-member-classes-anon.sql`
+- **הבעיה:** `member_classes` עם 3 policies של `USING (true)` → כל אנונימי יכול לקרוא רוסטרים של שיעורים.
+- **התיקון:** הוחלפו ב-`member_classes_trainer_all` (FOR ALL TO authenticated USING (`is_approved_trainer()`)).
+- **מבוסס על audit:** `member_classes` משמש רק את `TodayClasses.jsx` של מאמן. אתלטים משתמשים ב-`class_registrations`. בטוח לסגור.
+
+---
+
+## ⏳ My last pending task
+
+### 🔴 משימה 1 — Phase B של תיקון #2 (חשיפת members)
+**מה צריך לעשות:**
+1. לעדכן `src/components/auth/RegisterPage.jsx` (שורות 41-49) שיקרא ל-RPC במקום ל-`from('members').select(...).eq('phone', ...)`:
+   ```js
+   const { data: existing } = await supabase
+     .rpc('check_member_registration_exists', { p_phone: phone, p_full_name: form.full_name })
+   if (existing?.exists) {
+     if (existing.status === 'pending') { ... }
+     else { ... }
+   }
+   ```
+2. לעשות commit + push.
+3. אחרי שהדפלוי על Vercel הושלם **ולוודא שההרשמה עובדת** (גם בקאנטרי, גם בחולון), להריץ את ה-SQL הבא:
+   ```sql
+   BEGIN;
+   DROP POLICY IF EXISTS "members_select_anon" ON public.members;
+   COMMIT;
+   ```
+
+### 🟡 משימה 2 — תיקון אבטחה #3 (RLS לא בודק is_admin בפעולות מנהל)
+**מה זה:** ב-`migration-coach-approval.sql:38-64` ה-policy `members_all_trainer` נותן ל-**כל** מאמן מאושר FOR ALL על members. צריך לפצל: SELECT לכל מאמן, INSERT/UPDATE/DELETE רק לאדמין.
+
+**למה לא תוקן עכשיו:** סיכון לשבירת flow של מאמן רגיל (למשל, חיוב מתאמן בסטטוס "pending_deletion" — האם מאמן רגיל צריך להיות יכול לבקש?). דורש מיפוי מדויק של מי עושה מה ב-UI לפני פיצול ה-policy.
+
+**הצעה לסשן הבא:** לעבור על `AthleteManagement.jsx` ולמפות כל UPDATE/INSERT/DELETE לפי isAdmin. אז להחליט על פיצול policy שמשמר את הflow הקיים.
+
+### 🟡 משימה 3 — שאר הבאגים מ-MEMORY הקודם
+- חוסר עקביות status של members ('approved' vs 'active') — קובץ קבועים מרכזי
+- ProfileChangeRequests מוצג למאמן רגיל — UI fix
+- race condition ב-approveTrainer
+- חישוב weekStart שגוי בקצוות זמן
+- console.log בפרודקשן (ירש מהסשן הקודם)
+
+### 🔐 הערת אבטחה לדודי (לבדוק ידנית)
+1. **ב-Supabase Auth → Email Templates** וודא ש-"Confirm signup" מופעל. בלי זה, תיקון #5 לא מספיק.
+2. **GitHub Personal Access Token חשוף ב-`.git/config`** (`ghp_GUQ...`). מומלץ להחליף ב-https://github.com/settings/tokens אחרי שהאפליקציה יציבה.
+
+---
+
+## 📋 רשימת אמצעי הגנה חדשים שזמינים בקוד (בעקבות התיקונים)
+
+ב-DB יש עכשיו פונקציות עזר שאפשר להשתמש בהן:
+- `public.is_approved_admin()` — מחזירה boolean
+- `public.is_approved_trainer()` — מחזירה boolean
+- `public.check_member_registration_exists(p_phone, p_full_name)` — מחזירה jsonb {exists, status}
+
+ב-DB יש עכשיו 2 triggers שמגנים אוטומטית:
+- `trg_enforce_profile_no_self_escalation` על profiles — חוסם הסלמה
+- `trg_enforce_member_id_self_link` על members — חוסם השתלטות חשבון
+
+---
+
+# 📅 Session 02.05.2026 (בוקר) — סקירת באגים מקיפה + תיקוני קריסה
+
+> **הערה:** בסשן הבוקר נסקרו 25 קבצי קוד + 14 SQL migrations, נמצאו 60+ בעיות. הדוח המלא ב-`BUGS_REPORT.md`. בנוסף תוקנו: משבר "מסך שחור" (commit 0627eee/a99a2ad כבר ב-origin/main), סלייד באמצע המסך ב-AthleteDashboard ו-TrainerDashboard.
+
+📁 גיבויים מהבוקר: `backup_20260502_100509/` (לפני סקירה), `backup_20260502_135229_before_new_session/` (לפני שיחה חדשה).
 
 ---
 

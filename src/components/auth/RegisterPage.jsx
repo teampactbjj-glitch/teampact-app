@@ -40,15 +40,24 @@ export default function RegisterPage() {
 
     const phone = normalizePhone(form.phone)
 
-    // Check if already registered with this phone
-    const { data: existing } = await supabase
-      .from('members')
-      .select('id, status, full_name')
-      .eq('phone', phone)
-      .eq('full_name', form.full_name)
-      .maybeSingle()
+    // Check if already registered with this phone+name via secure RPC
+    // (replaces direct .from('members').select(...) which required exposing
+    //  the entire members table to anon — see migration
+    //  2026-05-02-fix-members-anon-exposure.sql)
+    const { data: existing, error: lookupErr } = await supabase
+      .rpc('check_member_registration_exists', {
+        p_phone: phone,
+        p_full_name: form.full_name,
+      })
 
-    if (existing) {
+    if (lookupErr) {
+      console.error('check_member_registration_exists error:', lookupErr)
+      setError('שגיאה בבדיקת הרשמה. נסה שוב.')
+      setLoading(false)
+      return
+    }
+
+    if (existing?.exists) {
       if (existing.status === 'pending') {
         setError('בקשת הרשמה כבר קיימת עבור שם ומספר זה — ממתינה לאישור.')
       } else {

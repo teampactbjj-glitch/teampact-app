@@ -922,7 +922,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       </div>
 
       {/* סטריפ ימים רציף — pill chips. אדום עמוק להיום, כחול עמוק לבחור, opacity 0.5 לעבר.
-          7 ימים אחורה + 14 ימים קדימה. בלי toggle של "שבוע הבא" — גלילה אופקית. */}
+          7 ימים אחורה + 14 ימים קדימה. בלי toggle של "שבוע הבא" — גלילה אופקית.
+          עיצוב בהיר: רקע לבן עם גבול אפור עדין לכרטיסים רגילים, אדום מלא להיום, כחול מלא לבחור. */}
       <div ref={sliderContainerRef} className="overflow-x-auto -mx-1 px-1" dir="ltr" style={{ scrollbarWidth: 'none' }}>
         <style>{`.no-scrollbar::-webkit-scrollbar { display: none }`}</style>
         <div className="flex gap-1.5" dir="rtl" style={{ minWidth: 'max-content' }}>
@@ -930,12 +931,17 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
             const today = isToday(d)
             const selected = isSelected(d)
             const past = isPast(d)
-            // עדיפות: היום (אדום) → נבחר (כחול) → רגיל
+            // עדיפות: היום (אדום מלא) → נבחר (כחול מלא) → רגיל (לבן עם גבול)
             const bgClass = today
-              ? 'bg-red-800'
+              ? 'bg-red-700 text-white'
               : selected
-                ? 'bg-blue-700'
-                : 'bg-gray-800/40 border border-white/5'
+                ? 'bg-blue-700 text-white'
+                : 'bg-white border border-gray-200 text-gray-800'
+            const dayColorClass = today
+              ? 'text-red-100'
+              : selected
+                ? 'text-blue-100'
+                : 'text-gray-500'
             const subtitle = today ? 'היום' : d.toLocaleDateString('he-IL', { month: 'short' })
             return (
               <button key={i} onClick={() => setSelectedDate(startOfDay(d))}
@@ -944,14 +950,14 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                   if (today) todayBtnRef.current = el
                   if (selected) selectedBtnRef.current = el
                 }}
-                className={`flex-shrink-0 rounded-2xl transition py-2.5 px-3 min-w-[58px] text-center ${bgClass} ${past && !selected ? 'opacity-50' : ''}`}>
-                <p className={`text-[10px] font-semibold ${today ? 'text-red-200' : selected ? 'text-blue-200' : 'text-gray-400'}`}>
+                className={`flex-shrink-0 rounded-2xl transition py-2.5 px-3 min-w-[64px] text-center shadow-sm ${bgClass} ${past && !selected ? 'opacity-50' : ''}`}>
+                <p className={`text-[10px] font-semibold ${dayColorClass}`}>
                   {DAYS_HE[d.getDay()]}
                 </p>
-                <p className="font-bold leading-none mt-1 text-lg text-white">
+                <p className="font-bold leading-none mt-1 text-lg">
                   {d.getDate()}
                 </p>
-                <p className={`text-[9px] mt-1 font-medium ${today ? 'text-red-200' : selected ? 'text-blue-200' : 'text-gray-500'}`}>
+                <p className={`text-[9px] mt-1 font-medium ${dayColorClass}`}>
                   {subtitle}
                 </p>
               </button>

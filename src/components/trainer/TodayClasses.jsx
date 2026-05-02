@@ -810,7 +810,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   weekStart0.setDate(today0.getDate() - today0.getDay())
   if (weekMode === 'next') weekStart0.setDate(weekStart0.getDate() + 7)
   const sliderCells = []
-  for (let i = 0; i < 6; i++) {
+  // 7 ימים — כולל שבת. שבת מוצגת גם אם אין בה שיעורים, כדי שהמשתמש לא יתבלבל.
+  for (let i = 0; i < 7; i++) {
     const d = new Date(weekStart0)
     d.setDate(weekStart0.getDate() + i)
     sliderCells.push(d)

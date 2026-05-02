@@ -198,11 +198,12 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
     return d
   }
 
-  // סליידר של שבוע אחד — יום א' עד יום ו' (אין אימונים בשבת) של השבוע המוצג
+  // סליידר של שבוע אחד — יום א' עד שבת (7 ימים). שבת מוצגת גם אם אין בה שיעורים,
+  // כדי שהמשתמש לא יתבלבל וידע שאין אימונים בשבת.
   const weekStart = new Date(referenceDate)
   weekStart.setDate(referenceDate.getDate() - referenceDate.getDay())
   const sliderCells = []
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 7; i++) {
     const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); sliderCells.push(d)
   }
   const isSelected = (d) => selectedDate && d.toDateString() === selectedDate.toDateString()

@@ -15,6 +15,8 @@ import { useConfirm } from '../a11y'
  */
 export default function CoachesManager({ profile, onChange }) {
   const confirm = useConfirm()
+  // Bug 1.3: defense-in-depth — TrainerDashboard כבר חוסם, אבל לא סומכים על UI בלבד.
+  const isAdmin = !!profile?.is_admin
   const [pendingTrainers, setPendingTrainers] = useState([])
   const [coaches, setCoaches] = useState([])
   const [branches, setBranches] = useState([])
@@ -285,6 +287,13 @@ export default function CoachesManager({ profile, onChange }) {
     fetchAll()
   }
 
+  if (!isAdmin) {
+    return (
+      <div className="bg-white rounded-2xl border p-6 text-center text-gray-500" dir="rtl">
+        ניהול מאמנים זמין למנהל בלבד.
+      </div>
+    )
+  }
   if (loading) return <div className="text-center text-gray-400 py-8">טוען...</div>
 
   return (

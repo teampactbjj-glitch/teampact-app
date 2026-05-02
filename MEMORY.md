@@ -1,24 +1,39 @@
 # MEMORY - TeamPact App
 
-> **🆕 הסשן האחרון: 02.05.2026 (ערב) — תיקון "סלייד באמצע המסך" סגור בכל 3 הממשקים**
+> **🆕 הסשן האחרון: 02.05.2026 (לילה) — באג 1.3: הפרדת הרשאות מאמן/מנהל**
 >
-> **מצב סופי — ✅ אומת ע"י המשתמש שתוקן בשני הממשקים (מאמן + מנהל), והאתלט תוקן בקומיט קודם:**
-> - ✅ ממשק מתאמן (`src/components/athlete/AthleteDashboard.jsx:1415-1426`) — קומיט `0627eee`, נדחף.
-> - ✅ ממשק מאמן (`src/components/trainer/TrainerDashboard.jsx:271-316`, `isAdmin=false`) — קומיט `68e6090`, נדחף.
-> - ✅ ממשק מנהל (אותו `TrainerDashboard.jsx` עם `isAdmin=true`) — אותו קומיט `68e6090`. **אין רכיב נפרד למנהל**, האימות ב-`App.jsx:191`.
+> **מה הושלם בסשן הזה:**
+> - ✅ **Migration חדש** `supabase/migrations/2026-05-02-fix-admin-trainer-split.sql` — מחליף את `members_all_trainer` ב-4 policies מפורדות: SELECT/INSERT/UPDATE לכל מאמן מאושר, **DELETE רק לאדמין**. דומה ל-`coaches` ול-`profiles` (DELETE admin-only). כולל rollback בסוף הקובץ.
+> - ✅ **`AthleteManagement.jsx`** — כפתור "מחק" יחיד, סרגל בחירה רב-מתאמנים, וכפתור "מחיקה רב-מתאמנים" — כולם עטופים ב-`{isAdmin && ...}` (לא רק disabled, נסתרים לחלוטין). גם תיבות הבחירה לכל מתאמן הוסתרו למאמן רגיל. `rejectPending` מבצע soft-delete (UPDATE deleted_at) למאמן רגיל ו-DELETE קשיח רק לאדמין.
+> - ✅ **`LeadsManager.jsx`** — `rejectLead` כעת soft-delete למאמן רגיל ו-DELETE לאדמין (אותה תבנית).
+> - ✅ **`CoachesManager.jsx`** — נוסף בדיקת `isAdmin = !!profile?.is_admin` עם guard בתחתית ה-hooks (defense-in-depth, מעבר לחסימה שכבר קיימת ב-TrainerDashboard לטאב 'coaches').
 >
-> **הדפוס שתוקן (לזכור):** היה `<main className="flex-1 overflow-y-auto p-4 max-w-3xl w-full mx-auto">` — ה-`max-w-*` על ה-`<main>` עצמו גרם ל-scrollbar להופיע באמצע ה-desktop. תוקן ל-`<main className="flex-1 overflow-y-auto">` רוחב מלא + `<div className="p-4 max-w-3xl w-full mx-auto">` פנימי.
+> **TrainerDashboard.jsx ו-BottomNav.jsx** — לא נדרש שינוי. כבר חוסמים את הטאב 'coaches' ו-'reports' ל-`isAdmin` בלבד.
 >
-> **התקלה הטכנית שעיכבה את הסשן הזה:** `.git/index.lock` תקוע מנע push (Vercel קיבל "Everything up-to-date"). נמחק ידנית. **הוסף ל-`CLAUDE.md` חדש בשורש הפרויקט** כלל שמחייב אימות `git log --oneline -3` אחרי כל push.
+> **בדיקות:** `npx vite build --outDir dist-bug13 --emptyOutDir` עבר בהצלחה (98 modules, 994KB JS). הקובץ `dist` המקורי לא נמחק כי השרת מקומי (issue הרשאות EPERM) — לא משפיע על Vercel.
 >
-> **קובץ חדש בשורש:** `CLAUDE.md` — פרוטוקול חובה לתיקון קוד→פרודקשן, כללים לבקשות רב-ממשקיות, קונטקסט עסקי.
+> **דחוף לבדוק במאמן רגיל אחרי deploy:** טאב מתאמנים — לוודא שאין כפתורי מחיקה, אין תיבות בחירה, יש רק "עריכה". מנהל — שכל הכפתורים עדיין שם.
 >
-> **תזכורת PWA לכל deploy עתידי:** לאחר Vercel deploy → DevTools → Application → Service Workers → Unregister → Cmd+Shift+R. אחרת רואים גרסה ישנה מהקאש.
+> **🟢 עכשיו 9 תיקוני אבטחה הושלמו (1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.9 + Email Confirmation + ErrorBoundary). 2 קריטיים נשארו פתוחים: 1.7 (Rules of Hooks ב-App.jsx) ו-1.8 (סגור — לא משומש).**
+
+---
+
+> **הסשן הקודם: 02.05.2026 (ערב) — סגירת אבטחה: anon SELECT על members + ErrorBoundary + Email Confirmation**
 >
-> 📁 גיבויים זמינים: `backup_20260502_142525_before_security_fixes/`
-> 📄 migrations של אבטחה (סשן קודם): `supabase/migrations/2026-05-02-*.sql`
+> **המשך ישיר של סשן אחה"צ — נסגרו 3 פערים נוספים:**
+> - ✅ **תיקון 1.9 (ErrorBoundary)** — `src/main.jsx` עוטף `<App />` ב-`<ErrorBoundary>`. במקום מסך לבן בקריסה — חלון "אירעה שגיאה" עם כפתור "טען מחדש". commit `babb1f5`.
+> - ✅ **תיקון 1.2 Phase B (members anon SELECT)** — `src/components/auth/RegisterPage.jsx` עבר מ-`from('members').select(...)` ל-`rpc('check_member_registration_exists', ...)`. commit `263dfbd`. אחר כך נדרסו ב-Supabase שני policies: `members_select_anon` ו-**`members_phone_lookup`** (זה האחרון לא היה ב-BUGS_REPORT — גיליתי אותו תוך כדי, אותה דליפה בדיוק). עכשיו אנונימי יכול רק INSERT למתאמנים, לא SELECT.
+> - ✅ **Email Confirmation דלוק** ב-Supabase Auth + template HTML עברי ממותג (logo TeamPact, RTL, כפתור CTA אדום). אתלטים חדשים יקבלו מייל אימות ברישום.
 >
-> ⚠️ **My last pending task** למטה (מסשן הקודם, עוד לא נסגר): תיקון אבטחה #6 — `member_classes` פתוח ל-anon.
+> **בדיקות שעברו ב-production אחרי כל deploy:**
+> - דשבורד מאמן עולה תקין, 55 מתאמנים מוצגים בטאב מתאמנים, אפס שגיאות בקונסול.
+> - דף `/register` נפתח ומציג שדות תקינים.
+> - SQL verify מאשר: 0 anon SELECT policies על members, 2 anon INSERT (לרישום עצמי) — תקין.
+>
+> 📁 גיבויים מהסשן: `backup_20260502_142525_before_security_fixes/` (לפני אבטחה DB), `backup_20260502_151504_before_code_fixes/` (לפני שינויי קוד).
+> 📄 migrations של אבטחה: `supabase/migrations/2026-05-02-*.sql` (5 קבצים, כל אחד עם rollback).
+>
+> **סיכום עד עכשיו:** **8 תיקונים אבטחה הושלמו** (1.1, 1.2, 1.4, 1.5, 1.6, 1.9 + Email Confirmation + ErrorBoundary). **3 קריטיים נשארו פתוחים** (1.3, 1.7, 1.8) — ראה "My last pending task" למטה.
 
 ---
 
@@ -73,31 +88,74 @@
 
 ## ⏳ My last pending task
 
-### 🔴 משימה 1 — Phase B של תיקון #2 (חשיפת members)
-**מה צריך לעשות:**
-1. לעדכן `src/components/auth/RegisterPage.jsx` (שורות 41-49) שיקרא ל-RPC במקום ל-`from('members').select(...).eq('phone', ...)`:
-   ```js
-   const { data: existing } = await supabase
-     .rpc('check_member_registration_exists', { p_phone: phone, p_full_name: form.full_name })
-   if (existing?.exists) {
-     if (existing.status === 'pending') { ... }
-     else { ... }
-   }
-   ```
-2. לעשות commit + push.
-3. אחרי שהדפלוי על Vercel הושלם **ולוודא שההרשמה עובדת** (גם בקאנטרי, גם בחולון), להריץ את ה-SQL הבא:
-   ```sql
-   BEGIN;
-   DROP POLICY IF EXISTS "members_select_anon" ON public.members;
-   COMMIT;
-   ```
+### ✅ משימה 1 — הושלמה! (Phase B של תיקון #2)
+ב-02.05.2026 ערב: הקוד עודכן ב-`auth/RegisterPage.jsx` (commit `263dfbd`), 2 policies נסגרו ב-DB (`members_select_anon` + `members_phone_lookup`). אנונימי כבר לא יכול לקרוא את הטבלה.
 
-### 🟡 משימה 2 — תיקון אבטחה #3 (RLS לא בודק is_admin בפעולות מנהל)
-**מה זה:** ב-`migration-coach-approval.sql:38-64` ה-policy `members_all_trainer` נותן ל-**כל** מאמן מאושר FOR ALL על members. צריך לפצל: SELECT לכל מאמן, INSERT/UPDATE/DELETE רק לאדמין.
+### ✅ משימה 4 (לשעבר 1.8) — סגורה בלי תיקון
+לאחר בדיקה: ה-`ClassSchedule.jsx` **לא משומש** באפליקציה (אין import). ה-flow האמיתי דרך `AthleteDashboard.jsx:1316-1317` כבר כולל `.eq('week_start', weekStart)` ב-DELETE. **אין באג בפועל.** הקובץ הישן `ClassSchedule.jsx` יכול להימחק בעתיד (אחרי אישור — לפי כללי CLAUDE.md).
 
-**למה לא תוקן עכשיו:** סיכון לשבירת flow של מאמן רגיל (למשל, חיוב מתאמן בסטטוס "pending_deletion" — האם מאמן רגיל צריך להיות יכול לבקש?). דורש מיפוי מדויק של מי עושה מה ב-UI לפני פיצול ה-policy.
+### ✅ משימה 2 — תיקון אבטחה #1.3 — **הושלם 02.05.2026 לילה**
 
-**הצעה לסשן הבא:** לעבור על `AthleteManagement.jsx` ולמפות כל UPDATE/INSERT/DELETE לפי isAdmin. אז להחליט על פיצול policy שמשמר את הflow הקיים.
+**Migration:** `supabase/migrations/2026-05-02-fix-admin-trainer-split.sql` (יש להריץ ידנית ב-Supabase SQL Editor).
+**קוד:** AthleteManagement.jsx (כפתורי מחיקה ובחירה רב-מתאמנים נסתרים למאמן רגיל), LeadsManager.jsx (rejectLead → soft-delete למאמן), CoachesManager.jsx (defense-in-depth עם isAdmin).
+**בדיקה ידנית דחופה:** להיכנס כמאמן רגיל ולבדוק שכפתורי המחיקה אינם קיימים בכלל. להיכנס כמנהל ולבדוק שהכל עובד.
+
+---
+
+### 🔴 משימה 2 (ארכיון) — הספציפיקציה המקורית של דודי (02.05.2026 ערב)
+
+**ההחלטה העסקית של דודי:**
+- **מאמן רגיל**:
+  - ✅ רואה מתאמנים בסניף שלו (SELECT)
+  - ✅ עורך פרטי מתאמן (UPDATE) — אם דרוש לסניף שלו
+  - ✅ מסיר מתאמן משיעור ספציפי (DELETE על `class_registrations` — "לא הגיע")
+  - ❌ **לא** מוחק מתאמן (DELETE על `members`)
+  - ❌ **לא** מוחק מאמן (DELETE על `coaches` או `profiles`)
+  - 🚫 **כפתורי מחיקה לא מוצגים בכלל ב-UI** (לא רק disabled — נסתרים)
+- **מנהל בלבד**: כל הפעולות מותרות.
+
+**רשימת קבצים לתיקון בסשן הבא:**
+
+*שינויי DB (migration חדש `2026-05-XX-fix-admin-trainer-split.sql`):*
+1. DROP POLICY `members_all_trainer` ON members
+2. CREATE POLICY `members_select_trainer` FOR SELECT TO authenticated USING `is_approved_trainer()` (כל מאמן מאושר רואה)
+3. CREATE POLICY `members_modify_admin` FOR INSERT/UPDATE/DELETE TO authenticated USING `is_approved_admin()` (רק אדמין משנה)
+4. **או** משאיר UPDATE לכל מאמן עם הגבלה לפי branch_id (לבחון)
+5. דומה ל-`coaches` (רק אדמין מוחק)
+
+*שינויי UI:*
+- `src/components/trainer/AthleteManagement.jsx` — לעטוף את כפתורי המחיקה ב-`{isAdmin && ...}` (כפתורי "מחק", "מחיקה בכמות גדולה", "מחק לצמיתות")
+- `src/components/trainer/CoachesManager.jsx` — לעטוף מחיקת מאמנים ב-`{isAdmin && ...}`
+- `src/components/trainer/TrainerDashboard.jsx` — בדיקה אם יש כפתורי מחיקה גלויים למאמן רגיל
+
+**זמן עבודה צפוי:** 60-90 דקות.
+
+**גישה:** קודם migration חדש (לא נוגעים ב-migration-coach-approval.sql הישן). אחר כך UI updates בקובץ אחד בכל פעם, build אחרי כל קובץ, push אחרי הכל יחד.
+
+### 🟡 משימה 3 — תיקון 1.7 (Rules of Hooks ב-App.jsx)
+
+**הבעיה במילים פשוטות:**
+ב-App.jsx יש early returns (`if (...) return <X />`) **לפני** קריאות `useEffect`. React דורש שמספר ה-hooks יהיה זהה בכל render. בכל ניווט ל-`/register` או `/login`, נקראים פחות hooks. עובד היום (React 18 עם warning), יקרוס ב-React 19 + Compiler.
+
+**איפה הקוד הבעייתי:**
+- `src/App.jsx:22-24` — שלוש שורות `if (...) return`
+- ה-`useEffect`-ים מתחילים בשורה 26+
+
+**הפתרון:**
+1. להעביר את כל ה-`useEffect`-ים מעל שורה 22
+2. להחזיק את ה-routing logic למטה ב-conditional return
+
+**זמן עבודה צפוי:** 45-60 דקות (כולל build + בדיקה ב-3 ממשקים).
+
+**גישה:** רק שינוי מבני, לא שינוי לוגי. קודם להבין את כל ה-hooks, אז להעביר אותם בלוק אחד.
+
+---
+
+## 🎯 סדר מומלץ לסשנים הבאים
+
+1. **סשן הבא (~1.5 שעות) — באג 1.3** (לפי הספציפיקציה של דודי למעלה)
+2. **סשן אחרי (~1 שעה) — באג 1.7**
+3. **סשנים נוספים** — באגים בחומרה גבוהה מ-BUGS_REPORT.md
 
 ### 🟡 משימה 3 — שאר הבאגים מ-MEMORY הקודם
 - חוסר עקביות status של members ('approved' vs 'active') — קובץ קבועים מרכזי

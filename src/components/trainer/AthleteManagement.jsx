@@ -287,7 +287,13 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   }
 
   async function rejectPending(id) {
-    await supabase.from('members').delete().eq('id', id)
+    // Bug 1.3: מאמן רגיל לא יכול לבצע DELETE על members.
+    // אדמין → מחיקה לצמיתות. מאמן → soft-delete (UPDATE deleted_at).
+    if (isAdmin) {
+      await supabase.from('members').delete().eq('id', id)
+    } else {
+      await supabase.from('members').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    }
     fetchAthletes()
     onPendingChange?.()
   }
@@ -613,8 +619,8 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
               )}
             </div>
 
-            {/* סרגל בחירה מרובה */}
-            {!loading && finalList.length > 0 && (() => {
+            {/* סרגל בחירה מרובה — רק למנהל, כי הפעולה היחידה היא מחיקה (Bug 1.3) */}
+            {isAdmin && !loading && finalList.length > 0 && (() => {
               const visibleIds = finalList.map(a => a.id)
               const allSelected = visibleIds.every(id => selectedIds.has(id))
               const selCount = selectedIds.size
@@ -629,7 +635,8 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                     />
                     <span>{allSelected ? 'נקה בחירה' : 'בחר הכל ברשימה'}</span>
                   </label>
-                  {selCount > 0 && (
+                  {/* בקרת מחיקה רב-מתאמנים — מוצגת רק למנהל (Bug 1.3) */}
+                  {isAdmin && selCount > 0 && (
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500">{selCount} נבחרו</span>
                       <button
@@ -645,9 +652,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                         disabled={bulkDeleting}
                         className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 disabled:opacity-60"
                       >
-                        {bulkDeleting
-                          ? (isAdmin ? 'מוחק...' : 'שולח...')
-                          : (isAdmin ? `🗑 מחק ${selCount}` : `📩 בקש מחיקת ${selCount}`)}
+                        {bulkDeleting ? 'מוחק...' : `🗑 מחק ${selCount}`}
                       </button>
                     </div>
                   )}
@@ -672,13 +677,16 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                   return (
                     <li key={a.id} className={`px-4 py-3 flex items-center justify-between gap-3 ${checked ? 'bg-blue-50' : ''}`}>
                       <div className="flex items-center gap-3 min-w-0">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleSelect(a.id)}
-                          className="w-4 h-4 accent-blue-600 shrink-0"
-                          aria-label={`בחר את ${a.full_name}`}
-                        />
+                        {/* תיבת בחירה — רק למנהל (Bug 1.3) */}
+                        {isAdmin && (
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSelect(a.id)}
+                            className="w-4 h-4 accent-blue-600 shrink-0"
+                            aria-label={`בחר את ${a.full_name}`}
+                          />
+                        )}
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
@@ -693,9 +701,12 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                       </div>
                       <div className="flex gap-3 shrink-0">
                         <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>
-                        <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">
-                          {isAdmin ? 'מחק' : 'בקש מחיקה'}
-                        </button>
+                        {/* כפתור מחיקה — מוצג רק למנהל (Bug 1.3) */}
+                        {isAdmin && (
+                          <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">
+                            מחק
+                          </button>
+                        )}
                       </div>
                     </li>
                   )

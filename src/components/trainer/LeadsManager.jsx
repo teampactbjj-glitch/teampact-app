@@ -84,7 +84,10 @@ export default function LeadsManager({ trainerId = null, isAdmin = false } = {})
     const ok = await confirm({ title: 'מחיקת בקשה', message: 'למחוק את הבקשה?', confirmText: 'מחק', danger: true })
     if (!ok) return
     setActionLoading(p => ({ ...p, [id]: 'rejecting' }))
-    const { error } = await supabase.from('members').delete().eq('id', id)
+    // Bug 1.3: מאמן רגיל לא יכול לבצע DELETE על members. soft-delete במקום.
+    const { error } = isAdmin
+      ? await supabase.from('members').delete().eq('id', id)
+      : await supabase.from('members').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     if (error) {
       toast.error('שגיאה במחיקה: ' + (error.message || 'נסה שוב'))
       setActionLoading(p => ({ ...p, [id]: null }))

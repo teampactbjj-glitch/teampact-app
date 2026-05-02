@@ -57,6 +57,30 @@ const DISCIPLINE_COLORS = {
 // יום אחורה במילישניות
 const DAY_MS = 24 * 60 * 60 * 1000
 
+// מחשב את שעת **סיום** השיעור בפועל בתאריך מסוים — לפי start_time + duration_minutes
+// של הקלאס. זוהי הקריטריון להחלטה אם "האימון הסתיים" → רק אז ה-checkin נספר בדוחות.
+//
+// checkinDateStr: 'YYYY-MM-DD' (תאריך מקומי בישראל, מהעמודה checkin_date)
+// startTime: 'HH:MM:SS' או 'HH:MM' (זמן מקומי, מ-classes.start_time)
+// durationMin: מספר דקות, ברירת מחדל 60
+//
+// מחזיר: timestamp במילישניות של סיום השיעור בזמן מקומי.
+// אם חסר start_time או checkin_date — מחזיר null וה-קוד שקורא יחליט מה לעשות.
+function classEndMs(checkinDateStr, startTime, durationMin) {
+  if (!checkinDateStr || !startTime) return null
+  const parts = String(startTime).split(':').map(Number)
+  const hh = parts[0]
+  const mm = parts[1] || 0
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
+  const [y, mo, d] = String(checkinDateStr).split('-').map(Number)
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null
+  // new Date(y, m-1, d, hh, mm) יוצר Date בזמן מקומי של הדפדפן.
+  // אצל דודי/הצוות בישראל זה בדיוק מה שצריך.
+  const start = new Date(y, mo - 1, d, hh, mm, 0, 0).getTime()
+  const dur = Number.isFinite(durationMin) && durationMin > 0 ? durationMin : 60
+  return start + dur * 60 * 1000
+}
+
 // כמות ימים מ"היום" (ללא שעה)
 function daysAgoISO(days) {
   const d = new Date()
@@ -212,12 +236,12 @@ export default function ReportsManager({ isAdmin }) {
           .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at')
           .range(0, ROW_LIMIT - 1),
         supabase.from('coaches').select('id, name, branch_id').range(0, ROW_LIMIT - 1),
-        supabase.from('classes').select('id, name, class_type, coach_id, coach_name, branch_id, day_of_week, start_time').range(0, ROW_LIMIT - 1),
+        supabase.from('classes').select('id, name, class_type, coach_id, coach_name, branch_id, day_of_week, start_time, duration_minutes').range(0, ROW_LIMIT - 1),
         supabase.from('branches').select('id, name').range(0, ROW_LIMIT - 1),
         // checkins: מסנן בצד השרת לפי טווח של 180 יום + מסיר את מגבלת 1000 השורות
         supabase
           .from('checkins')
-          .select('class_id, athlete_id, status, checked_in_at')
+          .select('class_id, athlete_id, status, checked_in_at, checkin_date')
           .eq('status', 'present')
           .gte('checked_in_at', sinceMaxISO)
           .range(0, ROW_LIMIT - 1),
@@ -323,18 +347,29 @@ export default function ReportsManager({ isAdmin }) {
   }, [filteredMembers])
 
   // Checkins מסוננים לפי טווח הזמן של דוחות הנוכחות.
-  // הגנה כפולה: רק checkins שכבר התרחשו (checked_in_at <= עכשיו) ובטווח הנבחר.
-  // כך אימונים עתידיים/טיימסטמפ פגום לא נספרים כהגעה.
+  // ⚠️ הקריטריון לספירה: **השיעור הסתיים בפועל** (start_time + duration עבר לפני "עכשיו").
+  // זה לא משנה מתי המאמן/מתאמן לחץ — אם אימון בעוד 3 ימים, הוא לא נספר עכשיו גם אם יש לו checkin.
+  // ספירה רק אחרי שהשיעור באמת קרה ונגמר.
+  // אם חסר start_time/checkin_date (נתונים ישנים) — fallback ל-checked_in_at.
   const filteredCheckins = useMemo(() => {
     const now = Date.now()
     const since = now - periodDays * DAY_MS
     return checkins.filter(c => {
       if (!c.checked_in_at) return false
+      const cls = classById.get(c.class_id)
+      // נסה לחשב את שעת סיום השיעור — אם אפשר, זה הקריטריון
+      const endMs = cls ? classEndMs(c.checkin_date, cls.start_time, cls.duration_minutes) : null
+      if (endMs !== null) {
+        // יש לנו שעת סיום אמיתית של השיעור. רק אם הוא הסתיים.
+        return endMs <= now && endMs >= since
+      }
+      // Fallback לנתונים ישנים בלי start_time או checkin_date:
+      // לפחות נוודא ש-checked_in_at בעבר ובטווח. עדיף מאשר לפסול הכל.
       const t = new Date(c.checked_in_at).getTime()
       if (!Number.isFinite(t)) return false
       return t >= since && t <= now
     })
-  }, [checkins, periodDays])
+  }, [checkins, periodDays, classById])
 
   // סט מתאמנים פעילים (לצורך סינון נוכחויות)
   const activeMemberIds = useMemo(() => new Set(activeMembers.map(m => m.id)), [activeMembers])
@@ -402,8 +437,8 @@ export default function ReportsManager({ isAdmin }) {
   }, [filteredCheckins, classById, coachById, disciplineByClassId, activeMemberIds])
 
   // 0c) מתאמנים שלא נכחו באימון ב-14 הימים האחרונים.
-  // מבוסס על MAX(checked_in_at) של checkins (status='present') עבור כל מתאמן פעיל.
-  // רישום עתידי לא נספר — נדרשת נוכחות בפועל באימון שכבר הסתיים.
+  // מבוסס על MAX של **שעת סיום השיעור** (לא checked_in_at) — כי רק שיעור שהסתיים
+  // נחשב הגעה. אם מתאמן רשום לאימון שעוד לא קרה, זה לא נחשב.
   // הסף נקבע ל-14 יום כדי להימנע מ-false positives של חופש קצר/מילואים/מחלה.
   const INACTIVE_THRESHOLD_DAYS = 14
   const inactiveMembers = useMemo(() => {
@@ -411,12 +446,22 @@ export default function ReportsManager({ isAdmin }) {
     const lastByMember = new Map()
     // משתמשים ב-checkins המלאים (לא ה-filtered) — צריכים את כל ה-180 יום
     // כדי לדעת מתי באמת היה הצ'ק-אין האחרון, גם אם הוא ישן.
-    // התעלמות מטיימסטמפ עתידי (אם איכשהו נשמר) — לא יכול להיות "הגעה" שטרם קרתה.
+    // קריטריון: רק שיעורים שהסתיימו בפועל. fallback ל-checked_in_at אם חסר נתון.
     checkins.forEach(c => {
-      if (!c.athlete_id || !c.checked_in_at) return
-      const t = new Date(c.checked_in_at).getTime()
-      if (!Number.isFinite(t)) return
-      if (t > now) return
+      if (!c.athlete_id) return
+      const cls = classById.get(c.class_id)
+      const endMs = cls ? classEndMs(c.checkin_date, cls.start_time, cls.duration_minutes) : null
+      let t = null
+      if (endMs !== null) {
+        if (endMs > now) return // שיעור עתידי — לא נספר כהגעה
+        t = endMs
+      } else if (c.checked_in_at) {
+        const ts = new Date(c.checked_in_at).getTime()
+        if (!Number.isFinite(ts) || ts > now) return
+        t = ts
+      } else {
+        return
+      }
       const prev = lastByMember.get(c.athlete_id) || 0
       if (t > prev) lastByMember.set(c.athlete_id, t)
     })
@@ -441,7 +486,7 @@ export default function ReportsManager({ isAdmin }) {
         const bDays = b.daysSince ?? 999999
         return bDays - aDays
       })
-  }, [activeMembers, checkins])
+  }, [activeMembers, checkins, classById])
 
   // ===== שליחת Push למתאמן בודד =====
   // משתמש ב-Edge Function 'send-push' (תשתית קיימת ב-src/lib/notifyPush.js).
@@ -665,12 +710,21 @@ export default function ReportsManager({ isAdmin }) {
     const cutoff = Date.now() - periodDays * DAY_MS
 
     // מבנים עזר: מתאמן → סט מאמנים וקבוצות שבהם התאמן בפועל (לפי כל היסטוריית ה-checkins)
+    // רק שיעורים שהסתיימו בפועל נספרים — רישום לאימון עתידי לא יוצר שיוך.
+    const nowMs = Date.now()
     const coachesByMember = new Map()
     const groupsByMember = new Map()
     checkins.forEach(c => {
       if (!c.athlete_id || !c.class_id) return
       const cls = classById.get(c.class_id)
       if (!cls) return
+      const endMs = classEndMs(c.checkin_date, cls.start_time, cls.duration_minutes)
+      if (endMs !== null) {
+        if (endMs > nowMs) return // שיעור עתידי — לא יוצר שיוך
+      } else if (c.checked_in_at) {
+        const ts = new Date(c.checked_in_at).getTime()
+        if (Number.isFinite(ts) && ts > nowMs) return
+      }
       // מאמן לפי הקלאס — לפי coach_id, ואם אין fallback ל-coach_name
       let coachName = null
       if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name

@@ -775,7 +775,17 @@ function ProfileTab({ profile, member }) {
 
   useEffect(() => {
     supabase.from('branches').select('id, name').eq('hidden', false).order('name').then(({ data }) => {
-      setAllBranches(data || [])
+      const list = data || []
+      setAllBranches(list)
+      // ניקוי IDs של סניפים מוסתרים/מחוקים שכבר אין בהם גישה ב-UI
+      const visibleIds = new Set(list.map(b => b.id))
+      setRequestedBranchIds(prev => prev.filter(id => visibleIds.has(id)))
+      // ניקוי ערכי ספירה ישנים של סניפים שלא קיימים
+      setBranchSessions(s => {
+        const cleaned = {}
+        for (const k of Object.keys(s)) if (visibleIds.has(k)) cleaned[k] = s[k]
+        return cleaned
+      })
     })
   }, [])
 
@@ -796,7 +806,8 @@ function ProfileTab({ profile, member }) {
   }
 
   const totalSessionsAllowed = requestedSub === '2x_week' ? 2 : requestedSub === '4x_week' ? 4 : null
-  const totalSelectedSessions = Object.values(branchSessions).reduce((a, b) => a + b, 0)
+  // סופרים רק את הסניפים שהמשתמש באמת בחר (מתעלמים מערכים תקועים)
+  const totalSelectedSessions = requestedBranchIds.reduce((a, id) => a + (branchSessions[id] || 0), 0)
 
   const athleteName = member?.full_name || profile?.full_name || profile?.email || '—'
 
@@ -844,23 +855,31 @@ function ProfileTab({ profile, member }) {
 
   async function submitSubChange() {
     const currentBranches = Array.isArray(member?.branch_ids) ? member.branch_ids : (member?.branch_id ? [member.branch_id] : [])
+    // נשלח/נבדוק רק סניפים גלויים שהמשתמש יכול לבחור ב-UI
+    const visibleIds = new Set((allBranches || []).map(b => b.id))
+    const submitBranchIds = requestedBranchIds.filter(id => visibleIds.has(id))
     const branchesChanged =
-      requestedBranchIds.length !== currentBranches.length ||
-      requestedBranchIds.some(id => !currentBranches.includes(id))
+      submitBranchIds.length !== currentBranches.length ||
+      submitBranchIds.some(id => !currentBranches.includes(id))
     if (requestedSub === currentSub && !branchesChanged) { toast.error('בחר מנוי אחר או סניפים אחרים'); return }
-    if (requestedBranchIds.length === 0) { toast.error('יש לבחור לפחות סניף אחד'); return }
+    if (submitBranchIds.length === 0) { toast.error('יש לבחור לפחות סניף אחד'); return }
     // ולידציה — סכום האימונים חייב להתאים למנוי (רק ל-2x/4x)
+    let submitBranchSessions = null
     if (totalSessionsAllowed !== null) {
-      if (totalSelectedSessions !== totalSessionsAllowed) {
-        toast.error(`סכום האימונים בסניפים חייב להיות בדיוק ${totalSessionsAllowed} (כרגע ${totalSelectedSessions})`)
+      // נבדוק רק על הסניפים הגלויים שמופיעים ב-UI
+      const sumVisible = submitBranchIds.reduce((a, id) => a + (branchSessions[id] || 0), 0)
+      if (sumVisible !== totalSessionsAllowed) {
+        toast.error(`סכום האימונים בסניפים חייב להיות בדיוק ${totalSessionsAllowed} (כרגע ${sumVisible})`)
         return
       }
-      for (const id of requestedBranchIds) {
+      for (const id of submitBranchIds) {
         if (!branchSessions[id] || branchSessions[id] < 1) {
           toast.error('יש להזין מספר אימונים לכל סניף שנבחר')
           return
         }
       }
+      submitBranchSessions = {}
+      for (const id of submitBranchIds) submitBranchSessions[id] = branchSessions[id]
     }
     setSaving(true)
     const { error } = await supabase.from('profile_change_requests').insert({
@@ -869,8 +888,8 @@ function ProfileTab({ profile, member }) {
       change_type: 'subscription',
       current_value: currentSub,
       requested_value: requestedSub,
-      requested_branch_ids: requestedBranchIds,
-      requested_branch_sessions: totalSessionsAllowed !== null ? branchSessions : null,
+      requested_branch_ids: submitBranchIds,
+      requested_branch_sessions: submitBranchSessions,
       note: subNote,
     })
     setSaving(false)

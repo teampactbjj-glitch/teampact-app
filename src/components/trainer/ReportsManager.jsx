@@ -81,6 +81,24 @@ function classEndMs(checkinDateStr, startTime, durationMin) {
   return start + dur * 60 * 1000
 }
 
+// מחזיר את תאריך ההופעה של רישום בפורמט 'YYYY-MM-DD' (זמן מקומי).
+// week_start הוא התאריך של תחילת השבוע, day_of_week הוא 0..6.
+// לדוגמה: week_start='2026-04-26' (יום ראשון) + day_of_week=2 (שלישי) → '2026-04-28'.
+// משמש להזנה ל-classEndMs כמחליף של checkin_date שלא קיים ב-class_registrations.
+function registrationOccurrenceDateStr(weekStart, dayOfWeek) {
+  if (!weekStart) return null
+  const [y, mo, d] = String(weekStart).split('-').map(Number)
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null
+  const dt = new Date(y, mo - 1, d, 0, 0, 0, 0)
+  const dow = Number.isFinite(dayOfWeek) ? dayOfWeek : 0
+  dt.setDate(dt.getDate() + dow)
+  // YYYY-MM-DD בזמן מקומי (לא toISOString כי זה UTC ויכול להחליק יום אחורה)
+  const yy = dt.getFullYear()
+  const mm = String(dt.getMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
+}
+
 // כמות ימים מ"היום" (ללא שעה)
 function daysAgoISO(days) {
   const d = new Date()
@@ -371,6 +389,32 @@ export default function ReportsManager({ isAdmin }) {
     })
   }, [checkins, periodDays, classById])
 
+  // ============================================================
+  // class_registrations מסוננים לפי טווח הזמן של הדוחות.
+  // ⚠️ במודל של דודי: רישום = נוכחות, **בתנאי שהשיעור הסתיים** (start_time + duration < now).
+  // אחרי תחילת השיעור המתאמן לא יכול לבטל (רק מאמן יכול להסיר), לכן ברגע שהשיעור הסתיים —
+  // הרישום הוא הנוכחות הסופית. זה מחליף את הסתמכות הדוחות על checkins (שלא בשימוש פעיל).
+  // ============================================================
+  const filteredRegistrations = useMemo(() => {
+    const now = Date.now()
+    const since = now - periodDays * DAY_MS
+    return registrations.filter(r => {
+      if (!r.class_id || !r.athlete_id) return false
+      const cls = classById.get(r.class_id)
+      if (!cls) return false
+      // חישוב תאריך ההופעה של השיעור: week_start + day_of_week.
+      const occDateStr = registrationOccurrenceDateStr(r.week_start, cls.day_of_week)
+      const endMs = classEndMs(occDateStr, cls.start_time, cls.duration_minutes)
+      if (endMs === null) {
+        // נתונים חסרים (start_time/duration_minutes/week_start) — לא ניתן לקבוע אם השיעור הסתיים.
+        // לא סופרים — בטוח יותר מאשר לספור רישום עתידי בטעות.
+        return false
+      }
+      // רק שיעור שהסתיים בפועל ובתוך טווח הזמן הנבחר.
+      return endMs <= now && endMs >= since
+    })
+  }, [registrations, periodDays, classById])
+
   // סט מתאמנים פעילים (לצורך סינון נוכחויות)
   const activeMemberIds = useMemo(() => new Set(activeMembers.map(m => m.id)), [activeMembers])
 
@@ -389,26 +433,26 @@ export default function ReportsManager({ isAdmin }) {
   }, [classes])
 
   // ============================================================
-  // דוחות פעילות — מבוססים על נוכחות בפועל (checkins, status='present').
-  // ⚠️ שונה מהמודל הישן שהסתמך על class_registrations:
-  // רישום מראש לקבוצה אינו נספר כהגעה. נספרים רק אימונים שכבר התקיימו
-  // (checked_in_at <= עכשיו) ושבהם המאמן סימן את המתאמן כנוכח.
-  // הפילטר `filteredCheckins` כבר אוכף "אימון שהסתיים" + טווח periodDays.
+  // דוחות פעילות — מבוססים על class_registrations (רישומים).
+  // ⚠️ במודל של דודי: רישום = נוכחות (כי אחרי תחילת השיעור המתאמן לא יכול לבטל).
+  // הפילטר filteredRegistrations כבר אוכף "השיעור הסתיים בפועל" + טווח periodDays —
+  // לכן ספירה נכונה של הגעות מתבצעת רק על שיעורים שאכן התקיימו ונגמרו.
   // ============================================================
 
   // 0b) מתאמנים פעילים לפי תחום + פילוח לפי מאמן בתוך התחום.
-  // count = מתאמנים ייחודיים שנכחו בתחום, sessions = סך הצ'ק-אינים בתחום.
+  // count = מתאמנים ייחודיים שנרשמו לתחום (לשיעור שהסתיים),
+  // sessions = סך הרישומים בתחום (כל "הגעה" נספרת).
   const byAssignedDiscipline = useMemo(() => {
     const acc = {}
     DISCIPLINE_ORDER.forEach(d => {
       acc[d] = { members: new Set(), sessions: 0, byCoach: new Map() }
     })
-    filteredCheckins.forEach(c => {
-      if (!c.athlete_id || !c.class_id) return
-      if (!activeMemberIds.has(c.athlete_id)) return
-      const cls = classById.get(c.class_id)
+    filteredRegistrations.forEach(r => {
+      if (!r.athlete_id || !r.class_id) return
+      if (!activeMemberIds.has(r.athlete_id)) return
+      const cls = classById.get(r.class_id)
       if (!cls) return
-      const disc = disciplineByClassId.get(c.class_id) || 'אחר'
+      const disc = disciplineByClassId.get(r.class_id) || 'אחר'
       if (!acc[disc]) return
 
       let coachName = null
@@ -416,14 +460,14 @@ export default function ReportsManager({ isAdmin }) {
       if (!coachName && cls.coach_name) coachName = cls.coach_name
       if (!coachName) coachName = 'ללא מאמן'
 
-      acc[disc].members.add(c.athlete_id)
+      acc[disc].members.add(r.athlete_id)
       acc[disc].sessions += 1
 
       if (!acc[disc].byCoach.has(coachName)) {
         acc[disc].byCoach.set(coachName, { members: new Set(), sessions: 0 })
       }
       const coachAgg = acc[disc].byCoach.get(coachName)
-      coachAgg.members.add(c.athlete_id)
+      coachAgg.members.add(r.athlete_id)
       coachAgg.sessions += 1
     })
     return DISCIPLINE_ORDER.map(d => ({
@@ -434,36 +478,29 @@ export default function ReportsManager({ isAdmin }) {
         .map(([name, agg]) => ({ name, count: agg.members.size, sessions: agg.sessions }))
         .sort((a, b) => b.count - a.count),
     }))
-  }, [filteredCheckins, classById, coachById, disciplineByClassId, activeMemberIds])
+  }, [filteredRegistrations, classById, coachById, disciplineByClassId, activeMemberIds])
 
-  // 0c) מתאמנים שלא נכחו באימון ב-14 הימים האחרונים.
-  // מבוסס על MAX של **שעת סיום השיעור** (לא checked_in_at) — כי רק שיעור שהסתיים
+  // 0c) מתאמנים שלא הגיעו לאימון ב-14 הימים האחרונים.
+  // מבוסס על MAX של **שעת סיום השיעור** של רישום בפועל — כי רק שיעור שהסתיים
   // נחשב הגעה. אם מתאמן רשום לאימון שעוד לא קרה, זה לא נחשב.
   // הסף נקבע ל-14 יום כדי להימנע מ-false positives של חופש קצר/מילואים/מחלה.
   const INACTIVE_THRESHOLD_DAYS = 14
   const inactiveMembers = useMemo(() => {
     const now = Date.now()
     const lastByMember = new Map()
-    // משתמשים ב-checkins המלאים (לא ה-filtered) — צריכים את כל ה-180 יום
-    // כדי לדעת מתי באמת היה הצ'ק-אין האחרון, גם אם הוא ישן.
-    // קריטריון: רק שיעורים שהסתיימו בפועל. fallback ל-checked_in_at אם חסר נתון.
-    checkins.forEach(c => {
-      if (!c.athlete_id) return
-      const cls = classById.get(c.class_id)
-      const endMs = cls ? classEndMs(c.checkin_date, cls.start_time, cls.duration_minutes) : null
-      let t = null
-      if (endMs !== null) {
-        if (endMs > now) return // שיעור עתידי — לא נספר כהגעה
-        t = endMs
-      } else if (c.checked_in_at) {
-        const ts = new Date(c.checked_in_at).getTime()
-        if (!Number.isFinite(ts) || ts > now) return
-        t = ts
-      } else {
-        return
-      }
-      const prev = lastByMember.get(c.athlete_id) || 0
-      if (t > prev) lastByMember.set(c.athlete_id, t)
+    // משתמשים ב-registrations המלא (לא ה-filtered) — צריכים את כל ה-180 יום
+    // כדי לדעת מתי באמת הייתה ההגעה האחרונה, גם אם היא ישנה.
+    // קריטריון: רק שיעורים שהסתיימו בפועל (start_time + duration < now).
+    registrations.forEach(r => {
+      if (!r.athlete_id) return
+      const cls = classById.get(r.class_id)
+      if (!cls) return
+      const occDateStr = registrationOccurrenceDateStr(r.week_start, cls.day_of_week)
+      const endMs = classEndMs(occDateStr, cls.start_time, cls.duration_minutes)
+      if (endMs === null) return
+      if (endMs > now) return // שיעור עתידי — לא נספר כהגעה
+      const prev = lastByMember.get(r.athlete_id) || 0
+      if (endMs > prev) lastByMember.set(r.athlete_id, endMs)
     })
 
     const cutoff = now - INACTIVE_THRESHOLD_DAYS * DAY_MS
@@ -486,7 +523,7 @@ export default function ReportsManager({ isAdmin }) {
         const bDays = b.daysSince ?? 999999
         return bDays - aDays
       })
-  }, [activeMembers, checkins, classById])
+  }, [activeMembers, registrations, classById])
 
   // ===== שליחת Push למתאמן בודד =====
   // משתמש ב-Edge Function 'send-push' (תשתית קיימת ב-src/lib/notifyPush.js).
@@ -584,16 +621,16 @@ export default function ReportsManager({ isAdmin }) {
     }
   }
 
-  // 1) כמות מתאמנים לפי מאמן — מבוסס נוכחות בפועל (checkins) בטווח הנבחר
-  // מחזיר: שם, מתאמנים ייחודיים, וסה"כ אימונים (ספירת כל ה-checkins).
+  // 1) כמות מתאמנים לפי מאמן — מבוסס רישומים לשיעורים שהסתיימו בטווח הנבחר.
+  // מחזיר: שם, מתאמנים ייחודיים, וסה"כ הגעות (= ספירת כל הרישומים לשיעורים שהסתיימו).
   const byCoach = useMemo(() => {
     const members = new Map()   // coachName → Set<athlete_id>
-    const sessions = new Map()  // coachName → total checkins
+    const sessions = new Map()  // coachName → total registrations to ended classes
     coaches.forEach(c => { members.set(c.name || '—', new Set()); sessions.set(c.name || '—', 0) })
-    filteredCheckins.forEach(c => {
-      if (!c.athlete_id || !c.class_id) return
-      if (!activeMemberIds.has(c.athlete_id)) return
-      const cls = classById.get(c.class_id)
+    filteredRegistrations.forEach(r => {
+      if (!r.athlete_id || !r.class_id) return
+      if (!activeMemberIds.has(r.athlete_id)) return
+      const cls = classById.get(r.class_id)
       if (!cls) return
       let coachName = null
       // ניסיון 1: לפי coach_id מקושר לטבלת coaches
@@ -604,17 +641,17 @@ export default function ReportsManager({ isAdmin }) {
       if (!coachName && cls.coach_name) coachName = cls.coach_name
       if (!coachName) coachName = 'ללא מאמן'
       if (!members.has(coachName)) { members.set(coachName, new Set()); sessions.set(coachName, 0) }
-      members.get(coachName).add(c.athlete_id)
+      members.get(coachName).add(r.athlete_id)
       sessions.set(coachName, sessions.get(coachName) + 1)
     })
     return Array.from(members.entries())
       .map(([name, set]) => ({ name, count: set.size, sessions: sessions.get(name) || 0 }))
       .sort((a, b) => b.count - a.count)
-  }, [filteredCheckins, coaches, coachById, classById, activeMemberIds])
+  }, [filteredRegistrations, coaches, coachById, classById, activeMemberIds])
 
   // 2) כמות מתאמנים לפי תחום + פילוח פנימי לפי מאמן.
-  // לכל תחום: סה"כ מתאמנים ייחודיים + סה"כ אימונים, וגם מערך byCoach
-  // עם אותם נתונים מצומצמים למאמן ספציפי.
+  // לכל תחום: סה"כ מתאמנים ייחודיים + סה"כ הגעות (רישומים לשיעורים שהסתיימו),
+  // וגם מערך byCoach עם אותם נתונים מצומצמים למאמן ספציפי.
   const byDiscipline = useMemo(() => {
     // מבנה עזר: discipline → { members: Set<athleteId>, sessions: number,
     //                          byCoach: Map<coachName, { members: Set, sessions: number }> }
@@ -623,12 +660,12 @@ export default function ReportsManager({ isAdmin }) {
       acc[d] = { members: new Set(), sessions: 0, byCoach: new Map() }
     })
 
-    filteredCheckins.forEach(c => {
-      if (!c.athlete_id || !c.class_id) return
-      if (!activeMemberIds.has(c.athlete_id)) return
-      const cls = classById.get(c.class_id)
+    filteredRegistrations.forEach(r => {
+      if (!r.athlete_id || !r.class_id) return
+      if (!activeMemberIds.has(r.athlete_id)) return
+      const cls = classById.get(r.class_id)
       if (!cls) return
-      const disc = disciplineByClassId.get(c.class_id)
+      const disc = disciplineByClassId.get(r.class_id)
       if (!disc || !acc[disc]) return
 
       // שיוך מאמן לקלאס: לפי coach_id ואם אין fallback ל-coach_name
@@ -637,14 +674,14 @@ export default function ReportsManager({ isAdmin }) {
       if (!coachName && cls.coach_name) coachName = cls.coach_name
       if (!coachName) coachName = 'ללא מאמן'
 
-      acc[disc].members.add(c.athlete_id)
+      acc[disc].members.add(r.athlete_id)
       acc[disc].sessions += 1
 
       if (!acc[disc].byCoach.has(coachName)) {
         acc[disc].byCoach.set(coachName, { members: new Set(), sessions: 0 })
       }
       const coachAgg = acc[disc].byCoach.get(coachName)
-      coachAgg.members.add(c.athlete_id)
+      coachAgg.members.add(r.athlete_id)
       coachAgg.sessions += 1
     })
 
@@ -656,7 +693,7 @@ export default function ReportsManager({ isAdmin }) {
         .map(([name, agg]) => ({ name, count: agg.members.size, sessions: agg.sessions }))
         .sort((a, b) => b.count - a.count),
     }))
-  }, [filteredCheckins, disciplineByClassId, activeMemberIds, classById, coachById])
+  }, [filteredRegistrations, disciplineByClassId, activeMemberIds, classById, coachById])
 
   // 2.5) שיעורי ניסיון לפי תחום לחימה + פילוח לפי מאמן.
   // עוזר להבין איזה מאמן מקדם המרת ניסיונות ובאיזה תחום.
@@ -719,29 +756,27 @@ export default function ReportsManager({ isAdmin }) {
     const nowMs = Date.now()
     const coachesByMember = new Map()
     const groupsByMember = new Map()
-    checkins.forEach(c => {
-      if (!c.athlete_id || !c.class_id) return
-      const cls = classById.get(c.class_id)
+    // שיוך מאמן/קבוצה למתאמן מבוסס על רישומים לשיעורים שהסתיימו בפועל.
+    registrations.forEach(r => {
+      if (!r.athlete_id || !r.class_id) return
+      const cls = classById.get(r.class_id)
       if (!cls) return
-      const endMs = classEndMs(c.checkin_date, cls.start_time, cls.duration_minutes)
-      if (endMs !== null) {
-        if (endMs > nowMs) return // שיעור עתידי — לא יוצר שיוך
-      } else if (c.checked_in_at) {
-        const ts = new Date(c.checked_in_at).getTime()
-        if (Number.isFinite(ts) && ts > nowMs) return
-      }
+      const occDateStr = registrationOccurrenceDateStr(r.week_start, cls.day_of_week)
+      const endMs = classEndMs(occDateStr, cls.start_time, cls.duration_minutes)
+      if (endMs === null) return
+      if (endMs > nowMs) return // שיעור עתידי — לא יוצר שיוך
       // מאמן לפי הקלאס — לפי coach_id, ואם אין fallback ל-coach_name
       let coachName = null
       if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
       if (!coachName && cls.coach_name) coachName = cls.coach_name
       if (!coachName) coachName = 'ללא מאמן'
-      if (!coachesByMember.has(c.athlete_id)) coachesByMember.set(c.athlete_id, new Set())
-      coachesByMember.get(c.athlete_id).add(coachName)
+      if (!coachesByMember.has(r.athlete_id)) coachesByMember.set(r.athlete_id, new Set())
+      coachesByMember.get(r.athlete_id).add(coachName)
       // קבוצה לפי שם הקלאס
       const gname = cls.name
       if (gname) {
-        if (!groupsByMember.has(c.athlete_id)) groupsByMember.set(c.athlete_id, new Set())
-        groupsByMember.get(c.athlete_id).add(gname)
+        if (!groupsByMember.has(r.athlete_id)) groupsByMember.set(r.athlete_id, new Set())
+        groupsByMember.get(r.athlete_id).add(gname)
       }
     })
 
@@ -803,7 +838,7 @@ export default function ReportsManager({ isAdmin }) {
       totalChurned: churned.length,
       totalActiveBase: activeMembers.length + churned.length,
     }
-  }, [activeMembers, filteredMembers, periodDays, coachById, classById, checkins])
+  }, [activeMembers, filteredMembers, periodDays, coachById, classById, registrations])
 
   if (!isAdmin) {
     return (
@@ -883,7 +918,7 @@ export default function ReportsManager({ isAdmin }) {
       <SectionCard
         title={`מתאמנים פעילים לפי תחום לחימה (${periodDays} ימים)`}
         icon="🥊"
-        footer="מבוסס על נוכחות בפועל (צ'ק-אין באימון שהתקיים). המספר הראשון = מתאמנים ייחודיים שנכחו בתחום. השני = סה״כ אימונים בתחום. תחת כל תחום, פילוח לפי המאמן."
+        footer="מבוסס על רישומים לאימונים שהסתיימו בפועל (במודל הזה: רישום = הגעה, כי אחרי תחילת השיעור המתאמן לא יכול לבטל). המספר הראשון = מתאמנים ייחודיים שהגיעו לתחום. השני = סה״כ הגעות בתחום. תחת כל תחום, פילוח לפי המאמן."
       >
         {byAssignedDiscipline.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>

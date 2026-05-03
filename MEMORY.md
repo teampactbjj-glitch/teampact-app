@@ -1,5 +1,72 @@
 # MEMORY - TeamPact App
 
+> ## ⏳ Session 03.05.2026 (המשך) — דוח התקדמות אישי למתאמן (MyProgressSection)
+>
+> **סטטוס:** קוד מוכן + build עבר ✅, **commit/push חסום ע"י `.git/index.lock` תקוע** שלא ניתן למחיקה מתוך ה-sandbox (fuse permissions). דודי צריך לרוץ ידנית: `cd ~/teampact-app && rm -f .git/index.lock` ואז לאשר לי להמשיך.
+>
+> **המוטיבציה:** בקשת דודי — דוח חודשי שיתן למתאמנים מוטיבציה להירשם ולהתאמן. עם פילוח לפי תחום (BJJ/מואי תאי) למי שמתאמן בכמה תחומים.
+>
+> **מה נבנה:**
+>
+> **קובץ חדש:** `src/components/athlete/MyProgressSection.jsx` (450 שורות)
+> - שולף checkins של המתאמן (status='present', כל היסטוריה) + classes לסיווג + duration_minutes + coaches.
+> - סינון: רק שיעורים שהסתיימו בפועל (`classEndMs` ≤ now) — אותה לוגיקה כמו ReportsManager.
+> - סיווג תחומים: שכפול של `detectDiscipline()` + `normalize()` + `DISCIPLINE_ORDER/COLORS` מ-ReportsManager (לא רוצים import מ-trainer ל-athlete).
+> - אגרגציה לפי חודש: sessions, minutes, byDiscipline, days.
+>
+> **בלוקי תצוגה (כולם RTL, עיצוב emerald-first):**
+> 1. **Hero** — gradient emerald, מספר אימונים + שעות מזרון + תגיות "🏆 שיא אישי" / "↑ X% מהחודש שעבר" / "עוד N לשיא".
+> 2. **פילוח לפי תחום** — כרטיסיה לכל תחום פעיל החודש (אייקונים: 🥋 BJJ, 🥊 Muay Thai, 🤼 MMA, 🧒 ילדים), שעות מדויקות לפי `duration_minutes` בפועל.
+> 3. **לוח חודשי חזותי** — grid-7 עם תאי יום צבועים לפי התחום העיקרי באותו יום, מסומן "היום" עם outline emerald, מקרא תחומים מתחת.
+> 4. **רצף שבועות** — current + longest. שבוע = ראשון-שבת, שבוע פעיל = ≥1 אימון. אם השבוע הנוכחי לא פעיל אבל הקודם כן — מתחילים מהקודם (לא נשבר ביום ראשון בבוקר).
+> 5. **סה"כ שעות מזרון** (כל הזמן) + סה"כ אימונים — לתחושת אבני דרך כללית.
+> 6. **Badges** — שעות (25/50/100/250/500/1000) + Cross-trainer (2 תחומים החודש) + רצף 8/16 שבועות. כולל ה-badge הבא כ-progress bar.
+> 7. **מסר אישי דינמי** — עליה/ירידה/שיא חדש/אזהרה אם פספס יותר מחצי מהחודש שעבר.
+>
+> **חיבור:** import + `<MyProgressSection profile={profile} />` בראש ProfileTab (אחרי כרטיס הפרופיל הראשי, לפני "פרטים אישיים").
+>
+> **Build:** `npx vite build --outDir /tmp/teampact-build` ✅ — 99 modules, 1MB JS gzip 293KB, 54KB CSS gzip 9.7KB. אזהרה רגילה על chunk size (לא חדשה).
+>
+> **לסיים אחרי שהlock ייפתח:**
+> ```
+> cd ~/teampact-app
+> rm -f .git/index.lock
+> git add src/components/athlete/MyProgressSection.jsx src/components/athlete/AthleteDashboard.jsx MEMORY.md
+> git commit -m "feat(athlete): MyProgressSection — דוח התקדמות אישי בטאב הפרופיל"
+> git push origin main
+> git log --oneline -3
+> ```
+> ואז Cmd+Shift+R לבדיקה ב-Vercel + DevTools → Application → Service Workers → Unregister (יש Service Worker באפליקציה).
+>
+> **Phase 2 (לסשן הבא):** באנר micro בראש טאב הלו"ז ("12 אימונים החודש · רצף 4 שבועות") + Push חודשי אוטומטי בסוף חודש.
+>
+> ---
+>
+> ## ✅ Session 03.05.2026 — פתיחת רישום לשבוע הבא תמיד (לוז שבועיים)
+>
+> **commit `6208938` ב-`origin/main` ✅** — אומת ב-`git push` (`6a0c0de..6208938`).
+>
+> **התלונה:** "פתחנו את האופציה בלוז לשבועיים אבל כשבאים להירשם לשבוע הבא זה לא נותן" — toast אדום: "הרישום לשבוע הבא נפתח ביום שישי 06:00".
+>
+> **שורש:** ב-`src/components/athlete/AthleteDashboard.jsx`:
+> - שורה 38: `isNextWeekRegistrationOpen()` החזיר `true` רק ביום שישי 06:00+ ובשבת.
+> - שורה 1241 (לפני התיקון): `handleRegister` חסם רישום לשבוע הבא אם הפונקציה מחזירה false → toast.error.
+> - לא היה מסונכרן עם פתיחת תצוגת השבועיים בלוז.
+>
+> **התיקון:**
+> - `isNextWeekRegistrationOpen()` עכשיו מחזיר תמיד `true` (פתח גם לתיעוד עתידי שאם נצטרך לחזור — זה מקום אחד).
+> - `handleRegister`: הוסר ה-`if (isNext && !isNextWeekRegistrationOpen())` והערה רלוונטית.
+> - `nextWeekOpen` (שורה 50, ב-`ScheduleTab`) — נשאר כמשתנה לא בשימוש (לא מסיר עכשיו כדי לא לגעת בעוד דברים).
+>
+> **Build:** `npx vite build --outDir dist-fix-next-week` ✅ (98 modules, 994KB JS, 52KB CSS).
+>
+> **לבדוק אחרי deploy ב-Vercel:**
+> 1. Hard-refresh (Cmd+Shift+R) או DevTools → Application → Service Workers → Unregister.
+> 2. להירשם לשיעור בשבוע הבא מתוך הלוז — לא צריך להופיע toast חסימה.
+> 3. לבטל רישום לשבוע הבא — אמור לעבוד גם כן.
+>
+> ---
+>
 > ## ✅ Session 02.05.2026 (לילה — המשך 6) — תיקון שורש לדוחות: שורה לכל יום ב-checkins
 >
 > **commit `1603acd` ב-`origin/main` ✅** — אומת (`git push origin main` הצליח: `aaf6208..1603acd`).

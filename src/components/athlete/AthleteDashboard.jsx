@@ -7,6 +7,7 @@ import { isStandalone } from '../../lib/platform'
 import { notifyPush } from '../../lib/notifyPush'
 import { allTrainerUserIds } from '../../lib/notifyTargets'
 import ProductDetail from './ProductDetail'
+import MyProgressSection from './MyProgressSection'
 import { useToast, useConfirm } from '../a11y'
 
 const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
@@ -950,6 +951,9 @@ function ProfileTab({ profile, member }) {
         <h2 className="text-lg font-bold text-gray-800">{profile?.full_name}</h2>
         <p className="text-sm text-gray-500 mt-0.5">{profile?.email}</p>
       </div>
+
+      {/* === ההתקדמות שלי — דוח אישי לחודש הנוכחי === */}
+      <MyProgressSection profile={profile} />
 
       {/* פרטים לקריאה בלבד */}
       <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">

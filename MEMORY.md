@@ -1,8 +1,78 @@
 # MEMORY - TeamPact App
 
-> ## ⏳ Session 03.05.2026 (המשך) — דוח התקדמות אישי למתאמן (MyProgressSection)
+> ## ✅ Session 03.05.2026 (המשך) — עריכת טלפון למאמן: בפרופיל + באדמין
 >
-> **סטטוס:** קוד מוכן + build עבר ✅, **commit/push חסום ע"י `.git/index.lock` תקוע** שלא ניתן למחיקה מתוך ה-sandbox (fuse permissions). דודי צריך לרוץ ידנית: `cd ~/teampact-app && rm -f .git/index.lock` ואז לאשר לי להמשיך.
+> **הקשר:** דודי גילה שמאמן אחד לא הזין טלפון בהרשמה. אין ממשק לעריכה אחרי האישור — לא בפרופיל המאמן ולא במסך ניהול המאמנים. תוקן בשני המקומות.
+>
+> **שינויים:**
+>
+> **1. `src/components/trainer/TrainerProfile.jsx`** — בלוק חדש "📱 מספר טלפון":
+> - state: `phone`, `phoneSaving`, `phoneMsg`. אתחול מ-`profile?.phone`.
+> - `savePhone()` — ולידציה רכה (regex `^[0-9 +\-()]{6,20}$`), `update profiles.phone where id=profile.id`. ריק = `null` (מחיקה).
+> - UI: input `type="tel"` `dir="ltr"` + כפתור "שמור טלפון" + הודעה. ממוקם בין "שם מלא" ל"שינוי סיסמה".
+>
+> **2. `src/components/trainer/CoachesManager.jsx`** — אדמין יכול לערוך טלפון של כל מאמן מקושר:
+> - `phoneByUserId` state — נטען ב-`fetchAll` ב-Promise.all הקיים: שאילתה חמישית `select('id, phone').eq('role','trainer').eq('is_approved',true)`.
+> - `coachGroups` הורחב — לכל קבוצה: `userId` (ראשון מבין רשומות עם user_id) + `phone` (מ-`phoneByUserId`).
+> - `updateCoachPhone(userId, phone)` חדש — אותה ולידציה, busyId = `phone:${userId}`.
+> - `CoachGroupRow` מציג בלוק "📱 טלפון:" רק אם `group.hasUser` — תצוגה: "ערוך"/"+ הוסף", במצב עריכה: input + שמור/ביטול.
+>
+> **שתי קריאות UPDATE על אותה עמודה (`profiles.phone`)** — RLS חייב לאפשר: (א) למאמן עצמו לעדכן את `phone` שלו, (ב) לאדמין לעדכן `phone` של מאמנים אחרים. אם RLS חוסם — המסך יראה שגיאה ברורה. לבדוק על מאמן אמיתי.
+>
+> **Build:** `npx vite build --outDir /tmp/teampact-build` ✅ 99 modules, 1MB JS gzip 293KB.
+>
+> ---
+>
+> ## ✅ Session 03.05.2026 (סוף) — Welcome-back overlay + "המאמנים שלך" בפרופיל + Push requireInteraction
+>
+> **נדחף לפרודקשן** ✅ (commit שדודי הריץ ידנית מהטרמינל שלו — sandbox היה תקוע ב-`.git/HEAD.lock`).
+>
+> **המוטיבציה:** דודי שלח Push למתאמנים שלא הגיעו 14+ ימים → ההתראה הקצרה צפה ונעלמת → המתאמן לוחץ → נכנס לאפליקציה → לא רואה כלום → מתאכזב. צריך מסך עוגן + CTA יחיד.
+>
+> **מה נבנה:**
+>
+> **1. `src/components/athlete/AthleteDashboard.jsx`:**
+> - `WelcomeBackOverlay` — קומפוננטה חדשה. מודאל full-screen אדום-לבן עם כותרת "[שם], מתגעגעים אליך 💙" / "איפה היית? 💙" (תלוי ב-`days`), הודעה אישית מותאמת (3 וריאציות: לא נכח מעולם / ≤14 / >14), כפתור CTA יחיד "📅 הירשם לאימון הקרוב".
+> - hash sync חדש: `#welcome-back?days=N` — overlay נפרד, לא tab.
+> - state `welcomeBack` ו-useEffect שמסנכרן עם hashchange.
+> - `WelcomeBackOverlay` ברינדור הראשי, נסגר בלחיצה על "הירשם לאימון" / "לא עכשיו" / X (כולם → `#schedule`).
+>
+> **2. ProfileTab באותו קובץ — בלוק חדש "💬 המאמנים שלך":**
+> - state `myCoaches` + useEffect שטוען רשימה דינמית.
+> - לוגיקה: class_registrations של המתאמן ∪ checkins ב-60 ימים אחרונים → coach_id מ-classes → coaches.user_id → profiles.phone.
+> - מציג רק מאמנים שיש להם phone מוגדר. דה-דופ + מיון לפי שם בעברית.
+> - כפתור ווצאפ לכל מאמן עם הודעת פתיחה ממולאת ("שלום [מאמן], מדבר [מתאמן] מ-Team Pact").
+> - פתרון לבעיית "כמה מאמנים" — אם יש 1 → כפתור יחיד; אם 2+ → רשימה אנכית של כפתורים. כל אחד מציג שם + טלפון + אייקון 💬.
+> - פונקציות עזר חדשות (משוכפלות מ-ReportsManager): `athleteToIntlPhone`, `athleteWaLink`.
+>
+> **3. `src/components/trainer/ReportsManager.jsx`:**
+> - שתי קריאות `notifyPush` עברו מ-`url:'/'` ל-`url:'/#welcome-back?days=N'` — בשליחה בודדת + ב-bulk.
+> - `wbDays` מחושב לפי `member.daysSince` (ריק אם null = "לא נכח מעולם").
+>
+> **4. `public/sw.js`:**
+> - `requireInteraction: true` ב-`showNotification` options. ההתראה לא בורחת אחרי 5 שניות.
+> - `SW_VERSION` עודכן ל-`2026-05-03-welcome-back-overlay` כדי לאלץ עדכון.
+>
+> **Build:** `npx vite build --outDir dist-verify` ✅ — 98 modules, 1MB JS gzip 288KB, 53.7KB CSS gzip 9.5KB. בלי שגיאות.
+>
+> **בעיות שעלו בבדיקה (לא bugs בקוד, שווה לזכור):**
+>
+> 1. **Push לפי user_id, לא לפי בן אדם.** דודי משתמש ב-2 חשבונות: `teampactbjj@gmail.com` (admin) + `dudibenzaken86@icloud.com` (athlete-test). בטלפון בעיקר admin, במק עכשיו athlete. שלח push ל-user_id של athlete → רק subscriptions של athlete מקבלים. במק יש 3 (Chrome+Safari ישנים), בטלפון אין כלום (כי לא הירשם ל-push כשהיה מחובר כ-athlete).
+>
+> 2. **iOS PWA חובה.** בלי "Add to Home Screen" + פתיחה דרך האייקון, iOS לא נותן Push. למתאמנים שלא יודעים — צריך אונבורדינג.
+>
+> 3. **subscriptions ישנים נשארים.** יש subs מ-20-22 לאפריל (Safari) שכנראה stale. אם פג תוקף, ה-edge function עושה pruning כשיתקבל 410. בינתיים מנפח את הרשימה.
+>
+> **דרך נכונה לבדוק את ה-overlay במציאות:** לא לבדוק על עצמך — ללחוץ "📲 Push" ליד שם של מתאמן אמיתי שלא הגיע. הוא מחובר עם user_id שלו בטלפון שלו → יקבל את ה-Push → לחיצה תפתח את ה-overlay.
+>
+> **My last pending task (סטטוס):**
+> סוף סשן. כל 5 משימות הושלמו ונדחפו לפרודקשן. אין pending. כל הקוד חי בפרודקשן.
+>
+> ---
+>
+> ## ✅ Session 03.05.2026 (המשך) — דוח התקדמות אישי למתאמן (MyProgressSection)
+>
+> **commit `e5886e4` ב-`origin/main` ✅** — אומת ב-`git log --oneline -3`. דודי הריץ ידנית את `rm -f .git/index.lock && git add ... && git commit && git push` מהטרמינל שלו (sandbox לא הצליח לפתוח את הlock בגלל fuse permissions).
 >
 > **המוטיבציה:** בקשת דודי — דוח חודשי שיתן למתאמנים מוטיבציה להירשם ולהתאמן. עם פילוח לפי תחום (BJJ/מואי תאי) למי שמתאמן בכמה תחומים.
 >

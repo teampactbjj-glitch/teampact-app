@@ -27,6 +27,7 @@ export default function CoachesManager({ profile, onChange }) {
   const [newCoach, setNewCoach] = useState({ name: '', branch_id: '' })
   const [replacing, setReplacing] = useState(null) // { fromCoach, toCoachId, scope: 'all'|'branch' }
   const [classCounts, setClassCounts] = useState({}) // { coach_id: count }
+  const [phoneByUserId, setPhoneByUserId] = useState({}) // { user_id: phone }
 
   useEffect(() => { fetchAll() }, [])
 
@@ -42,7 +43,7 @@ export default function CoachesManager({ profile, onChange }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [pendingRes, coachesRes, branchesRes, classesRes] = await Promise.all([
+    const [pendingRes, coachesRes, branchesRes, classesRes, trainerProfilesRes] = await Promise.all([
       supabase
         .from('profiles')
         .select('id, full_name, email, phone, requested_branch_id, requested_branch_ids, created_at')
@@ -55,6 +56,12 @@ export default function CoachesManager({ profile, onChange }) {
         .order('name'),
       supabase.from('branches').select('id, name').order('name'),
       supabase.from('classes').select('coach_id').is('deleted_at', null),
+      // טלפונים של כל המאמנים המאושרים — לקישור לפי user_id
+      supabase
+        .from('profiles')
+        .select('id, phone')
+        .eq('role', 'trainer')
+        .eq('is_approved', true),
     ])
     setPendingTrainers(pendingRes.data || [])
     setCoaches(coachesRes.data || [])
@@ -66,6 +73,10 @@ export default function CoachesManager({ profile, onChange }) {
       counts[c.coach_id] = (counts[c.coach_id] || 0) + 1
     })
     setClassCounts(counts)
+    // מיפוי user_id → phone
+    const phones = {}
+    ;(trainerProfilesRes.data || []).forEach(p => { phones[p.id] = p.phone || '' })
+    setPhoneByUserId(phones)
     setLoading(false)
     if (typeof onChange === 'function') onChange()
   }
@@ -80,14 +91,34 @@ export default function CoachesManager({ profile, onChange }) {
     const map = new Map()
     for (const c of coaches) {
       const key = c.name
-      if (!map.has(key)) map.set(key, { name: c.name, rows: [], totalClasses: 0, hasUser: false })
+      if (!map.has(key)) map.set(key, { name: c.name, rows: [], totalClasses: 0, hasUser: false, userId: null, phone: '' })
       const g = map.get(key)
       g.rows.push(c)
       g.totalClasses += classCounts[c.id] || 0
-      if (c.user_id) g.hasUser = true
+      if (c.user_id) {
+        g.hasUser = true
+        if (!g.userId) g.userId = c.user_id
+        if (!g.phone) g.phone = phoneByUserId[c.user_id] || ''
+      }
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'he'))
   })()
+
+  // ---------- עדכון טלפון של מאמן (בטבלת profiles לפי user_id) ----------
+  async function updateCoachPhone(userId, newPhone) {
+    if (!userId) { showMsg('err', 'אין משתמש מקושר — לא ניתן לעדכן טלפון'); return }
+    const trimmed = (newPhone || '').trim()
+    if (trimmed && !/^[0-9 +\-()]{6,20}$/.test(trimmed)) {
+      showMsg('err', 'מספר טלפון לא תקין (ספרות בלבד, 6-20 תווים)')
+      return
+    }
+    setBusyId(`phone:${userId}`)
+    const { error } = await supabase.from('profiles').update({ phone: trimmed || null }).eq('id', userId)
+    setBusyId(null)
+    if (error) { showMsg('err', error.message); return }
+    showMsg('ok', trimmed ? 'הטלפון עודכן' : 'הטלפון הוסר')
+    fetchAll()
+  }
 
   // ---------- אישור / דחיית בקשת מאמן ----------
   async function approveTrainer(t) {
@@ -433,6 +464,7 @@ export default function CoachesManager({ profile, onChange }) {
                 onAddBranch={(branchId) => addBranchToCoach(group, branchId)}
                 onRemoveBranch={(coachId) => deleteCoachRow(coachId)}
                 onStartReplaceAll={() => setReplacing({ fromGroup: group, toCoachId: '', scope: 'all' })}
+                onUpdatePhone={(newPhone) => updateCoachPhone(group.userId, newPhone)}
               />
             ))}
           </div>
@@ -482,13 +514,16 @@ export default function CoachesManager({ profile, onChange }) {
 }
 
 // ---------- שורת קבוצת מאמן (מאוחד לפי שם) ----------
-function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAddBranch, onRemoveBranch, onStartReplaceAll }) {
+function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAddBranch, onRemoveBranch, onStartReplaceAll, onUpdatePhone }) {
   const [renaming, setRenaming] = useState(false)
   const [newName, setNewName] = useState(group.name)
   const [adding, setAdding] = useState(false)
   const [newBranchId, setNewBranchId] = useState('')
+  const [editingPhone, setEditingPhone] = useState(false)
+  const [phoneDraft, setPhoneDraft] = useState(group.phone || '')
 
   const groupBusy = busyId === `group:${group.name}`
+  const phoneBusy = busyId === `phone:${group.userId}`
 
   // סניפים שעדיין לא משויכים לקבוצה
   const usedBranchIds = new Set(group.rows.map(r => r.branch_id).filter(Boolean))
@@ -563,6 +598,47 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
           })
         )}
       </div>
+
+      {/* טלפון — רק אם המאמן מקושר ל-user (יש user_id) */}
+      {group.hasUser && (
+        <div className="mb-2 flex items-center gap-2 text-xs">
+          <span className="text-gray-500 shrink-0">📱 טלפון:</span>
+          {editingPhone ? (
+            <>
+              <input
+                type="tel"
+                dir="ltr"
+                inputMode="tel"
+                className="flex-1 border rounded-lg px-2 py-1 text-xs text-left"
+                value={phoneDraft}
+                onChange={e => setPhoneDraft(e.target.value)}
+                placeholder="050-1234567"
+                autoFocus
+              />
+              <button
+                onClick={() => { onUpdatePhone(phoneDraft); setEditingPhone(false) }}
+                disabled={phoneBusy}
+                className="text-xs bg-blue-600 text-white px-2 py-1 rounded font-bold disabled:opacity-50"
+              >שמור</button>
+              <button
+                onClick={() => { setEditingPhone(false); setPhoneDraft(group.phone || '') }}
+                className="text-xs bg-gray-100 px-2 py-1 rounded font-bold"
+              >ביטול</button>
+            </>
+          ) : (
+            <>
+              <span dir="ltr" className={`flex-1 ${group.phone ? 'text-gray-800 font-mono' : 'text-gray-400 italic'}`}>
+                {group.phone || 'לא הוזן'}
+              </span>
+              <button
+                onClick={() => { setPhoneDraft(group.phone || ''); setEditingPhone(true) }}
+                disabled={phoneBusy}
+                className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded font-medium disabled:opacity-50"
+              >{group.phone ? 'ערוך' : '+ הוסף'}</button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* הוספת סניף + פעולות */}
       {adding ? (

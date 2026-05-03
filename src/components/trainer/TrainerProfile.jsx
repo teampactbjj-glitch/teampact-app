@@ -6,6 +6,10 @@ export default function TrainerProfile({ profile, isAdmin }) {
   const [nameSaving, setNameSaving] = useState(false)
   const [nameMsg, setNameMsg] = useState(null)
 
+  const [phone, setPhone] = useState(profile?.phone || '')
+  const [phoneSaving, setPhoneSaving] = useState(false)
+  const [phoneMsg, setPhoneMsg] = useState(null)
+
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [pwSaving, setPwSaving] = useState(false)
@@ -19,6 +23,21 @@ export default function TrainerProfile({ profile, isAdmin }) {
     setNameSaving(false)
     if (error) { setNameMsg({ type: 'err', text: error.message }); return }
     setNameMsg({ type: 'ok', text: 'השם עודכן — רענן את הדף' })
+  }
+
+  async function savePhone() {
+    setPhoneMsg(null)
+    const trimmed = (phone || '').trim()
+    // ולידציה רכה — מאפשר ספרות, רווח, מקף, פלוס, סוגריים. ריק = מחיקה.
+    if (trimmed && !/^[0-9 +\-()]{6,20}$/.test(trimmed)) {
+      setPhoneMsg({ type: 'err', text: 'מספר טלפון לא תקין (ספרות בלבד, 6-20 תווים)' })
+      return
+    }
+    setPhoneSaving(true)
+    const { error } = await supabase.from('profiles').update({ phone: trimmed || null }).eq('id', profile.id)
+    setPhoneSaving(false)
+    if (error) { setPhoneMsg({ type: 'err', text: error.message }); return }
+    setPhoneMsg({ type: 'ok', text: trimmed ? 'הטלפון עודכן' : 'הטלפון הוסר' })
   }
 
   async function updatePassword() {
@@ -61,6 +80,30 @@ export default function TrainerProfile({ profile, isAdmin }) {
             {nameMsg.text}
           </p>
         )}
+      </div>
+
+      {/* מספר טלפון */}
+      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
+        <h3 className="font-bold text-gray-800 text-sm">📱 מספר טלפון</h3>
+        <input
+          type="tel"
+          dir="ltr"
+          inputMode="tel"
+          className="w-full border rounded-lg px-3 py-2 text-sm text-left"
+          value={phone}
+          onChange={e => setPhone(e.target.value)}
+          placeholder="050-1234567"
+        />
+        <button onClick={savePhone} disabled={phoneSaving}
+          className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+          {phoneSaving ? 'שומר...' : 'שמור טלפון'}
+        </button>
+        {phoneMsg && (
+          <p className={`text-xs ${phoneMsg.type === 'ok' ? 'text-green-600' : 'text-red-500'}`}>
+            {phoneMsg.text}
+          </p>
+        )}
+        <p className="text-[11px] text-gray-400">הטלפון נשמר בפרופיל שלך ומוצג למנהל.</p>
       </div>
 
       {/* שינוי סיסמה */}

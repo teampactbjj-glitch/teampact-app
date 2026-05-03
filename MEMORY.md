@@ -1,5 +1,73 @@
 # MEMORY - TeamPact App
 
+> ## ✅ Session 03.05.2026 (המשך 7) — הסרת "פלאש" של מסך לוגין בפתיחת PWA
+>
+> **My last pending task:** הושלם. אין משימות פתוחות. נדחף ל-main כ-`f966b9f`.
+>
+> **בעיה:** בכל פתיחה של ה-PWA (גם כשהמשתמש לא יצא מהאפליקציה), היה רואה לרגע מסך שחור או מסך הלוגין, ורק אחרי שבריר שנייה ה-Dashboard עולה. באפליקציות native זה לא קורה.
+>
+> **שורש הבעיה (3 שכבות):**
+> 1. ב-`App.jsx` שורה 14: `useState(null)` ל-session — בהתחלה null → תנאי `if (!session) return <AthleteLogin/>` בשורה 183 גרם לרינדור מסך לוגין למשתמשים מחוברים, עד ש-`supabase.auth.getSession()` האסינכרוני חוזר.
+> 2. ב-`loadingProfile` הוצג טקסט "טוען..." באמצע מסך לבן — עוד פלאש קצר.
+> 3. ב-`index.html` ה-`body` היה עם רקע כחול כהה `#1e3a5f` ול-`#root` לא היה גובה מלא — לכן לפני שה-React צייר משהו, רואים "מסך שחור" כחול-כהה.
+>
+> **פתרון:**
+> 1. **`src/App.jsx`** — קריאה **סינכרונית** ל-`localStorage.getItem('teampact-session')` (המפתח של Supabase, מוגדר ב-`src/lib/supabase.js`) **לפני** ה-export של הקומפוננטה (`HAS_CACHED_SESSION` const). אם יש cache → `sessionChecked` מתחיל `false` ומראים רקע אפור-בהיר נקי (`#f9fafb`) בלי טקסט/לוגו עד שהדשבורד מוכן. אם אין cache → `sessionChecked` מתחיל `true` ועוברים ישר ל-`AthleteLogin` כמו בעבר.
+> 2. **`src/App.jsx`** — `loadingProfile` מציג את אותו רקע נקי במקום הטקסט "טוען..." — מעבר רציף.
+> 3. **`index.html`** — `html, body { background: #f9fafb; height: 100% }` ו-`#root { min-height: 100% }` — מעלים את הפלאש הכחול-שחור לפני ה-React.
+>
+> **התנהגות חדשה:** משתמש שלא יצא מהאפליקציה רואה רקע אפור-בהיר חלק ואז ישר Dashboard, בדיוק כמו אפליקציה native. משתמש שלא מחובר רואה לוגין מיד (כמו קודם).
+>
+> **לא נשבר כלום:** כל ה-flow של auth (`onAuthStateChange`, `fetchProfile`, race-condition guard עם `fetchVersionRef`, polling של pending member/trainer, push subscriptions) נשמר בלי שינוי. ה-try/catch סביב localStorage מבטיח שכשל קריאה לא יקרוס.
+>
+> ---
+>
+> ## ✅ Session 03.05.2026 (המשך 6) — תיקון הרשמת מתאמן חדש (rate limit + RLS)
+>
+> **My last pending task:** הושלם. אין משימות פתוחות.
+>
+> **בעיה ראשונה (rate limit):** יובל ממון (`yuvalma01@gmail.com`) קיבל `email rate limit exceeded` בהרשמה. הסיבה: ה-SMTP המובנה של Supabase מוגבל ל-2-4 מיילים/שעה.
+>
+> **פתרון בעיה ראשונה:** ב-Supabase Dashboard → Auth → Sign In / Providers → User Signups → בוטל **Confirm email** → נשמר.
+>
+> **בעיה שנייה (RLS) שנחשפה אחרי תיקון 1:** אחרי שהוסר אישור המייל, signUp מחבר מיד את היוזר ב-session. זה גרם לכך שה-INSERT ל-`members` שאחריו רץ כ-`authenticated` ולא כ-`anon` — אבל הפוליסות `members_self_register` ו-`Allow public insert for registration` (שתיהן `WITH CHECK (status='pending')`) חלות **רק על role `anon`**. אז ה-INSERT נחסם ב-RLS והמתאמן קיבל "נרשמת אך הייתה בעיה בשמירת הפרטים".
+>
+> **פתרון בעיה שנייה (SQL הורץ ב-Production):**
+>
+> 1. **יובל הוכנס ידנית ל-members** (UUID `e22d386e-5784-4005-be18-de5576ff5e9a`, סניף חולון-בגין `11111111-1111-1111-1111-111111111111`, subscription `4x_week`, status `pending`).
+>
+> 2. **נוצרה פוליסה חדשה** לתיקון העתיד (לא נגעתי בקיימות):
+>    ```sql
+>    CREATE POLICY "members_self_register_auth" ON public.members
+>      FOR INSERT TO authenticated
+>      WITH CHECK (status = 'pending' AND auth.uid() = id);
+>    ```
+>    זה מאפשר ל-authenticated להירשם בעצמו (`id` חייב להיות שלו) עם status=pending. הפוליסות הקיימות ל-anon נשמרו כ-fallback.
+>
+> **תוצאה:** דודי צריך לאשר את יובל בממשק המאמן (הוא מופיע כעת ברשימת ממתינים). מתאמנים חדשים שירשמו מעכשיו יעברו ישר בלי תקלה.
+>
+> **קבצים שלא נגעתי בהם:** הקוד `src/components/RegisterPage.jsx:83` נשאר כמו שהוא. אין שינוי קוד — הכל ברמת DB/Auth Settings.
+>
+> **branches IDs (לתיעוד):**
+> - תל אביב = `22222222-2222-2222-2222-222222222222`
+> - חולון - בגין = `11111111-1111-1111-1111-111111111111`
+> - חולון - קאנטרי = `1b913842-78d7-4e82-bfdf-cf725ac919f3`
+>
+> **subscription_type values:** `2x_week`, `4x_week`, `unlimited`
+>
+> **בעיה שלישית — Push notifications לא נשלחו על הרשמות חדשות (אבחון בלבד, נפתרה אוטומטית):**
+>
+> דודי דיווח שהוא לא קיבל התראות על 25+ הרשמות אחרונות. אבחון:
+> - ב-`Edge Functions → send-push → Logs` חיפוש "lead:" החזיר 0 תוצאות בכלל. הפונקציה לא נקראה אפילו פעם אחת.
+> - אבחון פוליסות `profiles`: יש פוליסה `"קרא פרופיל עצמי"` ל-PUBLIC עם `auth.uid()=id` (רק עצמך), ופוליסה `"allow authenticated read profiles"` ל-`{authenticated}` עם `true` (הכל).
+> - ב-`trainerUserIdsForMember` (ב-`src/lib/notifyTargets.js`): `SELECT id FROM profiles WHERE role='trainer'`.
+> - ב-flow הישן (Confirm email דלוק): `signUp` לא מחבר ב-session → קריאה ל-profiles רצה כ-`anon` → רשימה ריקה → `notifyPush` יוצא בשקט (`if (!userIds.length) return`).
+> - ב-flow החדש (Confirm email כבוי): `signUp` מחבר מיד → קריאה ל-profiles רצה כ-`authenticated` → רשימה תקינה → Push נשלח.
+>
+> **תוצאה:** הבעיה תיפתר אוטומטית מהמתאמן הבא והלאה. אין צורך בשינוי קוד או מיגרציה. אם דודי לא יקבל push, צריך לאמת שה-subscriptions שלו (6 רשומות ב-`push_subscriptions` עבור user_id שלו) לא פגי-תוקף — קל לעשות זאת ע"י כניסה לאפליקציה והפעלת התראות מחדש.
+>
+> ---
+>
 > ## ✅ Session 03.05.2026 (המשך 5) — עריכת טלפון למאמן (פרופיל + אדמין) + תיקון הדבקה
 >
 > **My last pending task:** כל הקוד נדחף לפרודקשן (`2d17eff` ב-GitHub). **משימה אחת חוב טכני שדודי חייב לוודא שביצע ב-Supabase SQL Editor:** להחזיר `AND is_admin = true` ל-policy `profiles_update`. במהלך אבחון של בעיה אחרת דרסתי את ה-policy ל-version פתוחה יותר (כל מאמן יכול לעדכן כל פרופיל). SQL מוכן בסוף הסעיף.

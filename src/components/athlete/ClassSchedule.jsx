@@ -43,14 +43,42 @@ function computeNextOccurrence(cls, now = new Date()) {
   return { start: nextStart, end: nextEnd }
 }
 
-// השיעור של השבוע הזה נעול לרישום/ביטול אם היום הוא היום-בשבוע שלו
-// והשעה כבר עברה. אחרי `start_time` של השיעור — אין יותר שינוי רישומים.
-function isThisWeekLocked(cls, now = new Date()) {
+// חלון חסד לרישום באיחור: מתאמן יכול להירשם גם עד 30 דקות אחרי תחילת השיעור.
+// (ביטול נשאר חסום ברגע תחילת השיעור — מי שלא ביטל לפני שהשיעור התחיל לא יכול
+// "להעלם" ולא לקבל "no-show".)
+const LATE_REGISTER_GRACE_MIN = 30
+
+// עזר בדיקה — עובד רק במצב פיתוח (npm run dev). בפרודקשן import.meta.env.DEV
+// הוא false ו-getNow() מתנהג בדיוק כמו new Date(). מאפשר לבדוק תרחישים תלויי-זמן
+// עם ?fakeNow=2026-05-03T14:35 ב-URL בלי לגעת בנתונים אמיתיים.
+function getNow() {
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    const fake = new URLSearchParams(window.location.search).get('fakeNow')
+    if (fake) {
+      const d = new Date(fake)
+      if (!isNaN(d.getTime())) return d
+    }
+  }
+  return new Date()
+}
+
+// ביטול רישום: נעול ברגע שהשיעור מתחיל (start_time עבר).
+function isLockedForCancel(cls, now = getNow()) {
   if (now.getDay() !== cls.day_of_week) return false
   const [hh = 0, mm = 0, ss = 0] = (cls.start_time || '00:00:00').split(':').map(Number)
   const todayStart = new Date(now)
   todayStart.setHours(hh, mm, ss || 0, 0)
   return now >= todayStart
+}
+
+// רישום: נעול רק 30 דקות אחרי start_time (חלון חסד למאחרים).
+function isLockedForRegister(cls, now = getNow()) {
+  if (now.getDay() !== cls.day_of_week) return false
+  const [hh = 0, mm = 0, ss = 0] = (cls.start_time || '00:00:00').split(':').map(Number)
+  const lateCutoff = new Date(now)
+  lateCutoff.setHours(hh, mm, ss || 0, 0)
+  lateCutoff.setMinutes(lateCutoff.getMinutes() + LATE_REGISTER_GRACE_MIN)
+  return now >= lateCutoff
 }
 
 export default function ClassSchedule({ profile, member }) {
@@ -62,9 +90,9 @@ export default function ClassSchedule({ profile, member }) {
   // tick של "עכשיו" כל דקה — כדי שכפתורי הרישום/ביטול יחסמו אוטומטית
   // ברגע שעוברים את start_time (לביטול) או start_time+duration (לרישום),
   // בלי שהמתאמן צריך לרענן את המסך.
-  const [now, setNow] = useState(() => new Date())
+  const [now, setNow] = useState(() => getNow())
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60 * 1000)
+    const id = setInterval(() => setNow(getNow()), 60 * 1000)
     return () => clearInterval(id)
   }, [])
 
@@ -135,14 +163,18 @@ export default function ClassSchedule({ profile, member }) {
     const isRegistered = registeredIds.has(classId)
     const cls = classes.find(c => c.id === classId)
 
-    // אכיפת חלון זמן בצד הלקוח: שיעור של היום שכבר התחיל — נעול לחלוטין.
-    // לא להירשם, לא לבטל. (השיעור של השבוע הבא כבר זמין כי computeNextOccurrence
-    // מחזירה את ההופעה הבאה בעתיד.)
-    if (cls && isThisWeekLocked(cls)) {
-      toast.error(isRegistered
-        ? 'השיעור כבר התחיל — לא ניתן לבטל את הרישום.'
-        : 'השיעור כבר התחיל — לא ניתן להירשם.')
-      return
+    // אכיפת חלון זמן בצד הלקוח:
+    //   ביטול — חסום ברגע שהשיעור מתחיל.
+    //   רישום — חלון חסד של 30 דקות אחרי תחילת השיעור (למאחרים).
+    if (cls) {
+      if (isRegistered && isLockedForCancel(cls)) {
+        toast.error('השיעור כבר התחיל — לא ניתן לבטל את הרישום.')
+        return
+      }
+      if (!isRegistered && isLockedForRegister(cls)) {
+        toast.error(`חלון הרישום נסגר (עד ${LATE_REGISTER_GRACE_MIN} דקות אחרי תחילת השיעור).`)
+        return
+      }
     }
 
     // Prevent going over limit when registering
@@ -296,15 +328,20 @@ export default function ClassSchedule({ profile, member }) {
                 const isRegistered = registeredIds.has(cls.id)
                 const atLimit = !isRegistered && limit !== Infinity && registeredIds.size >= limit
                 const busy = actionLoading[cls.id]
-                // השיעור של היום שכבר התחיל → נעול לרישום ולביטול גם יחד.
-                const locked = isThisWeekLocked(cls, now)
-                const disabled = busy || atLimit || locked
+                // ביטול נחסם בתחילת השיעור; רישום נשאר פתוח עד 30 דקות אחרי start_time.
+                const cancelLocked = isLockedForCancel(cls, now)
+                const registerLocked = isLockedForRegister(cls, now)
+                // הכפתור הספציפי הזה נעול אם הפעולה הרלוונטית (לפי סטטוס הרישום) חסומה.
+                const actionLocked = isRegistered ? cancelLocked : registerLocked
+                const disabled = busy || atLimit || actionLocked
 
                 let label
                 if (busy) label = '...'
-                else if (locked && isRegistered) label = '✓ רשום · השיעור התחיל'
-                else if (locked) label = 'השיעור התחיל'
+                else if (isRegistered && cancelLocked && !registerLocked) label = '✓ רשום · השיעור התחיל'
+                else if (isRegistered && registerLocked) label = '✓ רשום · השיעור התחיל'
                 else if (isRegistered) label = '✓ רשום · בטל'
+                else if (registerLocked) label = 'השיעור התחיל'
+                else if (cancelLocked && !registerLocked) label = 'הירשם (איחור)'
                 else if (atLimit) label = 'מגבלת מנוי'
                 else label = 'הירשם'
 
@@ -313,7 +350,7 @@ export default function ClassSchedule({ profile, member }) {
                     key={cls.id}
                     className={`bg-white rounded-xl border shadow-sm px-4 py-3 flex items-center justify-between gap-3 transition ${
                       isRegistered ? 'border-emerald-300 bg-emerald-50' : ''
-                    } ${locked && !isRegistered ? 'opacity-60' : ''}`}
+                    } ${registerLocked && !isRegistered ? 'opacity-60' : ''}`}
                   >
                     <div className="min-w-0">
                       <p className="font-semibold text-gray-800 text-sm">{cls.name}</p>
@@ -329,11 +366,13 @@ export default function ClassSchedule({ profile, member }) {
                       disabled={disabled}
                       className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-40 ${
                         isRegistered
-                          ? locked
+                          ? cancelLocked
                             ? 'bg-emerald-500 text-white cursor-not-allowed'
                             : 'bg-emerald-500 text-white hover:bg-red-100 hover:text-red-700'
-                          : locked || atLimit
+                          : registerLocked || atLimit
                           ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : cancelLocked
+                          ? 'bg-amber-500 text-white hover:bg-amber-600'
                           : 'bg-emerald-600 text-white hover:bg-emerald-700'
                       }`}
                     >

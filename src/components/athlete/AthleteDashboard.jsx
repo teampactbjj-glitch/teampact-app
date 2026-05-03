@@ -751,6 +751,68 @@ function ProfileTab({ profile, member }) {
     Array.isArray(member?.branch_ids) ? member.branch_ids : (member?.branch_id ? [member.branch_id] : [])
   )
   const [branchSessions, setBranchSessions] = useState({}) // {branchId: count}
+  // המאמנים של המתאמן הזה — נגזר מ-class_registrations + checkins ב-60 ימים אחרונים.
+  // [{ id, name, phone }] — רק מאמנים שיש להם טלפון מוגדר.
+  const [myCoaches, setMyCoaches] = useState([])
+
+  useEffect(() => {
+    if (!profile?.id) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        // 1) class_ids שאליהם המתאמן רשום (כל history) או נכח ב-60 ימים אחרונים
+        const sixtyDaysAgoISO = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
+        const [regsRes, checksRes] = await Promise.all([
+          supabase.from('class_registrations').select('class_id').eq('athlete_id', profile.id),
+          supabase.from('checkins').select('class_id')
+            .eq('athlete_id', profile.id).eq('status', 'present')
+            .gte('checked_in_at', sixtyDaysAgoISO),
+        ])
+        const classIds = new Set([
+          ...(regsRes.data || []).map(r => r.class_id).filter(Boolean),
+          ...(checksRes.data || []).map(c => c.class_id).filter(Boolean),
+        ])
+        if (classIds.size === 0) { if (!cancelled) setMyCoaches([]); return }
+
+        // 2) coach_id לכל class
+        const { data: classesData } = await supabase
+          .from('classes')
+          .select('id, coach_id')
+          .in('id', Array.from(classIds))
+        const coachIds = new Set((classesData || []).map(c => c.coach_id).filter(Boolean))
+        if (coachIds.size === 0) { if (!cancelled) setMyCoaches([]); return }
+
+        // 3) coaches עצמם (name + user_id לחיבור ל-profiles)
+        const { data: coachesData } = await supabase
+          .from('coaches')
+          .select('id, name, user_id')
+          .in('id', Array.from(coachIds))
+        const userIds = (coachesData || []).map(c => c.user_id).filter(Boolean)
+
+        // 4) טלפונים מ-profiles (טלפון של המאמן נשמר על profile של המשתמש שלו)
+        const phonesMap = {}
+        if (userIds.length > 0) {
+          const { data: profilesData } = await supabase
+            .from('profiles')
+            .select('id, phone')
+            .in('id', userIds)
+          ;(profilesData || []).forEach(p => { if (p.phone) phonesMap[p.id] = p.phone })
+        }
+
+        // 5) רשימה סופית — רק מאמנים שיש להם טלפון, ממוינים לפי שם
+        const list = (coachesData || [])
+          .map(c => ({ id: c.id, name: c.name || '—', phone: phonesMap[c.user_id] || null }))
+          .filter(c => c.phone)
+          .sort((a, b) => a.name.localeCompare(b.name, 'he'))
+
+        if (!cancelled) setMyCoaches(list)
+      } catch (e) {
+        console.warn('[ProfileTab] loadMyCoaches failed', e)
+        if (!cancelled) setMyCoaches([])
+      }
+    })()
+    return () => { cancelled = true }
+  }, [profile?.id])
 
   useEffect(() => {
     supabase.from('branches').select('id, name').eq('hidden', false).order('name').then(({ data }) => {
@@ -912,6 +974,43 @@ function ProfileTab({ profile, member }) {
         )}
         <p className="text-xs text-gray-400 pt-2 border-t">לשינוי שם או טלפון — פנה למאמן</p>
       </div>
+
+      {/* === דבר עם המאמן — דינמי לפי האימונים שהמתאמן רשום אליהם === */}
+      {myCoaches.length > 0 && (
+        <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
+          <div>
+            <h3 className="font-bold text-gray-800 text-sm">💬 המאמנים שלך</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {myCoaches.length === 1
+                ? 'לחץ לפתיחת ווצאפ ישירות עם המאמן'
+                : `${myCoaches.length} מאמנים — לחץ לפתיחת ווצאפ עם המאמן הרצוי`}
+            </p>
+          </div>
+          <div className="space-y-2">
+            {myCoaches.map(c => {
+              const wa = athleteWaLink(c.phone, `שלום ${c.name}, מדבר ${athleteName} מ-Team Pact`)
+              if (!wa) return null
+              return (
+                <a
+                  key={c.id}
+                  href={wa}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  aria-label={`שלח הודעת ווצאפ ל${c.name}`}
+                  className="flex items-center gap-3 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200 rounded-xl px-4 py-3 transition focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-600"
+                >
+                  <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center text-lg shrink-0" aria-hidden="true">💬</div>
+                  <div className="flex-1 min-w-0 text-right">
+                    <div className="font-bold text-gray-900 text-sm truncate">{c.name}</div>
+                    <div className="text-xs text-gray-500" dir="ltr">{c.phone}</div>
+                  </div>
+                  <span className="text-emerald-700 text-lg shrink-0" aria-hidden="true">›</span>
+                </a>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* בקשות ממתינות */}
       {pendingRequests.length > 0 && (
@@ -1077,6 +1176,100 @@ function isOpenMatClass(cls) {
   return false;
 }
 
+// === ווצאפ — נרמול טלפון ישראלי לפורמט בינלאומי + יצירת קישור wa.me ===
+// משוכפל מ-ReportsManager.jsx (לא רוצים import בין trainer ל-athlete).
+function athleteToIntlPhone(phone) {
+  if (!phone) return null
+  const digits = String(phone).replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.startsWith('972')) return digits
+  if (digits.startsWith('0')) return '972' + digits.slice(1)
+  if (digits.length >= 9 && digits.length <= 10) return '972' + digits
+  return digits
+}
+function athleteWaLink(phone, message = '') {
+  const intl = athleteToIntlPhone(phone)
+  if (!intl) return null
+  const t = message ? `?text=${encodeURIComponent(message)}` : ''
+  return `https://wa.me/${intl}${t}`
+}
+
+// === Welcome-back overlay ===
+// מסך מודאל אדום-לבן שקופץ כשמתאמן לוחץ על התראת Push של "מתגעגעים אליך".
+// נפתח ע"י #welcome-back?days=N ב-URL (נקבע ב-ReportsManager בשליחת ה-Push).
+// CTA יחיד מכוון: "הירשם לאימון הקרוב" → מעביר ללוח השיעורים.
+function WelcomeBackOverlay({ memberName, days, onClose }) {
+  const firstName = String(memberName || '').trim().split(/\s+/)[0] || 'חבר'
+  const headline = days === null
+    ? `${firstName}, מתגעגעים אליך 💙`
+    : days <= 14
+      ? `${firstName}, מתגעגעים אליך 💙`
+      : `${firstName}, איפה היית? 💙`
+  const message = days === null
+    ? 'שמתי לב שעדיין לא נרשמת לאימונים באפליקציה.\nלפני כל אימון פשוט נכנסים, בוחרים את האימון ומסמנים "נרשמתי" ✅\nככה אעקוב אחר ההתקדמות שלך נכון.'
+    : days <= 14
+      ? `שמתי לב שלא הגעת להתאמן כבר ${days} ימים.\nנשמח לראות אותך שוב על המזרן באימון הקרוב 💪`
+      : `שמתי לב שלא הגעת להתאמן כבר ${days} ימים.\nאם צריך הפסקה או התאמה במנוי, בוא נדבר.\nנשמח לראות אותך שוב על המזרן 💪`
+
+  function handleSchedule() {
+    // משנה גם hash וגם state של AthleteDashboard דרך hashchange event
+    window.location.hash = '#schedule'
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="welcome-back-title"
+      dir="rtl"
+    >
+      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-fade-in">
+        {/* כותרת — גרדיאנט אדום של Team Pact */}
+        <div className="bg-gradient-to-br from-red-600 via-red-700 to-red-900 text-white p-6 text-center relative">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="סגור"
+            className="absolute top-3 left-3 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white text-xl font-bold focus:outline focus:outline-2 focus:outline-white"
+          >
+            ✕
+          </button>
+          <div className="text-6xl mb-2" aria-hidden="true">🥋</div>
+          <h2 id="welcome-back-title" className="text-2xl font-black mb-1 leading-tight">
+            {headline}
+          </h2>
+          <p className="text-red-100 text-sm font-semibold tracking-wide">Team Pact</p>
+        </div>
+
+        {/* גוף ההודעה */}
+        <div className="p-6 space-y-4">
+          <p className="text-gray-700 text-base leading-relaxed whitespace-pre-line text-center">
+            {message}
+          </p>
+
+          {/* CTA יחיד */}
+          <button
+            type="button"
+            onClick={handleSchedule}
+            className="w-full bg-gradient-to-br from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 active:from-red-800 active:to-red-950 text-white font-black text-base py-4 rounded-2xl shadow-lg transition-all focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-red-700"
+          >
+            📅 הירשם לאימון הקרוב
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full text-gray-500 hover:text-gray-700 text-sm font-medium py-2 transition"
+          >
+            לא עכשיו
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AthleteDashboard({ profile }) {
   const toast = useToast()
   const confirm = useConfirm()
@@ -1087,12 +1280,26 @@ export default function AthleteDashboard({ profile }) {
   const [branchesMap, setBranchesMap]       = useState({})
   const [registrations, setRegistrations]   = useState(new Set())
   const [registrationsNext, setRegistrationsNext] = useState(new Set())
+  // welcome-back overlay — קופץ כשמגיעים מ-Push של "מתגעגעים אליך"
+  const [welcomeBack, setWelcomeBack] = useState({ open: false, days: null })
 
-  // hash → tab (ניווט מהתראת push)
+  // hash → tab/overlay (ניווט מהתראת push)
   useEffect(() => {
     const TAB_HASHES = ['schedule', 'shop', 'announcements', 'profile']
     function syncFromHash() {
-      const h = (window.location.hash || '').replace('#', '')
+      const raw = window.location.hash || ''
+      // welcome-back?days=N — overlay ייעודי, לא tab
+      if (raw.startsWith('#welcome-back')) {
+        const qIdx = raw.indexOf('?')
+        const daysStr = qIdx > -1 ? new URLSearchParams(raw.slice(qIdx + 1)).get('days') : null
+        const daysNum = daysStr !== null && daysStr !== '' && !Number.isNaN(parseInt(daysStr, 10))
+          ? parseInt(daysStr, 10)
+          : null
+        setWelcomeBack({ open: true, days: daysNum })
+        return
+      }
+      setWelcomeBack({ open: false, days: null })
+      const h = raw.replace('#', '')
       if (TAB_HASHES.includes(h)) setActiveTab(h)
     }
     syncFromHash()
@@ -1410,6 +1617,13 @@ export default function AthleteDashboard({ profile }) {
         </div>
       </main>
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} isTrainer={false} announcementsCount={announcementsCount} />
+      {welcomeBack.open && (
+        <WelcomeBackOverlay
+          memberName={member?.full_name || profile?.full_name || profile?.email}
+          days={welcomeBack.days}
+          onClose={() => { window.location.hash = '#schedule' }}
+        />
+      )}
     </div>
   )
 }

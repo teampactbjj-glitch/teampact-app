@@ -500,11 +500,15 @@ export default function ReportsManager({ isAdmin }) {
       // הכותרת קצרה כי מערכות הפעלה חותכות אותה במסך נעול.
       const title = `${CLUB_NAME} 🥋 מתגעגעים אליך`
       const body = inactiveReminderMessage(member.name, member.daysSince)
+      // ה-URL מצביע ל-overlay "מתגעגעים אליך" (WelcomeBackOverlay) שיקפוץ
+      // אוטומטית עם פתיחת האפליקציה. מעבירים days כפרמטר כדי שההודעה במסך
+      // תהיה מותאמת (3 וריאציות: לא נכח מעולם / עד 14 / מעל 14).
+      const wbDays = member.daysSince === null ? '' : `?days=${member.daysSince}`
       await notifyPush({
         userIds: [member.id],
         title,
         body,
-        url: '/',                // פותח את האפליקציה במסך הראשי (לוח השיעורים)
+        url: `/#welcome-back${wbDays}`,
         tag: `inactive-${member.id}`, // מאחד התראות כפולות באותו מכשיר
         icon: '/icon-192.png',
       })
@@ -545,11 +549,12 @@ export default function ReportsManager({ isAdmin }) {
       const results = await Promise.allSettled(
         inactiveMembers.map(m => {
           const body = inactiveReminderMessage(m.name, m.daysSince)
+          const wbDays = m.daysSince === null ? '' : `?days=${m.daysSince}`
           return notifyPush({
             userIds: [m.id],
             title: `${CLUB_NAME} 🥋 מתגעגעים אליך`,
             body,
-            url: '/',
+            url: `/#welcome-back${wbDays}`,
             tag: `inactive-${m.id}`,
             icon: '/icon-192.png',
           })

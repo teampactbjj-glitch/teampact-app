@@ -34,9 +34,17 @@ export default function TrainerProfile({ profile, isAdmin }) {
       return
     }
     setPhoneSaving(true)
-    const { error } = await supabase.from('profiles').update({ phone: trimmed || null }).eq('id', profile.id)
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ phone: trimmed || null })
+      .eq('id', profile.id)
+      .select('id, phone')
     setPhoneSaving(false)
     if (error) { setPhoneMsg({ type: 'err', text: error.message }); return }
+    if (!data || data.length === 0) {
+      setPhoneMsg({ type: 'err', text: 'לא עודכן (0 שורות) — כנראה חוסר הרשאה' })
+      return
+    }
     setPhoneMsg({ type: 'ok', text: trimmed ? 'הטלפון עודכן' : 'הטלפון הוסר' })
   }
 

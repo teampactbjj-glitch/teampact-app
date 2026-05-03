@@ -1,5 +1,56 @@
 # MEMORY - TeamPact App
 
+> ## ⏳ Session 03.05.2026 (המשך 4) — תיקון כפילות "המאמנים שלך" + לוח 28 ימים
+>
+> **My last pending task:** קוד מוכן + build עבר ✅, **commit/push חסום ע"י `.git/index.lock` תקוע** (כמו בסשנים קודמים — fuse permissions). דודי צריך להריץ ידנית את ה-push.
+>
+> **רצף הסשן (מהראשון לאחרון):**
+>
+> **(א) MyProgressSection — דוח התקדמות אישי למתאמן** [commit `e5886e4` ✅]
+> - קובץ חדש `src/components/athlete/MyProgressSection.jsx`
+> - hero חודשי + פילוח לפי תחום (BJJ/מואי תאי) + לוח חזותי + רצפים + badges + מסר דינמי
+> - בראש ProfileTab
+>
+> **(ב) החלפת לוח חודשי בסטריפ 28 יום** [commit `91a389e` ✅]
+> - דודי: "לוח החודשי תופס מלא מקום ונראה רע"
+> - שכתבתי `calendarDays` ל-4×7 grid של 28 הימים האחרונים, תאים 26px, ללא day labels, תאריך ב-tooltip
+>
+> **(ג) SQL UPDATE לטלפון של דודי-המנהל בפרופיל** [SQL ידני ✅]
+> ```sql
+> UPDATE profiles SET phone = '0542250993' WHERE email = 'teampactbjj@gmail.com';
+> ```
+> דודי בחר להשאיר `full_name = 'TeamPact Admin'` (לא לעדכן ל-"דודי בן זקן").
+>
+> **(ד) דדפלקציה של מאמנים לפי user_id** [commit ⏳ ממתין לpush]
+> - אחרי SQL בסעיף (ג), מתאמן רואה "דודי בן זקן" פעמיים — כי יש 2 רשומות ב-`coaches` (סניף חולון `11111111` + תל אביב `22222222`), שתיהן עם `user_id = 0a1948ba`.
+> - תיקנתי `loadMyCoaches` ב-`src/components/athlete/AthleteDashboard.jsx` (שורות 803-815):
+>   ```js
+>   const seen = new Map()
+>   for (const c of (coachesData || [])) {
+>     const phone = phonesMap[c.user_id]
+>     if (!phone) continue
+>     const key = c.user_id || `${c.name}|${phone}` // fallback
+>     if (seen.has(key)) continue
+>     seen.set(key, { id: c.id, name: c.name || '—', phone })
+>   }
+>   const list = Array.from(seen.values()).sort(...)
+>   ```
+> - Build: `npx vite build --outDir /tmp/teampact-build3` ✅ 99 modules, 1.02MB JS gzip 293KB.
+>
+> **לסגור עכשיו:**
+> ```
+> cd ~/teampact-app
+> rm -f .git/index.lock
+> git add src/components/athlete/AthleteDashboard.jsx MEMORY.md
+> git commit -m "fix(athlete): dedupe coaches by user_id (multi-branch coaches showed twice)"
+> git push origin main && git log --oneline -3
+> ```
+> אז Cmd+Shift+R לאתליט (לבדוק "המאמנים שלך" → דודי פעם אחת בלבד).
+>
+> **תזכורת לדודי לעתיד:** אם תיצור עוד coach בכמה סניפים — הקוד מטפל. אם המאמן נרשם בלי טלפון בפרופיל — צריך לעדכן `profiles.phone` ב-SQL (יש ניהול טלפון מאמנים ב-`CoachesManager.jsx` שאדמין יכול להשתמש בו).
+>
+> ---
+>
 > ## ✅ Session 03.05.2026 (המשך) — עריכת טלפון למאמן: בפרופיל + באדמין
 >
 > **הקשר:** דודי גילה שמאמן אחד לא הזין טלפון בהרשמה. אין ממשק לעריכה אחרי האישור — לא בפרופיל המאמן ולא במסך ניהול המאמנים. תוקן בשני המקומות.

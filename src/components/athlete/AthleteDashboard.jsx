@@ -800,11 +800,18 @@ function ProfileTab({ profile, member }) {
           ;(profilesData || []).forEach(p => { if (p.phone) phonesMap[p.id] = p.phone })
         }
 
-        // 5) רשימה סופית — רק מאמנים שיש להם טלפון, ממוינים לפי שם
-        const list = (coachesData || [])
-          .map(c => ({ id: c.id, name: c.name || '—', phone: phonesMap[c.user_id] || null }))
-          .filter(c => c.phone)
-          .sort((a, b) => a.name.localeCompare(b.name, 'he'))
+        // 5) רשימה סופית — דדפלקציה לפי user_id (מאמן יכול להיות בכמה סניפים = כמה coach records),
+        //    סינון רק מי שיש לו טלפון, ומיון לפי שם.
+        //    ה-fallback ל-`name|phone` הוא ליציבות אם user_id חסר.
+        const seen = new Map() // key → { id, name, phone }
+        for (const c of (coachesData || [])) {
+          const phone = phonesMap[c.user_id]
+          if (!phone) continue
+          const key = c.user_id || `${c.name}|${phone}`
+          if (seen.has(key)) continue
+          seen.set(key, { id: c.id, name: c.name || '—', phone })
+        }
+        const list = Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name, 'he'))
 
         if (!cancelled) setMyCoaches(list)
       } catch (e) {

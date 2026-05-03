@@ -113,9 +113,17 @@ export default function CoachesManager({ profile, onChange }) {
       return
     }
     setBusyId(`phone:${userId}`)
-    const { error } = await supabase.from('profiles').update({ phone: trimmed || null }).eq('id', userId)
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ phone: trimmed || null })
+      .eq('id', userId)
+      .select('id, phone')
     setBusyId(null)
     if (error) { showMsg('err', error.message); return }
+    if (!data || data.length === 0) {
+      showMsg('err', 'לא עודכן (0 שורות) — כנראה חוסר הרשאה (RLS). פנה למפתח.')
+      return
+    }
     showMsg('ok', trimmed ? 'הטלפון עודכן' : 'הטלפון הוסר')
     fetchAll()
   }

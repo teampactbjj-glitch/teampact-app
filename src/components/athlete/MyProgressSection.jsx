@@ -350,32 +350,31 @@ export default function MyProgressSection({ profile }) {
     return { text: 'תמשיך להגיע. ההתקדמות מגיעה ממי שמתמיד.', tone: 'neutral' }
   }, [stats, streaks])
 
-  // ── לוח חודשי חזותי ─────────────────────────────────────────────
-  // לכל יום בחודש: הצבע של התחום העיקרי (שיש בו הכי הרבה אימונים באותו יום).
+  // ── סטריפ "28 ימים אחרונים" — קומפקטי, מודרני (כמו שעון כושר) ─────────────
+  // 4 שורות × 7 ימים = 28 יום אחורה מהיום (כולל היום).
+  // לכל יום: הצבע של התחום העיקרי (הכי הרבה אימונים באותו יום).
+  // מקצועית יותר מלוח חודשי קלנדרי כי מראה תקופה קרובה ולא ריבועים ריקים בהתחלת חודש.
   const calendarDays = useMemo(() => {
-    const now = new Date()
-    const y = now.getFullYear()
-    const mo = now.getMonth()
-    const firstDay = new Date(y, mo, 1)
-    const lastDay = new Date(y, mo + 1, 0)
-    const startDow = firstDay.getDay() // 0=ראשון
-    const totalDays = lastDay.getDate()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const todayMs = today.getTime()
+    const DAY = 24 * 3600 * 1000
 
-    // אגרגציה: תאריך → { discipline → count }
+    // אגרגציה לפי dateKey (YYYY-MM-DD)
     const byDay = new Map()
     for (const e of events) {
-      if (e.monthKey !== monthKey(now)) continue
-      const day = e.date.getDate()
-      if (!byDay.has(day)) byDay.set(day, {})
-      const ag = byDay.get(day)
+      const key = e.dateKey
+      if (!byDay.has(key)) byDay.set(key, {})
+      const ag = byDay.get(key)
       ag[e.discipline] = (ag[e.discipline] || 0) + 1
     }
 
     const cells = []
-    // תאי placeholder לפני יום 1
-    for (let i = 0; i < startDow; i++) cells.push({ kind: 'pad' })
-    for (let d = 1; d <= totalDays; d++) {
-      const ag = byDay.get(d)
+    // 28 יום: מ-(היום - 27) עד היום
+    for (let i = 27; i >= 0; i--) {
+      const d = new Date(todayMs - i * DAY)
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+      const ag = byDay.get(key)
       let primary = null
       if (ag) {
         let max = 0
@@ -383,11 +382,21 @@ export default function MyProgressSection({ profile }) {
           if (count > max) { max = count; primary = disc }
         }
       }
-      const isToday = d === now.getDate()
-      cells.push({ kind: 'day', day: d, primary, count: ag ? Object.values(ag).reduce((a,b)=>a+b,0) : 0, isToday })
+      const isToday = i === 0
+      cells.push({
+        kind: 'day',
+        day: d.getDate(),
+        primary,
+        count: ag ? Object.values(ag).reduce((a,b)=>a+b,0) : 0,
+        isToday,
+        dateLabel: `${d.getDate()}/${d.getMonth()+1}`,
+      })
     }
     return cells
   }, [events])
+
+  // סופר ימים שהתאמנתי ב-28 ימים אחרונים (לכותרת)
+  const last28Days = useMemo(() => calendarDays.filter(c => c.kind === 'day' && c.primary).length, [calendarDays])
 
   // ── רינדור ─────────────────────────────────────────────
   if (loading) {
@@ -513,29 +522,27 @@ export default function MyProgressSection({ profile }) {
         </div>
       )}
 
-      {/* ===== לוח חודשי חזותי ===== */}
-      <div className="bg-white rounded-xl border shadow-sm p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="font-bold text-gray-800 text-sm">הימים שהתאמנת בחודש</h4>
-          <div className="text-xs text-gray-500">{tm.days.size} ימים</div>
+      {/* ===== סטריפ 28 ימים אחרונים — קומפקטי ===== */}
+      <div className="bg-white rounded-xl border shadow-sm p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="font-bold text-gray-800 text-sm">28 הימים האחרונים</h4>
+          <div className="text-xs text-gray-500">{last28Days} ימים פעילים</div>
         </div>
-        <div className="grid grid-cols-7 gap-1.5 text-center" dir="rtl">
-          {['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳'].map(lbl => (
-            <div key={lbl} className="text-[10px] text-gray-400 font-semibold">{lbl}</div>
-          ))}
+        <div className="grid grid-cols-7 gap-1" dir="rtl">
           {calendarDays.map((c, i) => {
-            if (c.kind === 'pad') return <div key={i} className="aspect-square" />
             const bg = c.primary ? DISCIPLINE_COLORS[c.primary] : '#f3f4f6'
             const fg = c.primary ? '#fff' : '#9ca3af'
             return (
-              <div key={i} className="aspect-square rounded flex items-center justify-center text-[10px] font-bold relative"
+              <div key={i}
+                className="rounded flex items-center justify-center text-[10px] font-semibold relative"
                 style={{
+                  height: 26,
                   background: bg,
                   color: fg,
                   outline: c.isToday ? '2px solid #047857' : 'none',
                   outlineOffset: c.isToday ? '1px' : 0,
                 }}
-                title={c.primary ? `${c.day} — ${c.count} אימון${c.count>1?'ים':''}` : `${c.day} — לא התאמנת`}>
+                title={c.primary ? `${c.dateLabel} — ${c.count} אימון${c.count>1?'ים':''}` : `${c.dateLabel} — לא התאמנת`}>
                 {c.day}
               </div>
             )
@@ -543,7 +550,7 @@ export default function MyProgressSection({ profile }) {
         </div>
         {/* מקרא תחומים */}
         {disciplinesThisMonth.length > 0 && (
-          <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t text-[11px] text-gray-600">
+          <div className="flex flex-wrap items-center gap-3 mt-2 pt-2 border-t text-[11px] text-gray-600">
             {disciplinesThisMonth.map(d => (
               <span key={d.name} className="inline-flex items-center gap-1">
                 <span className="w-3 h-3 rounded" style={{ background: DISCIPLINE_COLORS[d.name] }}></span>

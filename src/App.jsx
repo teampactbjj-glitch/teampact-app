@@ -10,8 +10,28 @@ import AccessibilityPage from './components/AccessibilityPage'
 import AccessibilityWidget from './components/AccessibilityWidget'
 import { SkipLink } from './components/a11y'
 
+// קריאה סינכרונית של ה-cache של Supabase — לפני שה-React מרנדר אפילו פעם אחת.
+// זה מאפשר לנו לדעת מיד אם המשתמש "סגר את האפליקציה כשהוא היה מחובר",
+// ובמקרה כזה לדלג על מסך הלוגין ולעבור ישר לטעינת הדשבורד —
+// בדיוק כמו אפליקציה native שלא "יוצאת" כשסוגרים אותה.
+// המפתח 'teampact-session' מוגדר ב-src/lib/supabase.js (storageKey).
+const HAS_CACHED_SESSION = (() => {
+  try {
+    const raw = window.localStorage.getItem('teampact-session')
+    if (!raw) return false
+    // קיומו של ה-token מספיק; גם אם פג — Supabase יבצע refreshToken אוטומטית.
+    const parsed = JSON.parse(raw)
+    return !!(parsed?.access_token || parsed?.refresh_token)
+  } catch {
+    return false
+  }
+})()
+
 export default function App() {
   const [session, setSession] = useState(null)
+  // sessionChecked מתחיל true כשאין session שמור — ואז נראה ישר את מסך הלוגין בלי "פלאש".
+  // הוא מתחיל false רק כשיש cache, וזה אומר: "חכה רגע לאימות אסינכרוני, ואז ישר לדשבורד".
+  const [sessionChecked, setSessionChecked] = useState(!HAS_CACHED_SESSION)
   const [profile, setProfile] = useState(null)
   const [memberStatus, setMemberStatus] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
@@ -23,9 +43,16 @@ export default function App() {
   // ה-early-returns של נתיבים מיוחדים (/register, /register-coach, /accessibility)
   // הוזזו לסוף הקומפוננטה — *אחרי* כל קריאות ה-useEffect.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setSessionChecked(true)
+    }).catch(() => {
+      // גם בכשל — מסמנים שבדקנו כדי לא להיתקע על splash לנצח
+      setSessionChecked(true)
+    })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setSession(session)
+      setSessionChecked(true)
     })
     // רישום service worker ל-PWA + זיהוי עדכון אוטומטי
     // משתנים חיצוניים ל-promise כדי שה-cleanup יוכל לנקות אותם
@@ -180,12 +207,40 @@ export default function App() {
   if (window.location.pathname === '/register-coach') return (<><RegisterCoachPage /><AccessibilityWidget /></>)
   if (window.location.pathname === '/accessibility') return <AccessibilityPage />
 
+  // אם יש session שמור (מצב "האפליקציה לא נסגרה") — אנחנו לא יודעים עדיין מי המשתמש
+  // (מתאמן/מאמן/מנהל), אז נציג רקע אפור בהיר חלק שמתמזג עם הדשבורד, בלי טקסט ובלי לוגו.
+  // המעבר לדשבורד יקרה תוך מאות מ"ש ולא יורגש כ-"פלאש".
+  // אם אין cache — sessionChecked כבר true ונדלג ישר ל-AthleteLogin בלי המסך הזה.
+  if (!sessionChecked) return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="טוען"
+      style={{
+        position: 'fixed', inset: 0,
+        background: '#f9fafb',
+        paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)',
+      }}
+      dir="rtl"
+    />
+  )
+
   if (!session) return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><AthleteLogin /></>)
 
+  // טעינת הפרופיל — אותו רקע נקי כמו של ה-splash הראשוני, כדי שהמעבר ייראה רציף
+  // ולא יהיה פלאש של "טוען..." באמצע המסך כשפותחים את האפליקציה.
   if (loadingProfile) return (
-    <><SkipLink /><UpdateBanner /><AccessibilityWidget /><div className="min-h-screen flex items-center justify-center" role="status" aria-live="polite">
-      <p className="text-gray-600">טוען...</p>
-    </div></>
+    <><SkipLink /><UpdateBanner /><AccessibilityWidget /><div
+      role="status"
+      aria-live="polite"
+      aria-label="טוען"
+      style={{
+        position: 'fixed', inset: 0,
+        background: '#f9fafb',
+        paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)',
+      }}
+      dir="rtl"
+    /></>
   )
 
   // מאמן לא מאושר → מסך המתנה (ולא Dashboard עם נתוני מועדון)

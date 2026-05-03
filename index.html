@@ -14,8 +14,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="TeamPact" />
     <style>
-      body { margin: 0; background: #1e3a5f; }
-      #root { background: #f9fafb; }
+      html, body { margin: 0; height: 100%; background: #f9fafb; }
+      /* #root ממלא את כל המסך עוד לפני ש-React מצייר — מונע "פלאש" של רקע body
+         בשבריר השנייה שבין טעינת ה-PWA לבין ה-render הראשון של React. */
+      #root { min-height: 100%; background: #f9fafb; }
     </style>
   </head>
   <body>

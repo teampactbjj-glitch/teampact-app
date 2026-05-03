@@ -33,13 +33,10 @@ function resolveNextOccurrence(cls) {
 }
 
 // האם כעת מותר להירשם לשבוע הבא?
-// תנאי: יום שישי (dow=5) מהשעה 06:00 ועד מוצאי שבת/תחילת ראשון.
-// משעת חצות של ראשון — "השבוע הבא" הופך ל"השבוע הנוכחי", ואין צורך בטאב.
+// מאז שהלוז פתוח לשבועיים קדימה — הרישום פתוח תמיד גם לשבוע הבא.
+// (בעבר הוגבל ליום שישי 06:00 ואילך, הוסר לבקשת בעל המערכת.)
 function isNextWeekRegistrationOpen(now = new Date()) {
-  const dow = now.getDay()
-  if (dow === 5) return now.getHours() >= 6 // שישי מ-06:00
-  if (dow === 6) return true                  // כל יום שבת
-  return false
+  return true
 }
 
 function ScheduleTab({ member, limit, registrations, registrationsNext, onRegister, branchesMap }) {
@@ -1237,11 +1234,7 @@ export default function AthleteDashboard({ profile }) {
   async function handleRegister(cls, weekMode = 'current') {
     // איזה שבוע אנחנו רושמים/מבטלים — לפי הטאב הפעיל ב-ScheduleTab.
     const isNext = weekMode === 'next'
-    // הגנה: רישום לשבוע הבא פתוח רק מיום שישי 06:00 ואילך (היה נאכף על ידי הטאב שהוסר).
-    if (isNext && !isNextWeekRegistrationOpen()) {
-      toast.error('הרישום לשבוע הבא נפתח ביום שישי 06:00')
-      return
-    }
+    // רישום לשבוע הבא פתוח תמיד (הלוז מציג שבועיים קדימה).
     const targetSet = isNext ? registrationsNext : registrations
     const setTargetSet = isNext ? setRegistrationsNext : setRegistrations
     const isRegistered = targetSet.has(cls.id)

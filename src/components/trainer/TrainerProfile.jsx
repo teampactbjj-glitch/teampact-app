@@ -27,12 +27,17 @@ export default function TrainerProfile({ profile, isAdmin }) {
 
   async function savePhone() {
     setPhoneMsg(null)
-    const trimmed = (phone || '').trim()
+    // ניקוי: מסיר תווי RTL/LTR נסתרים, NBSP, control chars שמגיעים מהדבקות
+    const cleaned = (phone || '')
+      .replace(/[​-‏‪-‮⁠﻿]/g, '')
+      .replace(/[ \t]/g, ' ')
+      .trim()
     // ולידציה רכה — מאפשר ספרות, רווח, מקף, פלוס, סוגריים. ריק = מחיקה.
-    if (trimmed && !/^[0-9 +\-()]{6,20}$/.test(trimmed)) {
+    if (cleaned && !/^[0-9 +\-()]{6,20}$/.test(cleaned)) {
       setPhoneMsg({ type: 'err', text: 'מספר טלפון לא תקין (ספרות בלבד, 6-20 תווים)' })
       return
     }
+    const trimmed = cleaned
     setPhoneSaving(true)
     const { data, error } = await supabase
       .from('profiles')

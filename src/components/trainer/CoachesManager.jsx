@@ -107,11 +107,16 @@ export default function CoachesManager({ profile, onChange }) {
   // ---------- עדכון טלפון של מאמן (בטבלת profiles לפי user_id) ----------
   async function updateCoachPhone(userId, newPhone) {
     if (!userId) { showMsg('err', 'אין משתמש מקושר — לא ניתן לעדכן טלפון'); return }
-    const trimmed = (newPhone || '').trim()
-    if (trimmed && !/^[0-9 +\-()]{6,20}$/.test(trimmed)) {
+    // ניקוי: מסיר תווי RTL/LTR נסתרים, NBSP, control chars שמגיעים מהדבקות
+    const cleaned = (newPhone || '')
+      .replace(/[​-‏‪-‮⁠﻿]/g, '')
+      .replace(/[ \t]/g, ' ')
+      .trim()
+    if (cleaned && !/^[0-9 +\-()]{6,20}$/.test(cleaned)) {
       showMsg('err', 'מספר טלפון לא תקין (ספרות בלבד, 6-20 תווים)')
       return
     }
+    const trimmed = cleaned
     setBusyId(`phone:${userId}`)
     const { data, error } = await supabase
       .from('profiles')

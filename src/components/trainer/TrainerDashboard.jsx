@@ -252,7 +252,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
           </button>
         )
       })()}
-      <header className="shrink-0 bg-blue-700 text-white px-6 shadow safe-area-header">
+      <header className="shrink-0 bg-gradient-to-br from-black via-neutral-900 to-red-900 text-white px-5 py-2 shadow-lg safe-area-header">
         <div className="flex items-center gap-3">
           <img
             src={logoUrl}
@@ -262,12 +262,12 @@ export default function TrainerDashboard({ profile, isAdmin }) {
           />
           <div>
             <div className="flex items-center gap-2 leading-none">
-              <h1 className="font-bold text-lg">TeamPact</h1>
+              <h1 className="font-black text-lg tracking-wide">TeamPact</h1>
               {isAdmin && (
                 <span className="text-xs bg-yellow-400 text-yellow-900 font-semibold px-2 py-0.5 rounded-full">מנהל</span>
               )}
             </div>
-            <p className="text-blue-200 text-xs mt-0.5">{isAdmin ? 'מנהל מערכת' : 'מאמן'}: {profile?.full_name}</p>
+            <p className="text-gray-300 text-xs mt-0.5">{isAdmin ? 'מנהל מערכת' : 'מאמן'}: <span className="font-bold text-white">{profile?.full_name}</span></p>
           </div>
         </div>
       </header>

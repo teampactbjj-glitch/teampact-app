@@ -16,7 +16,7 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
         { id: 'profile',       icon: '👤', label: 'פרופיל' },
       ]
   return (
-    <nav dir="rtl" className="flex shrink-0" aria-label="ניווט ראשי"
+    <nav dir="rtl" className="flex shrink-0 tp-bottom-nav" aria-label="ניווט ראשי"
       style={{
         // ללא position:fixed — flex item רגיל בתוך wrapper של flex column עם 100dvh.
         width: '100%',
@@ -25,9 +25,7 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
         // זה תואם לסטנדרט iOS Tab Bar (49-83pt) ו-Material Design (56-80dp).
         height: 'calc(64px + env(safe-area-inset-bottom))',
         paddingBottom: 'env(safe-area-inset-bottom)',
-        background: '#ffffff',
-        borderTop: '1px solid #e5e7eb',
-        boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.06)',
+        // הרקע, גבול וצל מוגדרים ב-index.css דרך .tp-bottom-nav — ככה a11y-dark-mode מצליח לדרוס אותם.
       }}>
       {tabs.map(tab => {
         const active = activeTab === tab.id
@@ -54,10 +52,12 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
               padding: '8px 4px',
               color: active ? '#047857' : '#6b7280',
               background: 'transparent',
-            }}>
+            }}
+            data-tp-tab
+            data-active={active ? 'true' : 'false'}>
             {/* אינדיקטור פעיל — קו בעל רוחב חצי כפתור בראש, צבע אמרלד */}
             {active && (
-              <span aria-hidden="true" style={{
+              <span aria-hidden="true" className="tp-tab-indicator" style={{
                 position: 'absolute',
                 top: 0,
                 left: '25%',

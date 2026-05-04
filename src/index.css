@@ -112,6 +112,31 @@ html.a11y-dark-mode .bg-gray-100 {
   background-color: #1a1a1a !important;
   color: #ffffff !important;
 }
+
+/* ============================================================
+   BottomNav — לבן כברירת מחדל, כהה במצב כהה (a11y-dark-mode)
+   ============================================================ */
+.tp-bottom-nav {
+  background: #ffffff;
+  border-top: 1px solid #e5e7eb;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+}
+html.a11y-dark-mode .tp-bottom-nav {
+  background: #0a0a0a !important;
+  border-top: 1px solid #2a2a2a !important;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.6) !important;
+}
+/* טקסט הטאב — אפור-בהיר במצב כהה */
+html.a11y-dark-mode .tp-bottom-nav [data-tp-tab][data-active="false"] {
+  color: #9ca3af !important;
+}
+html.a11y-dark-mode .tp-bottom-nav [data-tp-tab][data-active="true"] {
+  color: #34d399 !important;
+}
+/* אינדיקטור פעיל במצב כהה */
+html.a11y-dark-mode .tp-bottom-nav .tp-tab-indicator {
+  background: #10b981 !important;
+}
 html.a11y-dark-mode .bg-gray-200 {
   background-color: #2a2a2a !important;
   color: #ffffff !important;

@@ -1648,7 +1648,7 @@ export default function AthleteDashboard({ profile }) {
       dir="rtl"
       style={{ height: '100dvh', minHeight: '100vh' }}
     >
-      <header className="shrink-0 bg-gradient-to-br from-gray-900 via-gray-800 to-red-900 text-white px-5 shadow-lg safe-area-header">
+      <header className="shrink-0 bg-gradient-to-br from-black via-neutral-900 to-red-900 text-white px-5 py-2 shadow-lg safe-area-header">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img

@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>TeamPact</title>
     <meta name="description" content="מערכת ניהול מתאמנים לחדר כושר" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -18,6 +18,9 @@
       /* #root ממלא את כל המסך עוד לפני ש-React מצייר — מונע "פלאש" של רקע body
          בשבריר השנייה שבין טעינת ה-PWA לבין ה-render הראשון של React. */
       #root { min-height: 100%; background: #f9fafb; }
+      /* מבטל פינץ'-זום ודאבל-טאפ-זום במובייל — הנגישות של המערכת עדיין עובדת */
+      html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+      body { touch-action: manipulation; overscroll-behavior: none; }
     </style>
   </head>
   <body>

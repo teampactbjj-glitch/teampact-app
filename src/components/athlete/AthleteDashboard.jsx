@@ -9,6 +9,7 @@ import { allTrainerUserIds } from '../../lib/notifyTargets'
 import ProductDetail from './ProductDetail'
 import MyProgressSection from './MyProgressSection'
 import { useToast, useConfirm } from '../a11y'
+import logoUrl from '../../assets/logo.png'
 
 const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const SUBSCRIPTION_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -1650,9 +1651,12 @@ export default function AthleteDashboard({ profile }) {
       <header className="shrink-0 bg-gradient-to-br from-gray-900 via-gray-800 to-red-900 text-white px-5 shadow-lg safe-area-header">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center shadow-md">
-              <span className="text-xl">🥋</span>
-            </div>
+            <img
+              src={logoUrl}
+              alt="TeamPact"
+              className="w-14 h-14 object-contain shrink-0"
+              draggable="false"
+            />
             <div>
               <h1 className="font-black text-lg leading-none tracking-wide">TeamPact</h1>
               <p className="text-gray-300 text-xs mt-0.5">שלום, <span className="font-bold text-white">{displayName}</span></p>

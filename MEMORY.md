@@ -1,5 +1,93 @@
 # MEMORY - TeamPact App
 
+> ## ✅ Session 04.05.2026 — לוגו חדש (TeamPact Brazilian Jiu Jitsu) + אייקון PWA לסימניה
+>
+> **My last pending task:** הושלם. ההטמעה: לוגו 56px (אופציה B — קומפקטי) בראש שני ה-dashboards (מתאמן + מאמן/מנהל), פינה ימנית-עליונה. אייקוני PWA (192/512 + apple-touch-icon) בנויים מהלוגו → כשהמשתמש שומר את האפליקציה במסך הבית של הטלפון, יראה את הלוגו עם השם "TeamPact".
+>
+> **בעיות שעלו ותוקנו במהלך הסשן:**
+> 1. **באג המרה**: הסקריפט הראשון הפך כל פיקסל לבן לשקוף — כולל הטקסט "TEAMPACT" הלבן בתוך המטבע השחור, מה שגרם ל"חורים" שקופים בלוגו. תוקן עם flood-fill מהפינות — רק הלבן החיצוני הופך לשקוף, הלבן הפנימי (שמוקף בשחור) מוגן.
+> 2. **שימוש ב-`/logo.png` ישירות לא עבד** (cache/SW). תוקן עם `import logoUrl from '../../assets/logo.png'` — Vite נותן hash בשם הקובץ.
+> 3. **רקע שחור לכל האפליקציה** — דודי דרש בהתחלה רקע שחור, אחרי שראה התחרט. בוטל לחלוטין והוחזר ל-`bg-gray-50` המקורי.
+> 4. **גודל לוגו**: עברנו 48px → 96px → 56px (אחרי שדודי שאל אם זה לא תופס מקום מיותר ב-header). 56px = סטנדרט אפליקציות מובייל מקצועיות.
+>
+> **קבצים שנגעתי בהם:**
+> - `public/logo.png` (חדש — 512×512, מהPDF המקורי, פינות שקופות)
+> - `src/assets/logo.png` (חדש — מאסטר רזולוציה גבוהה, מיובא דרך Vite)
+> - `public/icons/icon-192.png` + `icon-512.png` + `apple-touch-icon.png` (לוגו על רקע שקוף, ל-PWA bookmark)
+> - `public/manifest.webmanifest` (purpose: any + maskable)
+> - `index.html` (favicon = icon-192.png, apple-touch-icon החדש)
+> - `src/components/athlete/AthleteDashboard.jsx` (header: לוגו 56px + "שלום, X")
+> - `src/components/trainer/TrainerDashboard.jsx` (header: לוגו 56px + "TeamPact" + תג מנהל)
+> - `public/logo-preview.html` (קובץ עזר זמני — צומצם ל-redirect של 1 שורה, אפשר למחוק ידנית)
+> - גיבוי ב-`backup_20260504_122705_logo_change/`
+>
+> **PDF המקור:** הומר ל-PNG ב-2048×2048, אחרי flood-fill הוקטן ל-512 לאפליקציה ולגדלי האייקון.
+>
+> ---
+>
+> ## ✅ Session 03.05.2026 (המשך 9) — תיקון דוחות: מבוססים על רישומים במקום checkins
+>
+> **My last pending task:** הושלם. נדחף ל-`main` כ-`61af0a5`. הדוחות עכשיו מבוססים על מודל "רישום=נוכחות" של דודי (אחרי תחילת שיעור המתאמן לא יכול לבטל, רק מאמן יכול להסיר → רישום לשיעור שהסתיים = הגעה סופית).
+>
+> **בעיה:** דודי דיווח שכל המספרים בדוחות לא תואמים את המציאות — לא לפי מאמן, לא לפי סוג אימון. דוגמה: בלוז ראה שב-"נו-גי מתחילים" יש 12 רישומים, אבל בדוח מופיעים רק 3.
+>
+> **שורש הבעיה:** הדוחות (`ReportsManager.jsx`) חישבו לפי `checkins` (`status='present'`) — אבל באקדמיה של דודי **אף אחד לא מסמן נוכחות בפועל**. ב-180 ימים אחרונים יש סך הכל 14 checkins (בעיקר ישנים). class_registrations נטען בקוד אבל לא נצרך בחישובים. מבחינה מודלית — אין הבחנה בין "מי נרשם" ל"מי הגיע" כי במערכת הרישום נעול אחרי start_time + 30 דק', ורק מאמן יכול להוריד.
+>
+> **פתרון (קובץ אחד: `src/components/trainer/ReportsManager.jsx`):**
+> 1. **פונקציית עזר חדשה `registrationOccurrenceDateStr(week_start, day_of_week)`** — מחשבת תאריך הופעה של רישום בפורמט YYYY-MM-DD בזמן מקומי (לא toISOString כי הוא UTC).
+> 2. **`filteredRegistrations` useMemo חדש** — מקביל ל-`filteredCheckins`. מסנן רישומים לפי "השיעור הסתיים בפועל" (`classEndMs`) ובתוך טווח periodDays. רישומים בלי start_time/duration_minutes/week_start נופלים החוצה (בטוח יותר).
+> 3. **3 useMemo עיקריים מעודכנים** — `byAssignedDiscipline`, `byCoach`, `byDiscipline` — כולם משתמשים ב-`filteredRegistrations` במקום `filteredCheckins`. אותה לוגיקה אגרגציה (Set ייחודי + counter), אותם dependencies מעודכנים.
+> 4. **`inactiveMembers`** — עובר מ-`checkins` ל-`registrations` המלא (180 יום), עם אותו קריטריון endMs.
+> 5. **`churnByCoach` + `churnByGroup`** — עוברים מ-`checkins` ל-`registrations`. dependency array של ה-useMemo מעודכן.
+> 6. **Footer של ה-SectionCard "מתאמנים פעילים לפי תחום לחימה"** — "מבוסס על נוכחות בפועל (צ'ק-אין)" → "מבוסס על רישומים לאימונים שהסתיימו בפועל. במודל הזה: רישום = הגעה."
+>
+> **אימות מהמציאות:**
+> - לפני: "נו-גי מתחילים" הראה 3 (checkin_count). אחרי: 12 רישומים — דודי אישר שזה תואם בדיוק (12 נרשמו היום בנו-גי מתחילים).
+> - דוח BJJ: 56 ייחודיים / 127 רישומים, Muay Thai: 16/30, MMA: 13/14. SQL ידני נתן 60/126, 19/34, 14/15. הפער (4-3 ייחודיים) הוסבר ע"י (1) הקוד מסנן רק `activeMembers` לא pending/deleted, (2) `detectDiscipline()` חכם יותר מהסיווג ב-SQL.
+>
+> **באג צדדי שזיהיתי ולא תיקנתי (TODO לעתיד):** `getWeekStart()` ב-`ClassSchedule.jsx` ו-`AthleteDashboard.jsx` משתמש ב-`toISOString()` שזה UTC, אז כשמתאמן נרשם בלילה ישראל — נשמר `week_start = שבת` במקום ראשון. **לא משפיע על הספירה** (כי כל החישובים יחסיים ועקביים: שבת+0=שבת, ראשון+0=ראשון), **כן משפיע על הצגה** של תאריכי שיעור ספציפיים (12 הרישומים של "היום ראשון 3/5" מופיעים בלוגים תחת "שבת 2/5"). תיקון: להחליף ל-`getFullYear()/getMonth()/getDate()` עם זמן מקומי.
+>
+> **שיעורים נטולי class_type ('regular'):** יש 4 שיעורי בדיקה ב-DB (`aaaa`, `abc`, `בדיקותתת`, `אחד שתיים`). הם נופלים ל'אחר' או דרך `detectDiscipline()`. כדאי למחוק.
+>
+> ---
+>
+> ## ✅ Session 03.05.2026 (המשך 8) — חלון רישום באיחור (30 דקות אחרי תחילת השיעור)
+>
+> **My last pending task:** הושלם. נדחף ל-`main` כ-`c0ff8f0`. Vercel deployment `JmmxemMi7` עלה ל-Production עם status Ready. המשתמש בדק לוקאלית עם `?fakeNow=` (בכל 3 התרחישים: לפני השיעור / בחלון 30 הדק' / אחרי 30 דק') וגם בפרודקשן עם Service Worker Unregister + hard refresh.
+>
+> **בעיה:** מתאמנים שמאחרים לאימון לא יכלו להירשם. הקוד חסם רישום ברגע שה-`start_time` עובר. זה גם פגע במצב שדודי בודק נוכחות בתחילת השיעור ורואה שמישהו לא נרשם — המתאמן רוצה להירשם אבל המערכת חסמה אותו.
+>
+> **שורש הבעיה:** שני קבצי-מסך נפרדים אכפו את אותה הלוגיקה (start_time עבר → חסום):
+> 1. `src/components/athlete/ClassSchedule.jsx` — מסך לו"ז שבועי, פונקציה `isThisWeekLocked` (שורות 48-54).
+> 2. `src/components/athlete/AthleteDashboard.jsx` — מסך הבית עם "השיעורים של היום", פונקציה `isPastClass` (שורות 177-185), ובנוסף `handleRegister` (שורה 1499) שאוכף שוב.
+>
+> **פתרון:** פיצול הלוגיקה לשתי בדיקות נפרדות — אחת לרישום (חלון חסד 30 דק'), אחת לביטול (חוסם בתחילת השיעור).
+>
+> **שינויים ב-`ClassSchedule.jsx`:**
+> 1. הוספת `LATE_REGISTER_GRACE_MIN = 30` (קבוע גלובלי).
+> 2. החלפת `isThisWeekLocked` ב-`isLockedForCancel` (כמו לפני) ו-`isLockedForRegister` (חוסם רק `start_time + 30 דק'`).
+> 3. ב-`toggleRegistration` (שורה 165): קריאה לבודק הנכון לפי `isRegistered` — toast שונה לכל מקרה.
+> 4. ב-UI (שורה 322): שלושה מצבים — אדום `הירשם` / כתום `הירשם (איחור)` / אפור `השיעור התחיל`.
+> 5. הוספת `getNow()` helper שעובד רק ב-`import.meta.env.DEV` — קורא `?fakeNow=` מה-URL לבדיקת תרחישים תלויי-זמן בלי לגעת בנתונים אמיתיים.
+>
+> **שינויים ב-`AthleteDashboard.jsx`:**
+> 1. אותו `LATE_REGISTER_GRACE_MIN = 30` ואותו `getNow()` (שכפול מכוון — לא רוצים לייבא מ-ClassSchedule כי הוא מסך אחר).
+> 2. `today` (שורה 146) משתמש ב-`getNow()` במקום `new Date()`.
+> 3. פיצול `isPastClass` ל-`isPastForCancel` ו-`isPastForRegister`. השארתי alias `isPastClass = isPastForRegister` לתאימות עם קריאות שלא יודעות אם זה רישום או ביטול (ברירת המחדל הסלחנית).
+> 4. ב-UI של רשימת השיעורים (שורה 326): הוספת `lateWindow = pastForCancel && !pastForRegister` → כפתור כתום `+ הירשם (איחור)`. labels: `'+ הירשם'` / `'+ הירשם (איחור)'` / `'✓ רשום · הסתיים'` / `'הסתיים'` / `'מלא'`.
+> 5. ב-`handleRegister` (שורה 1499): פיצול ה-IIFE ל-`startedAlready` ו-`lateWindowClosed`. ביטול חסום ב-`startedAlready`, רישום חסום רק ב-`lateWindowClosed`.
+>
+> **CLAUDE.md עודכן:**
+> 1. **פרוטוקול חדש לפיתוח:** התווסף שלב חובה של בדיקה לוקאלית (`npm run dev` + `localhost:5173`) לפני push, עם המתנה לאישור מפורש מהמשתמש. אסור לדחוף לבד.
+> 2. **חוק חדש:** בכל פקודת טרמינל חובה לציין מפורשות באיזו תיקייה להריץ — `cd /Users/dudibenzaken/teampact-app && ...`. גם אם זו אותה תיקייה כמו פקודה קודמת.
+>
+> **לקחים תהליכיים:**
+> - בקשה שנראית כמו "מסך אחד" יכולה להיות 2-3 מסכים בפועל. נמצא רק כשהמשתמש בדק בפועל ברגע שהוא ראה כפתור "הסתיים" שלא היה אמור להיות שם.
+> - בעיות `index.lock` / `HEAD.lock` ב-git קורות כשיש IDE עם Source Control (Cursor/VS Code) שעושה פעולות git ברקע במקביל לפקודות בטרמינל. הפתרון: `rm -f .git/index.lock .git/HEAD.lock` לפני commit.
+> - בדיקה תלוית-זמן בלי SQL: `getNow()` שקורא `?fakeNow=` ב-DEV mode בלבד — אלגנטי, בטוח (לא יגיע לפרודקשן בגלל `import.meta.env.DEV=false`), לא דורש לעבד נתונים.
+>
+> ---
+>
 > ## ✅ Session 03.05.2026 (המשך 7) — הסרת "פלאש" של מסך לוגין בפתיחת PWA
 >
 > **My last pending task:** הושלם. אין משימות פתוחות. נדחף ל-main כ-`f966b9f`.

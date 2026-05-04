@@ -13,6 +13,7 @@ import InstallBanner from '../InstallBanner'
 import EnablePushBanner from '../EnablePushBanner'
 import { supabase } from '../../lib/supabase'
 import { isStandalone } from '../../lib/platform'
+import logoUrl from '../../assets/logo.png'
 
 function RegisterLinkCard() {
   const [copied, setCopied] = useState(false)
@@ -253,7 +254,12 @@ export default function TrainerDashboard({ profile, isAdmin }) {
       })()}
       <header className="shrink-0 bg-blue-700 text-white px-6 shadow safe-area-header">
         <div className="flex items-center gap-3">
-          <span className="text-2xl">🥋</span>
+          <img
+            src={logoUrl}
+            alt="TeamPact"
+            className="w-14 h-14 object-contain shrink-0"
+            draggable="false"
+          />
           <div>
             <div className="flex items-center gap-2 leading-none">
               <h1 className="font-bold text-lg">TeamPact</h1>

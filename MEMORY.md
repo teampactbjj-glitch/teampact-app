@@ -1,6 +1,153 @@
 # MEMORY - TeamPact App
 
-> ## ✅ Session 05.05.2026 — חסימת פינץ'-זום במובייל + החלטות אסטרטגיות (Supabase Pro, PWA → Capacitor)
+> ## 🟢 Session 05.05.2026 — Bug Fix: member.id vs profile.id + UI Refresh של "ההתקדמות שלי"
+>
+> **My last pending task:** הסתיימו 2 שלבים מתוך 4 בתיקון. מחכה לאישור build + push למאסטר אחרי שהמשתמש יריץ `npm run build` בעצמו (sandbox שלי לא יכל בגלל permissions על dist/). הסשן הבא: יישום הפיצ'רים הגדולים מהמוקאפ.
+>
+> ### 🐛 הבאג שמצאנו (קריטי — השפיע על כל המתאמנים)
+>
+> **תופעה:** דודי המתאמן ראה רק "1 שעת BJJ" למרות שיש לו 4 צ'ק-אינים ב-DB.
+>
+> **שורש 1 — `profile.id` במקום `member.id`:** ב-`MyProgressSection.jsx`, `AthleteDashboard.jsx`, ו-`ClassSchedule.jsx` הקוד שלח `profile.id` בכל שאילתות `checkins`/`class_registrations` — אבל ה-FK של `checkins.athlete_id` מצביע על `members(id)`. לרוב המתאמנים זה עבד כי `profile.id == member.id`, אבל אצל דודי (שיש לו פרופיל trainer + member נפרד) — נשבר.
+>
+> **שורש 2 — קוד "מאחד IDs" מסוכן ב-`fetchMyClasses`:** הקוד ניסה לעדכן `member.id` ב-DB להיות `profile.id` (`UPDATE members SET id = profile.id`). זה שבר את ה-FK של `checkins` (אין ON UPDATE CASCADE) → כל הצ'ק-אינים הישנים נשארו מקושרים ל-id הישן שכבר לא קיים.
+>
+> ### 🛠️ התיקון (3 קבצים)
+>
+> דפוס: `const athleteId = member?.id || profile?.id` בכל מקום שמדבר עם `checkins`/`class_registrations`. fallback ל-`profile.id` שומר תאימות אחורה.
+>
+> 1. **`src/components/athlete/MyProgressSection.jsx`** — קיבלת `member` כ-prop נוסף, השתמשתי ב-`athleteId` בשליפת checkins.
+> 2. **`src/components/athlete/AthleteDashboard.jsx`** — 7 מקומות (handleRegister insert/upsert, cancellation, week registrations, recommended). העברנו `member` ל-MyProgressSection. **מחקנו את הקוד המסוכן** ב-`fetchMyClasses` שניסה לעדכן `member.id`.
+> 3. **`src/components/athlete/ClassSchedule.jsx`** — 6 מקומות (load, refresh, register, cancel).
+>
+> **גיבוי:** `backup_20260505_120332_member_id_fix/` עם 3 הקבצים המקוריים.
+>
+> ### 🎨 UI Refresh של MyProgressSection
+>
+> 1. **"שעות מזרון" → "יחידות אימון"** בכל מקום (Hero, all-time card, badges 25/50/100/250/500/1000 יחידות). הוגן יותר — שיעור 60 דק' ו-90 דק' שווים יחידה אחת כל אחד.
+> 2. **חודש בולט יותר** — "מאי 2026" עכשיו subtitle ברור מתחת לכותרת ב-Hero, לא טקסט קטן בצד.
+> 3. **תוכן מרכזי בעיצוב חדש** — מספר אימוני החודש בולט במרכז בקופסה אחת, במקום 2 קופסאות שכבר לא הגיוניות אחרי המעבר ל-units.
+> 4. **פילוח תחום קומפקטי בתוך ה-Hero (חוסך 100-120px):**
+>    - **תחום אחד** = תווית קטנה ("🥋 BJJ")
+>    - **2+ תחומים** = בר אופקי stacked + תוויות מפורטות עם ספירות
+>    - הסרנו את הקופסה הנפרדת "פילוח לפי תחום"
+>
+> ### 📊 פלט ה-DB שאומת את הבאג
+>
+> - דודי profile (trainer): `0a1948ba-d8cf-4461-9f52-59b35ee96a18` / `teampactbjj@gmail.com`
+> - דודי member (athlete): `67e6f9e3-347d-4ebe-b602-ac7f8470a85f` / `dudibenzaken86@icloud.com`
+> - 16 checkins במערכת — **כולם** תחת `member_id`. **0** תחת `profile_id`.
+> - 4 הצ'ק-אינים של דודי: 2026-04-24 (BJJ), 2026-04-24 (מזרן פתוח), 2026-04-27 (לחימה משולבת), 2026-05-01 (BJJ)
+> - 57 שיעורים ב-classes — **כולם** עם `duration_minutes` תקין (60/90/45/75). אין NULL/0.
+>
+> ### 🎯 Mockup HTML — `mockups/athlete-progress-v2.html`
+>
+> שני מסכים זה לצד זה:
+> - **מסך מתאמן (mobile width):** Hero חדש (תחום יחיד + רב-תחומי), Weekly Goal Ring, Streak (2 גרסאות: רגיל + סכנה), Belt journey (מבוגרים + ילדים IBJJF מלא), Promotion event 3 מצבים (רגיל / סומן / קיבל), Disciplines bars, Smart CTA, Weekly Challenge, Cohort comparison, PRs grid, Achievement grid (8 unlocked + locked + next milestone).
+> - **מסך מאמן (mobile width):** Promotion event banner, "+ צור אירוע קידום חדש" button, מסומנים לקידום (in trainer control, no auto), כל המתאמנים table (מבוגרים + ילדים בסיכום עליון).
+>
+> ### 📋 לדחיפה ב-main (כשהמשתמש יריץ build בעצמו)
+>
+> ```bash
+> cd /Users/dudibenzaken/teampact-app
+> rm -rf dist && npm run build       # bypass sandbox permission issue
+> git add src/components/athlete/MyProgressSection.jsx \
+>         src/components/athlete/AthleteDashboard.jsx \
+>         src/components/athlete/ClassSchedule.jsx \
+>         mockups/athlete-progress-v2.html \
+>         MEMORY.md
+> git commit -m "fix(athlete): use member.id instead of profile.id for checkins/registrations
+>
+> - Fixes critical bug where athletes with separate profile+member IDs saw 0 progress
+> - Removes dangerous code that tried to UPDATE member.id (broke checkins FK)
+> - Renames 'שעות מזרון' to 'יחידות אימון' (fairer counting)
+> - Adds prominent month label in Hero
+> - Compact discipline breakdown inside Hero (saves 100-120px)
+> - Adds athlete progress v2 mockup HTML"
+> git push origin main
+> git log --oneline -3
+> ```
+>
+> ### ⏭️ סדר עדיפויות לסשן הבא (אופציה A שאישר המשתמש)
+>
+> **שלב 1 — חגורות + Import (קריטי, יסודי):**
+> - DB Migration: `members.belt`, `members.belt_received_at` (DATE), `members.belt_stripes` (INT), `members.belt_category` ('adult'/'kids'), `members.bjj_start_date` (DATE)
+> - מסך עריכת חגורה במסך ניהול מתאמנים של המאמן (dropdown צבע + תאריך חודש/שנה)
+> - **Import 87 מתאמנים מ-CSV** — `/Users/dudibenzaken/Library/Application Support/Claude/local-agent-mode-sessions/9ebccee0-0500-4ea2-90de-c73d5800b5a1/c8acdb2a-1212-4736-a513-f22aff8fa428/local_c644ee2c-6686-4e7d-8920-7efa430d826a/uploads/דרגות טימפאקט מעודכן.csv`. פורמט: `שם, חגורה לבנה (תאריך), חגורה כחולה, חגורה סגולה, חגורה חומה, חגורה שחורה, דאן 1`. תאריכים: "ינואר 2012", "יוני 2018". המרה ל-`belt_received_at` של החגורה האחרונה שמולאה. החגורה הלבנה = `bjj_start_date`. מנגנון match לפי שם (fuzzy + manual override). תצוגה מקדימה לפני INSERT.
+> - תצוגה במסך מתאמן: קטע "🥋 החגורה שלי" שמופיע רק אם `trains_gi=true`. מציג חגורה נוכחית + תאריך + שנים על החגורה + יחידות אימון מאז (count מאז `belt_received_at`).
+> - דוח חגורות במסך מאמן: סיכום לפי צבע, טבלה עם תאריך קבלה + פעילות אחרונה.
+>
+> **שלב 2 — מערכת אירועי קידום:**
+> - DB: `promotion_events (id, name, event_date, branch_id, trainer_id, status, notes)` + `promotion_candidates (id, event_id, member_id, current_belt, target_belt, target_stripes, status, promoted_at, notes)`
+> - UI מאמן: יצירת אירוע, הוספת מועמדים עם target_belt לכל אחד
+> - UI מתאמן: באנר סגולי "🎉 סומנת לקידום!" עם countdown
+> - **Lazy execution** — בכל פתיחת dashboard בודק `event_date <= today AND status='planned'` → מעדכן `members.belt` ו-`belt_received_at`, מסמן את האירוע כ-`completed`, שולח push notification.
+>
+> **שלב 3 — מטרה שבועית + Streak Saver:**
+> - Weekly Goal Ring: progress ring (Apple-watch style) שמראה כמה מהמכסה השבועית מומשה (לפי `members.subscription_type`).
+> - DB: `streak_savers (id, member_id, used_at, week_start)` — מאפשר לדלג שבוע אחד פעם בחודש בלי לשבור את הרצף.
+>
+> **שלב 4 — מוטיבציה אישית (קל וקצר):**
+> - Smart CTA: זיהוי דפוס ימי אימון + הודעת "השבוע עוד לא נרשמת ביום [שני]".
+> - Weekly Challenge: טבלת `challenges` עם אתגר שבועי מתחלף.
+> - Cohort comparison: aggregation query — "אתה בטופ X% של הסניף החודש".
+> - Personal Records grid: שיא שבועי / חודשי / רצף — מחושב מ-events.
+>
+> ### 💡 הערות לעצמי לסשן הבא
+>
+> - הקוד הנכון לאיתור IDs: `profile.id` = auth, `member.id` = members table. לעולם לא לעדכן member.id!
+> - חגורות = רק BJJ עם גי. למתאמן No-Gi לא להציג. הוסף `members.trains_gi BOOLEAN` (default true ל-87 הקיימים).
+> - אם CSV הזה לא מתאים לכל המתאמנים — הוסף UI ידני ב-trainer dashboard גם.
+> - דודי דיווח שאנסה השבוע להירשם ליותר אימונים → לעקוב אחרי זה בסשן הבא, לוודא שהאוטו-checkin של handleRegister באמת יוצר checkins (כי עכשיו הוא משתמש ב-member.id הנכון).
+>
+> ---
+>
+> ## ✅ Session 05.05.2026 (לילה) — עינית 👁 לחשיפת סיסמה בכל מסכי הכניסה וההרשמה
+>
+> **My last pending task:** הסתיים. קומיט `18bb090` נדחף ל-`main` (4 קבצים, 186 הוספות, 54 מחיקות). ממתין ל-Vercel build + hard-refresh של דודי במכשירים.
+>
+> **בעיה שדודי דיווח:** "תוסיף לי עינית בכל הממשקים כשנכנסים לאפליקציה ומקישים סיסמה — שאנשים יוכלו ללחוץ לראות את הסיסמה."
+>
+> **פתרון (4 קבצים):**
+> 1. `src/components/auth/AthleteLogin.jsx` — שדה סיסמה (1) + state `showPassword`.
+> 2. `src/components/auth/TrainerLogin.jsx` — שדה סיסמה (1) + state `showPassword`.
+> 3. `src/components/RegisterPage.jsx` — סיסמה + אימות (2) + states `showPassword` ו-`showPasswordConfirm` נפרדים.
+> 4. `src/components/auth/RegisterCoachPage.jsx` — סיסמה + אימות (2) + states נפרדים.
+>
+> **דפוס הפיתרון בכל קובץ:** עוטף את ה-`<input>` ב-`<div className="relative">`, מוסיף padding `pl-10`/`pl-11`, ומציב `<button>` ב-`absolute left-2 top-1/2`. הכפתור = `type="button"` + `tabIndex={-1}` (לא מגיש את הטופס, לא משבש tab order). ה-`type` של ה-input מתחלף בין `"password"` ל-`"text"`. אייקון = SVG inline בסגנון Heroicons (עין פתוחה / עין חצויה). `aria-label` עברי דינמי + `aria-pressed`.
+>
+> **למה SVG inline ולא ספרייה:** הפרויקט לא משתמש ב-`lucide-react`/`heroicons`, ושמירה על אפס תלויות חדשות.
+>
+> **Build + push:** `npm run build` עבר נקי ב-671ms (אזהרת chunk size קיימת מקודם, לא קשורה). אישור דודי "עובד" אחרי בדיקה לוקאלית. קומיט `18bb090` ב-main.
+>
+> **Pitfall שחזר:** Sandbox + index.lock — שוב הסביבה שלי יצרה `.git/index.lock` שננעל. דודי הריץ `rm -f .git/index.lock` והפקודות עברו. **חוק לעתיד: לא להריץ git מ-sandbox כלל. רק לתת פקודות לדודי.**
+
+---
+
+> ## ✅ Session 05.05.2026 (ערב) — תיקון UX: מתאמנים רשומים מסומנים אפור בחיפוש המאמן (לא נעלמים)
+>
+> **My last pending task:** הסתיים. קומיט `47dc5c8` נדחף ל-`main`. ממתין ל-Vercel build + hard-refresh של דודי במכשירים.
+>
+> **בעיה שדודי דיווח:** "כשמתאמן נרשם לאימון, המאמן יכול להוסיף אותו שוב. ברגע שהמתאמן נרשם, צריך להופיע למאמן שהוא רשום כבר."
+>
+> **גרסה ראשונה (סינון מלא) — נדחתה:** ב-`searchVisitor` סיננתי החוצה את כל הרשומים (constant + weekly). דודי דיווח: "לא מוצא בכלל את התלמיד, במקום שיכתוב 'רשום' באפור". UX לא טוב — המאמן חושב שהמתאמן לא קיים.
+>
+> **פתרון סופי (קובץ אחד: `src/components/trainer/TodayClasses.jsx`):**
+> 1. **`searchVisitor`** — לא מסנן יותר. מחזיר את כל ההתאמות עם דגל `isRegistered` שמחושב מ-3 מקורות: members קבועים (member_classes) + weeklyRegistrants מהמטמון + שאילתה טרייה ל-`class_registrations` של השבוע (לתפוס רישום עצמי שנעשה ברגע האחרון).
+> 2. **רנדור התוצאות** — אם `isRegistered=true`: רקע אפור (`bg-gray-50`), שם בצבע אפור, ובמקום כפתור ירוק "+ הוסף" → תווית אפורה **"✓ רשום"** עם `cursor-not-allowed` ו-tooltip "המתאמן כבר רשום לשיעור הזה השבוע". אם לא רשום — הכל כרגיל.
+> 3. **בדיקה דיפנסיבית ב-`addRegisteredMember`** — לפני ה-upsert, שאילתה ל-`class_registrations` עם `maybeSingle`. אם נמצאה רשומה (race condition) — `toast.error('כבר רשום/ה לשיעור הזה השבוע')` + ניקוי החיפוש + `fetchClassDetails`.
+>
+> **למה הפתרון טוב:** המאמן רואה את המתאמן בחיפוש, מבין מיד שהוא רשום, ולא יכול ללחוץ פעמיים. שלושת הממשקים שמשתמשים ב-`TodayClasses.jsx` (athlete לא, רק trainer + admin) מקבלים את התיקון אוטומטית.
+>
+> **Build + push:** קובץ אחד `TodayClasses.jsx` (71 הוספות, 11 מחיקות). דודי בדק לוקאלית ואישר "עובד". קומיט `47dc5c8` ב-main. נתקלנו ב-`index.lock` ו-`HEAD.lock` — נוקו ע"י `find .git -name "*.lock" -delete`.
+>
+> **לעתיד — שני pitfalls שעלו בסשן:**
+> 1. **Sandbox לא יכול לכתוב ל-`.git/`** — אסור לי להריץ `git add` מתוך הסביבה שלי. תמיד לתת לדודי את הפקודה ולחכות שהוא יריץ.
+> 2. **`npm run dev` תופס את הטרמינל** — דודי שאל למה זה "נתקע" אחרי הצגת `localhost:5173`. הסברתי: Vite dev server הוא תהליך long-running. יש לפתוח טרמינל שני (`Cmd+T` או `Cmd+N`) או לעצור עם `Ctrl+C` לפני פקודות אחרות.
+
+---
+
+> ## ✅ Session 05.05.2026 (בוקר) — חסימת פינץ'-זום במובייל + החלטות אסטרטגיות (Supabase Pro, PWA → Capacitor)
 >
 > **My last pending task:** כל המשימות הסתיימו. אין משימה פתוחה. הסשן כלל תיקון טכני אחד שעלה לפרודקשן + 3 החלטות אסטרטגיות שתועדו.
 >

@@ -115,14 +115,18 @@ export default function ClassSchedule({ profile, member }) {
   // ובינתיים יש פער בין ה-UI לבין מה שבאמת נשמר בשרת.
   // ריענון שקט (בלי loading state) — מסנכרן רק את ה-registrations,
   // את הלו"ז עצמו אין צורך לרענן בכל חזרה.
+  // ה-checkins/registrations נשמרים תחת members.id (לפי FK ב-DB).
+  // fallback ל-profile.id כדי לא לשבור רשומות ישנות.
+  const athleteId = member?.id || profile?.id
+
   useEffect(() => {
-    if (!profile?.id) return
+    if (!athleteId) return
     const onVis = async () => {
       if (document.visibilityState !== 'visible') return
       const { data, error } = await supabase
         .from('class_registrations')
         .select('class_id')
-        .eq('athlete_id', profile.id)
+        .eq('athlete_id', athleteId)
       if (error) {
         console.error('refresh registrations error:', error)
         return
@@ -131,11 +135,11 @@ export default function ClassSchedule({ profile, member }) {
     }
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
-  }, [profile?.id])
+  }, [athleteId])
 
   async function fetchSchedule(branchId) {
     setLoading(true)
-    console.log('fetchSchedule — branch_id:', branchId, 'athlete_id:', profile.id)
+    console.log('fetchSchedule — branch_id:', branchId, 'athlete_id:', athleteId)
 
     const [{ data: classData, error: classErr }, { data: regData, error: regErr }] = await Promise.all([
       supabase
@@ -147,7 +151,7 @@ export default function ClassSchedule({ profile, member }) {
       supabase
         .from('class_registrations')
         .select('class_id')
-        .eq('athlete_id', profile.id)
+        .eq('athlete_id', athleteId)
         .eq('week_start', getWeekStart()),
     ])
 
@@ -199,7 +203,7 @@ export default function ClassSchedule({ profile, member }) {
         const { error } = await supabase
           .from('class_registrations')
           .delete()
-          .eq('athlete_id', profile.id)
+          .eq('athlete_id', athleteId)
           .eq('class_id', classId)
         if (error) throw error
         // ביטול רישום → מוחק את ה-checkin המוטמע מסוג 'present' של אותה הופעה.
@@ -210,7 +214,7 @@ export default function ClassSchedule({ profile, member }) {
           const dayEnd = new Date(dayStart); dayEnd.setHours(23, 59, 59, 999)
           await supabase.from('checkins').delete()
             .eq('class_id', classId)
-            .eq('athlete_id', profile.id)
+            .eq('athlete_id', athleteId)
             .eq('status', 'present')
             .gte('checked_in_at', dayStart.toISOString())
             .lte('checked_in_at', dayEnd.toISOString())
@@ -227,7 +231,7 @@ export default function ClassSchedule({ profile, member }) {
       try {
         const { error } = await supabase
           .from('class_registrations')
-          .insert({ athlete_id: profile.id, class_id: classId })
+          .insert({ athlete_id: athleteId, class_id: classId })
         if (error) throw error
         // רישום → יוצר checkin אוטומטי 'present' עם תאריך השיעור הקרוב.
         // ככה המאמן/מנהל רואים את המתאמן כנוכח כברירת מחדל, וצריכים רק
@@ -245,7 +249,7 @@ export default function ClassSchedule({ profile, member }) {
           await supabase.from('checkins').upsert(
             {
               class_id: classId,
-              athlete_id: profile.id,
+              athlete_id: athleteId,
               status: 'present',
               checked_in_at: checkedAt.toISOString(),
               checkin_date: checkinDate,

@@ -805,16 +805,18 @@ function ProfileTab({ profile, member }) {
   const [myCoaches, setMyCoaches] = useState([])
 
   useEffect(() => {
-    if (!profile?.id) return
+    // ה-checkins/registrations נשמרים תחת members.id — fallback ל-profile.id לתאימות אחורה.
+    const athleteId = member?.id || profile?.id
+    if (!athleteId) return
     let cancelled = false
     ;(async () => {
       try {
         // 1) class_ids שאליהם המתאמן רשום (כל history) או נכח ב-60 ימים אחרונים
         const sixtyDaysAgoISO = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
         const [regsRes, checksRes] = await Promise.all([
-          supabase.from('class_registrations').select('class_id').eq('athlete_id', profile.id),
+          supabase.from('class_registrations').select('class_id').eq('athlete_id', athleteId),
           supabase.from('checkins').select('class_id')
-            .eq('athlete_id', profile.id).eq('status', 'present')
+            .eq('athlete_id', athleteId).eq('status', 'present')
             .gte('checked_in_at', sixtyDaysAgoISO),
         ])
         const classIds = new Set([
@@ -1008,7 +1010,7 @@ function ProfileTab({ profile, member }) {
       </div>
 
       {/* === ההתקדמות שלי — דוח אישי לחודש הנוכחי === */}
-      <MyProgressSection profile={profile} />
+      <MyProgressSection profile={profile} member={member} />
 
       {/* פרטים לקריאה בלבד */}
       <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
@@ -1446,21 +1448,12 @@ export default function AthleteDashboard({ profile }) {
         if (r.error) console.error('member fetch by email error:', r.error)
         memberData = r.data
       }
-      if (memberData && profile?.id && memberData.id !== profile.id) {
-        console.log('[athlete] linking member.id to auth.uid', { memberId: memberData.id, authId: profile.id })
-        const { error: linkErr } = await supabase.from('members')
-          .update({ id: profile.id })
-          .eq('id', memberData.id)
-        if (linkErr) {
-          // קישור נכשל — הנתונים האלה לא בטוחים לשימוש כי שאילתות עתידיות לפי profile.id לא ימצאו אותם.
-          // עדיף לא להציג מתאמן שגוי מאשר להציג רשומה עם ID לא תואם.
-          console.error('[athlete] link error — refusing to use mismatched member data:', linkErr)
-          toast.error('שגיאה בקישור החשבון — פנה למאמן')
-          memberData = null
-        } else {
-          memberData = { ...memberData, id: profile.id }
-        }
-      }
+      // הערה: בעבר היה כאן קוד שמנסה לעדכן את member.id ב-DB להיות שווה ל-profile.id
+      // כדי לאחד IDs. זה גרם לבאג חמור: ה-FK של checkins.athlete_id מצביע על members(id)
+      // בלי ON UPDATE CASCADE — לכן שינוי ID שבר את הקישור לכל הצ'ק-אינים הקיימים.
+      // התוצאה: מתאמן שראה 0/1 אימונים בלבד למרות שהיו לו עשרות.
+      // הגישה הנכונה: לקבל ש-profile.id ו-member.id יכולים להיות שונים, ולהשתמש
+      // ב-member.id (עם fallback ל-profile.id) בכל מקום שעובד עם checkins/class_registrations.
       setMember(memberData || null)
     } catch (e) {
       console.error('fetchMyClasses threw:', e)
@@ -1483,9 +1476,11 @@ export default function AthleteDashboard({ profile }) {
     // ככה לא מבצעים שתי קריאות נפרדות, וקטגוריית הספירה תמיד מסונכרנת.
     const wsCurrent = getWeekStart()
     const wsNext = getNextWeekStart()
+    // ה-registrations נשמרים תחת members.id — fallback ל-profile.id לתאימות.
+    const athleteId = member?.id || profile.id
     const { data } = await supabase.from('class_registrations')
       .select('class_id, week_start')
-      .eq('athlete_id', profile.id)
+      .eq('athlete_id', athleteId)
       .in('week_start', [wsCurrent, wsNext])
     const cur = new Set()
     const nxt = new Set()
@@ -1570,6 +1565,10 @@ export default function AthleteDashboard({ profile }) {
       return nextStart
     }
 
+    // ה-checkins/registrations נשמרים תחת members.id (לפי FK).
+    // fallback ל-profile.id כדי לא לשבור רשומות ישנות.
+    const athleteId = member?.id || profile.id
+
     // Optimistic update: מעדכן UI מיד, לפני קריאה לשרת.
     // כך אם המשתמש מחליף טאב/יוצא מיד אחרי לחיצה — ה-UI כבר נכון,
     // וגם אם הבקשה נכשלת ברקע, ה-visibilitychange listener יסנכרן עם השרת.
@@ -1577,7 +1576,7 @@ export default function AthleteDashboard({ profile }) {
       setTargetSet(p => { const n = new Set(p); n.delete(cls.id); return n })
       try {
         const { error } = await supabase.from('class_registrations').delete()
-          .eq('class_id', cls.id).eq('athlete_id', profile.id).eq('week_start', weekStart)
+          .eq('class_id', cls.id).eq('athlete_id', athleteId).eq('week_start', weekStart)
         if (error) throw error
         // ביטול רישום → מוחק את ה-checkin המוטמע 'present' של ההופעה הקרובה.
         // אם המאמן כבר סימן 'absent' לא דורסים — ה-status filter מוודא זאת.
@@ -1586,7 +1585,7 @@ export default function AthleteDashboard({ profile }) {
         const dayEnd = new Date(dayStart); dayEnd.setHours(23, 59, 59, 999)
         await supabase.from('checkins').delete()
           .eq('class_id', cls.id)
-          .eq('athlete_id', profile.id)
+          .eq('athlete_id', athleteId)
           .eq('status', 'present')
           .gte('checked_in_at', dayStart.toISOString())
           .lte('checked_in_at', dayEnd.toISOString())
@@ -1603,7 +1602,7 @@ export default function AthleteDashboard({ profile }) {
         // לכן יכולה להיות שורה לכל שבוע נפרדת, ויכול להיות רישום בו זמנית
         // לשבוע הנוכחי וגם לשבוע הבא לאותו שיעור.
         const { error } = await supabase.from('class_registrations').upsert(
-          { class_id: cls.id, athlete_id: profile.id, week_start: weekStart },
+          { class_id: cls.id, athlete_id: athleteId, week_start: weekStart },
           { onConflict: 'athlete_id,class_id,week_start' }
         )
         if (error) throw error
@@ -1620,7 +1619,7 @@ export default function AthleteDashboard({ profile }) {
           await supabase.from('checkins').upsert(
             {
               class_id: cls.id,
-              athlete_id: profile.id,
+              athlete_id: athleteId,
               status: 'present',
               checked_in_at: checkedAt.toISOString(),
               checkin_date: checkinDate,

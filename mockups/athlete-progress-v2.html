@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Team Pact — Mockup ההתקדמות שלי v2</title>
+<style>
+  :root{
+    --bg:#f6f7f9;
+    --card:#fff;
+    --border:#e5e7eb;
+    --text:#0f172a;
+    --muted:#6b7280;
+    --emerald:#059669;
+    --emerald-dark:#047857;
+    --emerald-light:#d1fae5;
+    --red:#dc2626;
+    --orange:#f97316;
+    --orange-bg:#fff7ed;
+    --blue:#2563eb;
+    --purple:#7c3aed;
+    --yellow:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;font-family:-apple-system,BlinkMacSystemFont,"Heebo","Segoe UI",sans-serif;
+    background:#0f172a;color:var(--text);min-height:100vh;
+    display:flex;justify-content:center;padding:24px;gap:30px;flex-wrap:wrap;align-items:flex-start;
+  }
+  .phone{
+    width:380px;background:var(--bg);border-radius:32px;
+    box-shadow:0 30px 80px rgba(0,0,0,.4);
+    overflow:hidden;
+    display:flex;flex-direction:column;
+  }
+  .phone-header{
+    background:#0f172a;color:#fff;
+    padding:14px 18px 18px;
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:13px;
+  }
+  .phone-header .title{font-weight:700}
+  .content{padding:14px;display:flex;flex-direction:column;gap:14px}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .card h4{margin:0 0 10px;font-size:13px;font-weight:700;color:#1f2937}
+  .muted{color:var(--muted);font-size:11px}
+
+  /* ===== Hero ===== */
+  .hero{
+    background:linear-gradient(135deg,#047857 0%,#059669 50%,#10b981 100%);
+    color:#fff;border-radius:18px;padding:18px;
+    box-shadow:0 8px 24px rgba(5,150,105,.25);
+  }
+  .hero-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .hero-title{font-weight:800;font-size:16px;display:flex;align-items:center;gap:6px}
+
+  .tabs{display:flex;background:rgba(255,255,255,.18);border-radius:12px;padding:3px;gap:2px;font-size:12px;font-weight:700}
+  .tabs button{flex:1;background:transparent;color:#fff;border:0;padding:7px 10px;border-radius:9px;cursor:pointer;opacity:.75}
+  .tabs button.active{background:#fff;color:var(--emerald-dark);opacity:1}
+
+  .hero-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  .stat-block{background:rgba(255,255,255,.18);backdrop-filter:blur(6px);border-radius:12px;padding:12px}
+  .stat-block .num{font-size:32px;font-weight:900;line-height:1}
+  .stat-block .lbl{font-size:11px;opacity:.92;margin-top:4px}
+
+  .badges-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;font-size:11px;font-weight:700}
+  .pill{padding:4px 9px;border-radius:99px}
+  .pill-up{background:#a7f3d0;color:#064e3b}
+  .pill-best{background:#fde68a;color:#7c2d12}
+  .pill-soft{background:rgba(255,255,255,.28);color:#fff}
+
+  /* ===== Weekly goal ring ===== */
+  .ring-card{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center}
+  .ring{position:relative;width:96px;height:96px}
+  .ring svg{transform:rotate(-90deg)}
+  .ring .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800}
+  .ring .center .big{font-size:22px;color:var(--emerald-dark);line-height:1}
+  .ring .center .small{font-size:10px;color:var(--muted);margin-top:2px;font-weight:600}
+  .ring-info .lbl{font-size:11px;color:var(--muted)}
+  .ring-info .title{font-weight:800;font-size:14px;margin:2px 0 6px;color:#111827}
+  .day-strip{display:flex;gap:4px;direction:rtl}
+  .day-strip .d{
+    flex:1;height:24px;border-radius:6px;background:#f3f4f6;color:#9ca3af;
+    display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;
+  }
+  .day-strip .d.done{background:var(--emerald);color:#fff}
+  .day-strip .d.today{outline:2px solid var(--emerald-dark);outline-offset:1px}
+
+  /* ===== Streak card ===== */
+  .streak{
+    background:linear-gradient(135deg,#fff7ed 0%,#ffedd5 100%);
+    border:1px solid #fed7aa;border-radius:16px;padding:14px;
+    display:flex;align-items:center;gap:14px;
+  }
+  .streak .flame{font-size:46px;line-height:1}
+  .streak .num{font-size:30px;font-weight:900;color:#9a3412;line-height:1}
+  .streak .lbl{font-size:11px;color:#9a3412;margin-top:2px;font-weight:600}
+  .streak .alert{
+    margin-top:8px;background:var(--red);color:#fff;font-size:11px;font-weight:700;
+    padding:5px 10px;border-radius:99px;display:inline-flex;align-items:center;gap:5px;
+  }
+  .streak .ok{
+    margin-top:8px;background:var(--emerald);color:#fff;font-size:11px;font-weight:700;
+    padding:5px 10px;border-radius:99px;display:inline-flex;align-items:center;gap:5px;
+  }
+  .freeze{font-size:10px;color:#92400e;margin-top:6px}
+  .freeze b{color:#7c2d12}
+
+  /* ===== Level / belt ===== */
+  .level-card{display:grid;grid-template-columns:60px 1fr;gap:12px;align-items:center}
+  .belt{
+    width:60px;height:60px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;font-size:30px;
+    box-shadow:inset 0 -8px 0 rgba(0,0,0,.25);
+  }
+  .level-info .top{display:flex;justify-content:space-between;align-items:baseline}
+  .level-info .lvl{font-size:14px;font-weight:800;color:#1f2937}
+  .level-info .units{font-size:11px;color:var(--muted);font-weight:600}
+  .progress{height:8px;background:#f3f4f6;border-radius:99px;overflow:hidden;margin-top:8px}
+  .progress > div{height:100%;background:linear-gradient(90deg,#3b82f6,#1d4ed8)}
+  .next-lvl{font-size:11px;color:var(--muted);margin-top:6px}
+  .next-lvl b{color:var(--blue)}
+
+  /* ===== Belt journey — סרגל חגורות עם הבא בתור ===== */
+  .belt-journey{
+    display:flex;align-items:flex-end;gap:6px;justify-content:space-between;
+    background:rgba(255,255,255,.6);border-radius:10px;padding:10px 8px;
+  }
+  .belt-journey.kids{justify-content:flex-start;gap:8px}
+  .belt-step{
+    display:flex;flex-direction:column;align-items:center;gap:4px;
+    flex:1;min-width:42px;
+  }
+  .belt-journey.kids .belt-step{flex:0 0 50px}
+  .belt-step .bj-belt{
+    width:32px;height:14px;border-radius:3px;
+    box-shadow:inset 0 -2px 0 rgba(0,0,0,.2);
+    transition:transform .15s;
+  }
+  .belt-step span{font-size:9px;color:#64748b;font-weight:700;text-align:center;line-height:1.1}
+  .belt-step.done .bj-belt{opacity:.55}
+  .belt-step.done span{color:#9ca3af;text-decoration:line-through}
+  .belt-step.current .bj-belt{
+    transform:scale(1.35);
+    box-shadow:0 0 0 3px #fbbf24, inset 0 -2px 0 rgba(0,0,0,.2);
+  }
+  .belt-step.current span{color:#0f172a;font-weight:900}
+  .belt-step.next .bj-belt{
+    box-shadow:0 0 0 2px #c7d2fe, inset 0 -2px 0 rgba(0,0,0,.2);
+    animation:pulse 2s infinite;
+  }
+  .belt-step.next span{color:#4338ca;font-weight:900}
+  .belt-step.next span::after{content:" 🎯"}
+  .belt-step.locked{opacity:.35;filter:grayscale(.4)}
+  @keyframes pulse{
+    0%,100%{box-shadow:0 0 0 2px #c7d2fe,inset 0 -2px 0 rgba(0,0,0,.2)}
+    50%{box-shadow:0 0 0 5px rgba(124,58,237,.35),inset 0 -2px 0 rgba(0,0,0,.2)}
+  }
+
+  /* חגורות ילדים — split (חצי בצבע אחד, חצי בשני) */
+  .kids-split{background:linear-gradient(90deg,var(--c1) 0%,var(--c1) 50%,var(--c2) 50%,var(--c2) 100%)}
+
+  /* יעד החגורה הבאה — קופסה סגולה למבוגרים */
+  .next-belt-goal{
+    background:linear-gradient(135deg,#faf5ff,#f3e8ff);
+    border:2px solid #c084fc;border-radius:12px;padding:12px;
+  }
+
+  /* ===== Belt graphic ===== */
+  .belt-card{background:linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%);border-color:#93c5fd}
+  .belt-graphic{
+    width:74px;height:74px;border-radius:14px;background:#fff;
+    border:2px solid #1e3a8a;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+    position:relative;
+  }
+  .belt-graphic .belt-bar{
+    width:90%;height:24px;background:linear-gradient(180deg,#3b82f6,#1e40af);
+    border-radius:3px;border:1px solid #1e3a8a;
+    box-shadow:inset 0 -3px 0 rgba(0,0,0,.25);
+  }
+  .belt-graphic .belt-stripe{
+    width:8px;height:20px;background:#fff;border:1px solid #1e3a8a;border-radius:2px;
+    position:absolute;top:14px;
+  }
+  .belt-graphic .belt-stripe:nth-of-type(2){left:10px}
+  .belt-graphic .belt-stripe:nth-of-type(3){left:22px}
+  .belt-graphic .belt-stripe:nth-of-type(4){left:34px}
+
+  /* ===== Trainer report — דוח חגורות למאמן ===== */
+  .trainer-report{
+    background:#fff;border:1px solid var(--border);border-radius:16px;padding:14px;
+  }
+  .trainer-report h4{margin:0 0 10px;font-size:13px;font-weight:800}
+  .trainer-table{width:100%;border-collapse:collapse;font-size:11px}
+  .trainer-table th{
+    text-align:right;padding:8px 6px;border-bottom:2px solid var(--border);
+    font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;
+  }
+  .trainer-table td{padding:8px 6px;border-bottom:1px solid var(--border);font-size:11px}
+  .trainer-table tr:last-child td{border-bottom:0}
+  .belt-pill{display:inline-block;padding:3px 8px;border-radius:99px;font-size:10px;font-weight:800;color:#fff}
+  .bp-white{background:#9ca3af;color:#1f2937;background:#f3f4f6;border:1px solid #d1d5db}
+  .bp-blue{background:#1e40af}
+  .bp-purple{background:#7c3aed}
+  .bp-brown{background:#7c2d12}
+  .bp-black{background:#1f2937}
+  .ready{color:#059669;font-weight:800}
+  .pending{color:#9ca3af}
+  .hot{color:#dc2626;font-weight:800}
+
+  /* ===== Heatmap (לא בשימוש — נשמר אם נחזור) ===== */
+  .heatmap{display:grid;grid-template-columns:repeat(12,1fr);gap:3px;direction:ltr}
+  .heatmap .col{display:grid;grid-template-rows:repeat(7,1fr);gap:3px}
+  .heatmap .cell{aspect-ratio:1;border-radius:3px;background:#eef2f4}
+  .heatmap .cell.l1{background:#a7f3d0}
+  .heatmap .cell.l2{background:#34d399}
+  .heatmap .cell.l3{background:#059669}
+  .heatmap .cell.l4{background:#065f46}
+  .heat-legend{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:10px;color:var(--muted)}
+  .heat-legend .scale{display:flex;gap:3px;align-items:center}
+  .heat-legend .scale .b{width:10px;height:10px;border-radius:2px}
+
+  /* ===== Disciplines ===== */
+  .disc-row{display:flex;flex-direction:column;gap:10px}
+  .disc-item{display:flex;align-items:center;gap:10px}
+  .disc-icon{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px}
+  .disc-name{flex:1;font-size:13px;font-weight:700;color:#1f2937}
+  .disc-bar{height:6px;background:#f3f4f6;border-radius:99px;flex:1;overflow:hidden;margin:0 8px}
+  .disc-bar > div{height:100%}
+  .disc-units{font-size:12px;font-weight:800;color:#1f2937;min-width:48px;text-align:left}
+
+  /* ===== Smart CTA ===== */
+  .cta{
+    background:linear-gradient(135deg,#1e293b,#0f172a);
+    color:#fff;border-radius:16px;padding:14px;
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .cta .topline{display:flex;align-items:center;gap:8px;font-size:11px;opacity:.85}
+  .cta .msg{font-size:14px;font-weight:700;line-height:1.4}
+  .cta .btn{
+    background:var(--emerald);color:#fff;border:0;border-radius:10px;
+    padding:11px;font-weight:800;font-size:13px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:6px;
+  }
+  .cta .btn:hover{background:var(--emerald-dark)}
+
+  /* ===== Weekly Challenge ===== */
+  .challenge{
+    background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);
+    border:1px solid #fcd34d;border-radius:16px;padding:14px;
+  }
+  .challenge .head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .challenge .badge-c{background:#92400e;color:#fef3c7;padding:3px 8px;border-radius:99px;font-size:10px;font-weight:800}
+  .challenge .title{font-weight:800;font-size:13px;color:#7c2d12}
+  .challenge .desc{font-size:12px;color:#78350f;margin-bottom:10px;line-height:1.4}
+  .challenge .progress-c{height:10px;background:rgba(120,53,15,.18);border-radius:99px;overflow:hidden}
+  .challenge .progress-c > div{height:100%;background:#92400e}
+  .challenge .pct{display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#7c2d12;margin-top:6px}
+
+  /* ===== Achievements grid ===== */
+  .ach-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .ach{
+    background:#fffbeb;border:1px solid #fde68a;border-radius:12px;
+    padding:8px 4px;text-align:center;
+  }
+  .ach .e{font-size:22px}
+  .ach .lbl{font-size:9px;font-weight:700;color:#78350f;margin-top:2px;line-height:1.2}
+  .ach.locked{background:#f3f4f6;border-color:#e5e7eb;opacity:.55}
+  .ach.locked .e{filter:grayscale(1)}
+
+  /* ===== Cohort comparison ===== */
+  .cohort{
+    background:#eef2ff;border:1px solid #c7d2fe;border-radius:14px;padding:12px;
+    display:flex;align-items:center;gap:12px;
+  }
+  .cohort .pct-big{font-size:28px;font-weight:900;color:#3730a3}
+  .cohort .info{flex:1}
+  .cohort .info .t{font-size:13px;font-weight:700;color:#312e81}
+  .cohort .info .s{font-size:11px;color:#4338ca;margin-top:2px}
+
+  /* ===== PR card ===== */
+  .pr-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .pr{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:10px;text-align:center}
+  .pr .e{font-size:18px}
+  .pr .v{font-size:18px;font-weight:900;color:#1f2937;line-height:1;margin-top:4px}
+  .pr .l{font-size:10px;color:var(--muted);margin-top:3px;font-weight:600}
+
+  .section-label{font-size:11px;color:#94a3b8;font-weight:700;margin:4px 4px -4px;text-transform:uppercase;letter-spacing:.5px}
+
+  .legend-note{font-size:10px;color:#94a3b8;text-align:center;margin-top:18px;line-height:1.5}
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="phone-header">
+    <span>Team Pact · Mockup</span>
+    <span class="title">📊 ההתקדמות שלי</span>
+  </div>
+
+  <div class="content">
+
+    <!-- =================================================================
+         1) HERO — מספר אימוני החודש + פילוח תחום מובנה (חוסך מקום!)
+            גרסה למתאמן יחיד-תחום
+    ================================================================== -->
+    <div class="hero">
+      <div class="hero-top">
+        <div class="hero-title">📊 ההתקדמות שלי</div>
+        <div class="muted" style="opacity:.85;font-size:11px">מאי 2026</div>
+      </div>
+
+      <!-- מספר אחד גדול במרכז -->
+      <div style="background:rgba(255,255,255,.18);backdrop-filter:blur(6px);border-radius:12px;padding:18px;text-align:center;margin-top:6px">
+        <div style="font-size:48px;font-weight:900;line-height:1">1</div>
+        <div style="font-size:11px;opacity:.92;margin-top:6px">יחידת אימון בחודש זה</div>
+      </div>
+
+      <!-- תחום יחיד = תווית קטנה -->
+      <div style="display:flex;justify-content:center;margin-top:12px">
+        <span style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.2);padding:5px 12px;border-radius:99px;font-size:11px;font-weight:700">
+          <span style="font-size:14px">🥋</span>
+          <span>BJJ</span>
+        </span>
+      </div>
+
+      <div class="badges-row" style="margin-top:12px">
+        <span class="pill pill-soft">↓ ירידה מהחודש שעבר</span>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         1b) HERO — גרסה למתאמן רב-תחומי (BJJ + Muay Thai + MMA)
+    ================================================================== -->
+    <div class="hero">
+      <div class="hero-top">
+        <div class="hero-title">📊 ההתקדמות שלי</div>
+        <div class="muted" style="opacity:.85;font-size:11px">מאי 2026</div>
+      </div>
+
+      <div style="background:rgba(255,255,255,.18);backdrop-filter:blur(6px);border-radius:12px;padding:18px;text-align:center;margin-top:6px">
+        <div style="font-size:48px;font-weight:900;line-height:1">8</div>
+        <div style="font-size:11px;opacity:.92;margin-top:6px">יחידות אימון בחודש זה</div>
+      </div>
+
+      <!-- 2+ תחומים = בר stacked + תוויות מפורטות -->
+      <div style="margin-top:12px">
+        <div style="display:flex;height:10px;border-radius:99px;overflow:hidden;background:rgba(255,255,255,.2)">
+          <div style="width:62.5%;background:#2563eb"></div>
+          <div style="width:25%;background:#dc2626"></div>
+          <div style="width:12.5%;background:#7c3aed"></div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:8px;font-size:11px;font-weight:700">
+          <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:99px;background:#2563eb;display:inline-block"></span> 🥋 BJJ: 5</span>
+          <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:99px;background:#dc2626;display:inline-block"></span> 🥊 Muay Thai: 2</span>
+          <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:99px;background:#7c3aed;display:inline-block"></span> 🤼 MMA: 1</span>
+        </div>
+      </div>
+
+      <div class="badges-row" style="margin-top:12px">
+        <span class="pill pill-up">↑ 60% מהחודש שעבר</span>
+        <span class="pill pill-soft">⚡ Cross-Trainer</span>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         2) מטרת השבוע — Ring (Apple Watch style)
+    ================================================================== -->
+    <div class="card">
+      <div class="ring-card">
+        <div class="ring">
+          <svg width="96" height="96" viewBox="0 0 96 96">
+            <circle cx="48" cy="48" r="40" stroke="#e5e7eb" stroke-width="10" fill="none"/>
+            <circle cx="48" cy="48" r="40" stroke="#059669" stroke-width="10" fill="none"
+              stroke-linecap="round"
+              stroke-dasharray="251.3" stroke-dashoffset="125.65"/>
+          </svg>
+          <div class="center">
+            <div class="big">2/4</div>
+            <div class="small">השבוע</div>
+          </div>
+        </div>
+        <div class="ring-info">
+          <div class="lbl">מטרת השבוע (לפי המנוי שלך)</div>
+          <div class="title">עוד 2 אימונים לסגירת השבוע</div>
+          <div class="day-strip">
+            <div class="d">ש</div>
+            <div class="d">ו</div>
+            <div class="d">ה</div>
+            <div class="d today">ד</div>
+            <div class="d done">ג</div>
+            <div class="d">ב</div>
+            <div class="d done">א</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         3) רצף שבועות — עם streak saver + סטטוס סכנה
+    ================================================================== -->
+    <div class="streak">
+      <div class="flame">🔥</div>
+      <div style="flex:1">
+        <div class="num">12</div>
+        <div class="lbl">שבועות רצוף</div>
+        <div class="ok">✓ השבוע מאובטח</div>
+        <div class="freeze">🛡️ <b>1 Streak Saver</b> זמין · מאפשר לדלג שבוע בלי לשבור את הרצף</div>
+      </div>
+    </div>
+
+    <!-- חלופה — סטטוס סכנה (להמחשה — בקוד יוצג רק אחד מהשניים) -->
+    <div class="streak" style="background:linear-gradient(135deg,#fef2f2,#fecaca);border-color:#fca5a5">
+      <div class="flame">🔥</div>
+      <div style="flex:1">
+        <div class="num" style="color:#991b1b">12</div>
+        <div class="lbl" style="color:#991b1b">שבועות רצוף</div>
+        <div class="alert">⚠️ הרצף בסכנה — נותרו 2 ימים</div>
+        <div class="freeze" style="color:#991b1b">השבוע עדיין לא הגעת. תירשם לאימון של היום או מחר 💪</div>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         4) דרגה (Level / Belt System)
+    ================================================================== -->
+    <div class="card">
+      <h4>הדרגה שלך</h4>
+      <div class="level-card">
+        <div class="belt">🥋</div>
+        <div class="level-info" style="flex:1">
+          <div class="top">
+            <div class="lvl">לוחם · דרגה 5</div>
+            <div class="units">147 / 200</div>
+          </div>
+          <div class="progress"><div style="width:73.5%"></div></div>
+          <div class="next-lvl">עוד <b>53 יחידות</b> לדרגה הבאה: <b>אלוף · דרגה 6</b></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         5) ⭐ החגורה שלי — BJJ (מבוגר)
+    ================================================================== -->
+    <div class="card belt-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h4 style="margin:0">🥋 החגורה שלי</h4>
+        <span class="muted">BJJ · מבוגר</span>
+      </div>
+
+      <!-- שורת התקדמות חגורות — ויזואלי, עם הבא בתור -->
+      <div class="belt-journey">
+        <div class="belt-step done"><div class="bj-belt" style="background:#fff;border:1px solid #d1d5db"></div><span>לבן</span></div>
+        <div class="belt-step current"><div class="bj-belt" style="background:#1e40af"></div><span>כחול</span></div>
+        <div class="belt-step next"><div class="bj-belt" style="background:#7c3aed"></div><span>סגול</span></div>
+        <div class="belt-step locked"><div class="bj-belt" style="background:#7c2d12"></div><span>חום</span></div>
+        <div class="belt-step locked"><div class="bj-belt" style="background:#0f172a"></div><span>שחור</span></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;margin-top:14px">
+        <div class="belt-graphic">
+          <div class="belt-bar"></div>
+          <div class="belt-stripe"></div>
+          <div class="belt-stripe"></div>
+        </div>
+        <div>
+          <div style="font-size:18px;font-weight:900;color:#1e3a8a">חגורה כחולה · 2 פסים</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px">קיבלת ב-<b style="color:#1f2937">15 בנובמבר 2024</b></div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:24px;font-weight:900;color:#1e40af;line-height:1">1.5</div>
+          <div style="font-size:11px;color:#1e3a8a;font-weight:700;margin-top:4px">שנים על הכחולה</div>
+        </div>
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:24px;font-weight:900;color:#1e40af;line-height:1">183</div>
+          <div style="font-size:11px;color:#1e3a8a;font-weight:700;margin-top:4px">אימונים מאז</div>
+        </div>
+      </div>
+
+      <!-- היעד הבא — מבוסס על מאמן (לא על אלגוריתם שקרי) -->
+      <!-- מצב 1: עוד לא מועמד לקידום — תצוגה מתונה, בלי הבטחות -->
+      <div class="next-belt-goal" style="margin-top:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div class="belt-graphic" style="width:40px;height:40px">
+            <div class="belt-bar" style="background:linear-gradient(180deg,#a855f7,#7c3aed);height:14px"></div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:10px;color:#6b21a8;font-weight:700">החגורה הבאה</div>
+            <div style="font-size:14px;font-weight:900;color:#581c87">סגולה</div>
+          </div>
+          <div style="text-align:left">
+            <div style="font-size:11px;color:#6b21a8;font-weight:700">בעבודה 💪</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#6b21a8;margin-top:6px;line-height:1.5;background:#fff;border-radius:8px;padding:8px">
+          המאמן הוא זה שקובע מתי אתה מוכן לקידום — לא לוח זמנים. <b>תמשיך להופיע, לעבוד, להתחרות אם בא לך.</b> הקידום יבוא כשהוא צריך לבוא.
+        </div>
+      </div>
+
+      <!-- מצב 2 (חלופי — מוצג רק אם המאמן סימן באירוע קידום) -->
+      <div style="margin-top:8px;background:linear-gradient(135deg,#fef3c7,#fde68a);border:2px solid #f59e0b;border-radius:12px;padding:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="font-size:36px">🎉</div>
+          <div style="flex:1">
+            <div style="font-size:11px;color:#78350f;font-weight:700">סומנת לקידום!</div>
+            <div style="font-size:15px;font-weight:900;color:#78350f">מבחן חגורות סוף 2026</div>
+          </div>
+        </div>
+        <div style="background:#fff;border-radius:10px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="text-align:center">
+            <div style="font-size:10px;color:#92400e;font-weight:700">היעד שלך</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:6px">
+              <div class="belt-graphic" style="width:28px;height:28px;border-color:#7c3aed">
+                <div class="belt-bar" style="background:#7c3aed;height:10px"></div>
+              </div>
+              <div style="font-size:14px;font-weight:900;color:#581c87">סגולה</div>
+            </div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:10px;color:#92400e;font-weight:700">עוד</div>
+            <div style="font-size:22px;font-weight:900;color:#78350f;margin-top:4px;line-height:1">23</div>
+            <div style="font-size:10px;color:#92400e">ימים · 15 בנוב'</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;font-size:11px;color:#78350f;text-align:center">
+          💪 תחזק נוכחות בשבועות הקרובים. תופיע כל אימון. תהיה שם.
+        </div>
+      </div>
+
+      <!-- מצב 3 (אחרי שהאירוע עבר וקיבל קידום) -->
+      <div style="margin-top:8px;background:linear-gradient(135deg,#581c87 0%,#7c3aed 50%,#a855f7 100%);border:0;border-radius:12px;padding:16px;color:#fff;text-align:center">
+        <div style="font-size:42px;line-height:1">🏆</div>
+        <div style="font-size:11px;opacity:.9;margin-top:6px;font-weight:700">מזל טוב! קיבלת חגורה</div>
+        <div style="font-size:22px;font-weight:900;margin-top:4px">סגולה</div>
+        <div style="font-size:11px;opacity:.85;margin-top:6px">15 בנובמבר 2026 · "מבחן חגורות סוף 2026"</div>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         5b) ⭐ דוגמה: מסך ילד — חגורות ילדים
+    ================================================================== -->
+    <div class="card belt-card" style="background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);border-color:#fbbf24">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h4 style="margin:0">🥋 החגורה שלי</h4>
+        <span class="muted">BJJ · ילדים (4-15)</span>
+      </div>
+
+      <!-- מסע חגורות ילדים מלא (IBJJF) — גלילה אופקית -->
+      <div class="belt-journey kids" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <div class="belt-step done"><div class="bj-belt" style="background:#fff;border:1px solid #d1d5db"></div><span>לבן</span></div>
+        <div class="belt-step done"><div class="bj-belt kids-split" style="--c1:#fff;--c2:#9ca3af"></div><span>אפור-לבן</span></div>
+        <div class="belt-step current"><div class="bj-belt" style="background:#9ca3af"></div><span>אפור</span></div>
+        <div class="belt-step next"><div class="bj-belt kids-split" style="--c1:#9ca3af;--c2:#0f172a"></div><span>אפור-שחור</span></div>
+        <div class="belt-step locked"><div class="bj-belt kids-split" style="--c1:#fde047;--c2:#fff"></div><span>צהוב-לבן</span></div>
+        <div class="belt-step locked"><div class="bj-belt" style="background:#fde047"></div><span>צהוב</span></div>
+        <div class="belt-step locked"><div class="bj-belt kids-split" style="--c1:#fde047;--c2:#0f172a"></div><span>צהוב-שחור</span></div>
+        <div class="belt-step locked"><div class="bj-belt kids-split" style="--c1:#fb923c;--c2:#fff"></div><span>כתום-לבן</span></div>
+        <div class="belt-step locked"><div class="bj-belt" style="background:#fb923c"></div><span>כתום</span></div>
+        <div class="belt-step locked"><div class="bj-belt kids-split" style="--c1:#fb923c;--c2:#0f172a"></div><span>כתום-שחור</span></div>
+        <div class="belt-step locked"><div class="bj-belt kids-split" style="--c1:#22c55e;--c2:#fff"></div><span>ירוק-לבן</span></div>
+        <div class="belt-step locked"><div class="bj-belt" style="background:#22c55e"></div><span>ירוק</span></div>
+        <div class="belt-step locked"><div class="bj-belt kids-split" style="--c1:#22c55e;--c2:#0f172a"></div><span>ירוק-שחור</span></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;margin-top:14px">
+        <div class="belt-graphic" style="border-color:#9ca3af">
+          <div class="belt-bar" style="background:linear-gradient(180deg,#d1d5db,#9ca3af);border-color:#6b7280"></div>
+          <div class="belt-stripe"></div>
+          <div class="belt-stripe"></div>
+          <div class="belt-stripe" style="left:34px"></div>
+        </div>
+        <div>
+          <div style="font-size:18px;font-weight:900;color:#374151">חגורה אפורה · 3 פסים</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px">קיבלת ב-<b style="color:#1f2937">10 במאי 2025</b></div>
+        </div>
+      </div>
+
+      <!-- היעד הבא לילד — תמיד הצפיה, אבל בלי "מספרים" שקריים -->
+      <div style="margin-top:14px;background:#fff;border:2px solid #fbbf24;border-radius:12px;padding:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="font-size:32px">⭐</div>
+          <div style="flex:1">
+            <div style="font-size:11px;color:#92400e;font-weight:700">החגורה הבאה שלך</div>
+            <div style="font-size:16px;font-weight:900;color:#78350f">אפור-שחור</div>
+          </div>
+          <div class="belt-graphic" style="width:40px;height:40px;border-color:#374151">
+            <div class="belt-bar kids-split" style="--c1:#9ca3af;--c2:#0f172a;height:14px"></div>
+          </div>
+        </div>
+        <!-- "מד התקדמות" איכותני — לא מספרי -->
+        <div style="background:#fef3c7;border-radius:8px;padding:10px;font-size:12px;color:#78350f;line-height:1.6">
+          🥋 <b>איך מתקדמים?</b><br/>
+          המאמן עוקב אחריך באימונים — הטכניקה, ההתמדה, היחס לחברי הקבוצה. כשתהיה מוכן, הוא יקדם אותך.
+          <br/><br/>
+          <b>מה אתה יכול לעשות?</b> פשוט להגיע. כל שבוע. לעבוד טוב. לעזור לחברים. הקידום יגיע ✊
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         6) פילוח לפי תחום — עם בר התקדמות
+    ================================================================== -->
+    <div class="card">
+      <h4>שליטה לפי תחום (החודש)</h4>
+      <div class="disc-row">
+        <div class="disc-item">
+          <div class="disc-icon" style="background:#dbeafe">🥋</div>
+          <span class="disc-name" style="flex:0 0 80px">BJJ</span>
+          <div class="disc-bar"><div style="background:#2563eb;width:80%"></div></div>
+          <span class="disc-units">8 יח'</span>
+        </div>
+        <div class="disc-item">
+          <div class="disc-icon" style="background:#fee2e2">🥊</div>
+          <span class="disc-name" style="flex:0 0 80px">Muay Thai</span>
+          <div class="disc-bar"><div style="background:#dc2626;width:30%"></div></div>
+          <span class="disc-units">3 יח'</span>
+        </div>
+        <div class="disc-item">
+          <div class="disc-icon" style="background:#ede9fe">🤼</div>
+          <span class="disc-name" style="flex:0 0 80px">MMA</span>
+          <div class="disc-bar"><div style="background:#7c3aed;width:10%"></div></div>
+          <span class="disc-units">1 יח'</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         7) Smart CTA — דוחף ללוז על בסיס דפוס המתאמן
+    ================================================================== -->
+    <div class="cta">
+      <div class="topline">🤖 הבחנו בדפוס שלך</div>
+      <div class="msg">בדרך כלל אתה מתאמן בימי שני. <span style="color:#fbbf24">השבוע עוד לא נרשמת.</span></div>
+      <button class="btn">הירשם לאימון של היום ←</button>
+    </div>
+
+    <!-- =================================================================
+         8) אתגר השבוע — gamification קצר טווח
+    ================================================================== -->
+    <div class="challenge">
+      <div class="head">
+        <span class="badge-c">אתגר השבוע</span>
+        <span class="muted" style="margin-right:auto">5 ימים נותרו</span>
+      </div>
+      <div class="title">⚡ Cross-Trainer</div>
+      <div class="desc">התאמן ב-2 תחומים שונים השבוע (BJJ + Muay Thai/MMA)</div>
+      <div class="progress-c"><div style="width:50%"></div></div>
+      <div class="pct">
+        <span>BJJ ✓ · Muay Thai ?</span>
+        <span>1 / 2</span>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         9) Cohort comparison (אנונימי, לא ביישוף שמות)
+    ================================================================== -->
+    <div class="cohort">
+      <div class="pct-big">25%</div>
+      <div class="info">
+        <div class="t">אתה בטופ 25% של מתאמני הסניף</div>
+        <div class="s">החודש — 12 אימונים, יותר מ-3 מתוך 4 חברי סניף</div>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         10) שיאים אישיים (Personal Records)
+    ================================================================== -->
+    <div class="section-label">שיאים אישיים</div>
+    <div class="pr-grid">
+      <div class="pr">
+        <div class="e">📅</div>
+        <div class="v">5</div>
+        <div class="l">שיא שבועי</div>
+      </div>
+      <div class="pr">
+        <div class="e">🗓️</div>
+        <div class="v">18</div>
+        <div class="l">שיא חודשי</div>
+      </div>
+      <div class="pr">
+        <div class="e">🔥</div>
+        <div class="v">14</div>
+        <div class="l">רצף שיא</div>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         11) הישגים (Achievements) — שילוב מושג + נעול
+    ================================================================== -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h4 style="margin:0">הישגים <span class="muted" style="font-weight:600">· 8 / 24</span></h4>
+        <a href="#" style="font-size:11px;color:var(--blue);font-weight:700;text-decoration:none">כל ההישגים ←</a>
+      </div>
+      <div class="ach-grid">
+        <div class="ach"><div class="e">🌱</div><div class="lbl">25 יח'</div></div>
+        <div class="ach"><div class="e">🥉</div><div class="lbl">50 יח'</div></div>
+        <div class="ach"><div class="e">🥈</div><div class="lbl">100 יח'</div></div>
+        <div class="ach"><div class="e">⚡</div><div class="lbl">Cross<br/>Trainer</div></div>
+        <div class="ach"><div class="e">🔥</div><div class="lbl">רצף 8</div></div>
+        <div class="ach"><div class="e">🌅</div><div class="lbl">Early<br/>Bird</div></div>
+        <div class="ach locked"><div class="e">🥇</div><div class="lbl">250 יח'</div></div>
+        <div class="ach locked"><div class="e">⭐</div><div class="lbl">רצף 16</div></div>
+      </div>
+      <div style="margin-top:12px;padding:10px;background:#f0fdf4;border:1px dashed #86efac;border-radius:10px">
+        <div style="font-size:11px;color:#166534;font-weight:700;margin-bottom:4px">🥇 ההישג הבא: 250 יחידות</div>
+        <div class="progress" style="margin:0"><div style="width:58.8%;background:#16a34a"></div></div>
+        <div style="font-size:10px;color:#166534;margin-top:5px">147 / 250 · עוד 103 יחידות</div>
+      </div>
+    </div>
+
+    <div class="legend-note">
+      Mockup · Team Pact Athlete Progress v2 · יחידות אימון, לא שעות
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     PHONE 2 — מסך המאמן: דוח חגורות
+====================================================================== -->
+<div class="phone" style="margin-right:30px">
+  <div class="phone-header">
+    <span>Team Pact · Mockup</span>
+    <span class="title">🥋 דוח חגורות BJJ</span>
+  </div>
+
+  <div class="content">
+    <div class="card" style="background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;border:0">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:11px;opacity:.85">מאמן: דודי בן זקן</div>
+          <div style="font-size:16px;font-weight:800;margin-top:2px">דוח התקדמות חגורות</div>
+        </div>
+        <div style="font-size:32px">🥋</div>
+      </div>
+      <div style="margin-top:14px">
+        <div style="font-size:10px;opacity:.85;margin-bottom:6px;font-weight:700">מבוגרים</div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
+          <div style="background:rgba(255,255,255,.18);border-radius:8px;padding:6px;text-align:center">
+            <div style="font-size:16px;font-weight:900">12</div>
+            <div style="font-size:8px;opacity:.85">לבן</div>
+          </div>
+          <div style="background:rgba(255,255,255,.18);border-radius:8px;padding:6px;text-align:center">
+            <div style="font-size:16px;font-weight:900">8</div>
+            <div style="font-size:8px;opacity:.85">כחול</div>
+          </div>
+          <div style="background:rgba(255,255,255,.18);border-radius:8px;padding:6px;text-align:center">
+            <div style="font-size:16px;font-weight:900">3</div>
+            <div style="font-size:8px;opacity:.85">סגול</div>
+          </div>
+          <div style="background:rgba(255,255,255,.18);border-radius:8px;padding:6px;text-align:center">
+            <div style="font-size:16px;font-weight:900">1</div>
+            <div style="font-size:8px;opacity:.85">חום</div>
+          </div>
+          <div style="background:rgba(255,255,255,.18);border-radius:8px;padding:6px;text-align:center">
+            <div style="font-size:16px;font-weight:900">2</div>
+            <div style="font-size:8px;opacity:.85">שחור</div>
+          </div>
+        </div>
+        <div style="font-size:10px;opacity:.85;margin:10px 0 6px;font-weight:700">ילדים</div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
+          <div style="background:rgba(255,255,255,.18);border-radius:8px;padding:6px;text-align:center">
+            <div style="font-size:16px;font-weight:900">7</div>
+            <div style="font-size:8px;opacity:.85">לבן</div>
+          </div>
+          <div style="background:rgba(255,255,255,.18);border-radius:8px;padding:6px;text-align:center">
+            <div style="font-size:16px;font-weight:900">5</div>
+            <div style="font-size:8px;opacity:.85">אפור</div>
+          </div>
+          <div style="background:rgba(255,255,255,.18);border-radius:8px;padding:6px;text-align:center">
+            <div style="font-size:16px;font-weight:900">3</div>
+            <div style="font-size:8px;opacity:.85">צהוב</div>
+          </div>
+          <div style="background:rgba(255,255,255,.18);border-radius:8px;padding:6px;text-align:center">
+            <div style="font-size:16px;font-weight:900">2</div>
+            <div style="font-size:8px;opacity:.85">כתום</div>
+          </div>
+          <div style="background:rgba(255,255,255,.18);border-radius:8px;padding:6px;text-align:center">
+            <div style="font-size:16px;font-weight:900">1</div>
+            <div style="font-size:8px;opacity:.85">ירוק</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         אירוע קידום פעיל — בולט מעל הכל
+    ================================================================== -->
+    <div style="background:linear-gradient(135deg,#fef3c7,#fde68a);border:2px solid #f59e0b;border-radius:14px;padding:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="font-size:32px">📅</div>
+        <div style="flex:1">
+          <div style="font-size:10px;color:#92400e;font-weight:800">אירוע קידום קרוב</div>
+          <div style="font-size:15px;font-weight:900;color:#78350f">מבחן חגורות סוף 2026</div>
+          <div style="font-size:11px;color:#92400e;margin-top:2px">15 בנובמבר 2026 · עוד 23 ימים</div>
+        </div>
+        <div style="background:#fff;color:#78350f;font-size:18px;font-weight:900;padding:6px 12px;border-radius:10px">8</div>
+      </div>
+      <div style="background:#fff;border-radius:10px;padding:10px;font-size:11px;color:#78350f;line-height:1.5">
+        ⚙️ <b>אוטומציה:</b> ביום האירוע (15.11.26) המערכת תעדכן אוטומטית את החגורה של 8 המתאמנים שסימנת. הם יקבלו push notification "🏆 קיבלת חגורה...".
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+        <button style="background:#92400e;color:#fff;border:0;padding:8px;border-radius:8px;font-weight:800;font-size:11px">+ הוסף מתאמן</button>
+        <button style="background:#fff;color:#92400e;border:1px solid #92400e;padding:8px;border-radius:8px;font-weight:800;font-size:11px">צפה ברשימה</button>
+      </div>
+    </div>
+
+    <!-- כפתור ליצירת אירוע חדש -->
+    <button style="background:#1e40af;color:#fff;border:0;padding:14px;border-radius:12px;font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;width:100%">
+      <span style="font-size:18px">+</span> צור אירוע קידום חדש
+    </button>
+
+    <!-- מועמדים לקידום — בשליטת המאמן בלבד -->
+    <div class="trainer-report">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <h4 style="margin:0">🔥 מסומנים לקידום</h4>
+        <span style="background:#fef2f2;color:#dc2626;font-size:10px;font-weight:800;padding:2px 7px;border-radius:99px">2</span>
+      </div>
+      <div class="muted" style="margin-bottom:10px;line-height:1.4">
+        רק <b>אתה</b> יכול לסמן מתאמן כמוכן. אין "אוטומציה" — אתה מכיר אותם, אתה החלטת.
+      </div>
+      <table class="trainer-table">
+        <thead>
+          <tr>
+            <th>מתאמן</th>
+            <th>חגורה</th>
+            <th>שנים</th>
+            <th>אימונים</th>
+            <th>מצב</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>שני לוי</b></td>
+            <td><span class="belt-pill bp-blue">כחול</span></td>
+            <td>3.5</td>
+            <td>312</td>
+            <td class="ready">✓ סומן 12.4</td>
+          </tr>
+          <tr>
+            <td><b>יואב כהן</b></td>
+            <td><span class="belt-pill bp-white">לבן</span></td>
+            <td>2.1</td>
+            <td>240</td>
+            <td class="ready">✓ סומן 8.4</td>
+          </tr>
+        </tbody>
+      </table>
+      <button style="margin-top:10px;width:100%;background:#059669;color:#fff;border:0;padding:10px;border-radius:10px;font-weight:800;font-size:12px;cursor:pointer">+ סמן מתאמן נוסף כמוכן</button>
+    </div>
+
+    <!-- כל המתאמנים -->
+    <div class="trainer-report">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <h4 style="margin:0">כל המתאמנים</h4>
+        <span class="muted">24 פעילים</span>
+      </div>
+      <table class="trainer-table">
+        <thead>
+          <tr>
+            <th>שם</th>
+            <th>חגורה</th>
+            <th>קיבל ב-</th>
+            <th>אימונים מאז</th>
+            <th>פעילות אחרונה</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>דודי בן זקן</b></td>
+            <td><span class="belt-pill bp-black">שחור</span></td>
+            <td>2014</td>
+            <td>2,847</td>
+            <td>היום</td>
+          </tr>
+          <tr>
+            <td>מושיק קדר</td>
+            <td><span class="belt-pill bp-black">שחור</span></td>
+            <td>2018</td>
+            <td>1,420</td>
+            <td>אתמול</td>
+          </tr>
+          <tr>
+            <td>שני לוי</td>
+            <td><span class="belt-pill bp-blue">כחול</span></td>
+            <td>11/22</td>
+            <td>312</td>
+            <td>3 ימים</td>
+          </tr>
+          <tr>
+            <td>אסף רז</td>
+            <td><span class="belt-pill bp-purple">סגול</span></td>
+            <td>3/23</td>
+            <td>198</td>
+            <td>היום</td>
+          </tr>
+          <tr>
+            <td>תמר בר</td>
+            <td><span class="belt-pill bp-white">לבן</span></td>
+            <td>5/25</td>
+            <td>78</td>
+            <td>3 ימים</td>
+          </tr>
+          <tr>
+            <td style="color:#9ca3af">אורי מזרחי</td>
+            <td><span class="belt-pill bp-white">לבן</span></td>
+            <td>1/26</td>
+            <td>22</td>
+            <td class="hot">14 יום</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- כפתורי פעולה -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <button style="background:#1e40af;color:#fff;border:0;padding:11px;border-radius:10px;font-weight:800;font-size:12px;cursor:pointer">⬇ ייצוא ל-Excel</button>
+      <button style="background:#fff;color:#1e40af;border:1px solid #1e40af;padding:11px;border-radius:10px;font-weight:800;font-size:12px;cursor:pointer">+ שדרוג חגורה</button>
+    </div>
+
+    <div class="legend-note">
+      Mockup · Trainer Belt Report · ניהול התקדמות BJJ
+    </div>
+  </div>
+</div>
+
+<script>
+  // יוצרים heatmap של 12 שבועות × 7 ימים עם דאטה אקראית מציאותית
+  const hm = document.getElementById('heatmap');
+  const rng = (seed => () => (seed = (seed*9301+49297)%233280)/233280)(7);
+  for (let w = 0; w < 12; w++){
+    const col = document.createElement('div'); col.className='col';
+    for (let d = 0; d < 7; d++){
+      const cell = document.createElement('div'); cell.className='cell';
+      const r = rng();
+      // מתאמן 4-5 פעמים בשבוע ממוצע — סופ"ש פחות
+      const isWeekend = (d===5 || d===6);
+      const trained = isWeekend ? r < 0.18 : r < 0.6;
+      if (trained){
+        if (r < 0.05) cell.classList.add('l4');
+        else if (r < 0.20) cell.classList.add('l3');
+        else if (r < 0.40) cell.classList.add('l2');
+        else cell.classList.add('l1');
+      }
+      col.appendChild(cell);
+    }
+    hm.appendChild(col);
+  }
+
+  // Tabs interactive
+  document.querySelectorAll('.tabs button').forEach(b=>{
+    b.addEventListener('click',e=>{
+      document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

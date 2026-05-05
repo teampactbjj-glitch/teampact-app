@@ -78,14 +78,16 @@ function monthKey(d) {
 // === שם חודש בעברית ===
 const MONTH_HE = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
 
-// === badges של שעות מזרון (כל הזמן) ===
+// === badges של יחידות אימון (כל הזמן) ===
+// יחידת אימון = checkin אחד שהסתיים, בלי קשר לאורך השיעור.
+// מבטל את אי-הצדק שהיה בספירת שעות (60 דק' מול 90 דק').
 const HOUR_BADGES = [
-  { hours: 25, label: '25 שעות', emoji: '🌱' },
-  { hours: 50, label: '50 שעות', emoji: '🥉' },
-  { hours: 100, label: '100 שעות', emoji: '🥈' },
-  { hours: 250, label: '250 שעות', emoji: '🥇' },
-  { hours: 500, label: '500 שעות', emoji: '🏆' },
-  { hours: 1000, label: '1000 שעות', emoji: '👑' },
+  { hours: 25, label: '25 יחידות', emoji: '🌱' },
+  { hours: 50, label: '50 יחידות', emoji: '🥉' },
+  { hours: 100, label: '100 יחידות', emoji: '🥈' },
+  { hours: 250, label: '250 יחידות', emoji: '🥇' },
+  { hours: 500, label: '500 יחידות', emoji: '🏆' },
+  { hours: 1000, label: '1000 יחידות', emoji: '👑' },
 ]
 
 // === badges מיוחדים ===
@@ -94,16 +96,20 @@ const HOUR_BADGES = [
 // "רצף 8" — 8 שבועות רצופים פעילים
 // "רצף 16" — 16 שבועות רצופים פעילים
 
-export default function MyProgressSection({ profile }) {
+export default function MyProgressSection({ profile, member }) {
   const [loading, setLoading] = useState(true)
   const [checkins, setCheckins] = useState([])
   const [classMap, setClassMap] = useState(new Map()) // class_id -> {name, class_type, duration_minutes, start_time, coach_id, coach_name}
   const [coachMap, setCoachMap] = useState(new Map()) // coach_id -> {name}
   const [err, setErr] = useState(null)
 
+  // ה-checkins נשמרים תחת members.id (לפי FK ב-DB).
+  // נשתמש ב-member.id; אם חסר — fallback ל-profile.id (תאימות אחורה).
+  const athleteId = member?.id || profile?.id
+
   // ── שליפת נתונים ─────────────────────────────────────────────
   useEffect(() => {
-    if (!profile?.id) { setLoading(false); return }
+    if (!athleteId) { setLoading(false); return }
     let cancelled = false
     ;(async () => {
       setLoading(true)
@@ -113,7 +119,7 @@ export default function MyProgressSection({ profile }) {
         const { data: chk, error: chkErr } = await supabase
           .from('checkins')
           .select('class_id, checked_in_at, checkin_date')
-          .eq('athlete_id', profile.id)
+          .eq('athlete_id', athleteId)
           .eq('status', 'present')
           .order('checked_in_at', { ascending: true })
         if (chkErr) throw chkErr
@@ -153,7 +159,7 @@ export default function MyProgressSection({ profile }) {
       }
     })()
     return () => { cancelled = true }
-  }, [profile?.id])
+  }, [athleteId])
 
   // ── עיבוד נתונים: שיוך כל checkin לתחום + שעות + סינון "אימון שהסתיים" ─────
   const events = useMemo(() => {
@@ -301,16 +307,16 @@ export default function MyProgressSection({ profile }) {
   // ── badges שהושגו ─────────────────────────────────────────────
   const badges = useMemo(() => {
     const list = []
-    // שעות מזרון
+    // יחידות אימון (כל הזמן)
     for (const b of HOUR_BADGES) {
-      if (stats.allTimeHours >= b.hours) {
-        list.push({ ...b, kind: 'hours', achieved: true })
+      if (stats.allTimeSessions >= b.hours) {
+        list.push({ ...b, kind: 'units', achieved: true })
       }
     }
-    // ה-badge הבא של שעות (תצוגה כ-progress)
-    const nextHourBadge = HOUR_BADGES.find(b => stats.allTimeHours < b.hours)
-    if (nextHourBadge) {
-      list.push({ ...nextHourBadge, kind: 'hours-next', achieved: false, progress: stats.allTimeHours, target: nextHourBadge.hours })
+    // ה-badge הבא של יחידות (תצוגה כ-progress)
+    const nextUnitBadge = HOUR_BADGES.find(b => stats.allTimeSessions < b.hours)
+    if (nextUnitBadge) {
+      list.push({ ...nextUnitBadge, kind: 'hours-next', achieved: false, progress: stats.allTimeSessions, target: nextUnitBadge.hours })
     }
     // Cross-trainer (החודש)
     const discCountThisMonth = Object.keys(stats.thisMonth.byDiscipline).filter(d => stats.thisMonth.byDiscipline[d] > 0 && d !== 'אחר').length
@@ -453,27 +459,65 @@ export default function MyProgressSection({ profile }) {
 
   return (
     <div className="space-y-4">
-      {/* ===== Hero card — כותרת + מספרי החודש ===== */}
+      {/* ===== Hero card — כותרת + מספר החודש + פילוח תחום קומפקטי ===== */}
       <div className="rounded-xl shadow-sm overflow-hidden"
         style={{ background: 'linear-gradient(135deg, #047857 0%, #059669 50%, #10b981 100%)' }}>
-        <div className="p-6 text-white">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-lg flex items-center gap-2">
+        <div className="p-5 text-white">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="font-bold text-base flex items-center gap-2">
               <span>📊</span>
               <span>ההתקדמות שלי</span>
             </h3>
-            <div className="text-xs opacity-90">{MONTH_HE[new Date().getMonth()]} {new Date().getFullYear()}</div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white/15 backdrop-blur-sm rounded-lg p-3">
-              <div className="text-3xl font-extrabold leading-none">{tm.sessions}</div>
-              <div className="text-xs opacity-90 mt-1">אימונים החודש</div>
-            </div>
-            <div className="bg-white/15 backdrop-blur-sm rounded-lg p-3">
-              <div className="text-3xl font-extrabold leading-none">{tmHours.toFixed(tmHours < 10 ? 1 : 0)}</div>
-              <div className="text-xs opacity-90 mt-1">שעות מזרון</div>
+            <div className="text-xs opacity-95 font-semibold">
+              {MONTH_HE[new Date().getMonth()]} {new Date().getFullYear()}
             </div>
           </div>
+
+          {/* מספר אימוני החודש — בולט במרכז */}
+          <div className="bg-white/15 backdrop-blur-sm rounded-lg p-4 mt-3 text-center">
+            <div className="text-5xl font-extrabold leading-none">{tm.sessions}</div>
+            <div className="text-xs opacity-90 mt-1.5">
+              {tm.sessions === 1 ? 'יחידת אימון' : 'יחידות אימון'} בחודש זה
+            </div>
+          </div>
+
+          {/* פילוח לפי תחום — קומפקטי ומותאם לכמות התחומים */}
+          {disciplinesThisMonth.length === 1 && (
+            // תחום אחד — תווית קטנה בלבד, חוסך מקום
+            <div className="mt-3 flex justify-center">
+              <span className="inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-semibold">
+                <span className="text-base leading-none">{DISCIPLINE_ICONS[disciplinesThisMonth[0].name]}</span>
+                <span>{disciplinesThisMonth[0].name}</span>
+              </span>
+            </div>
+          )}
+          {disciplinesThisMonth.length >= 2 && (() => {
+            // 2+ תחומים — בר אופקי stacked + תוויות מתחת
+            const total = disciplinesThisMonth.reduce((s, d) => s + d.sessions, 0)
+            return (
+              <div className="mt-3">
+                <div className="flex h-2.5 rounded-full overflow-hidden bg-white/20">
+                  {disciplinesThisMonth.map(d => (
+                    <div key={d.name}
+                      style={{
+                        width: `${(d.sessions / total) * 100}%`,
+                        background: DISCIPLINE_COLORS[d.name],
+                      }}
+                      title={`${d.name}: ${d.sessions}`}
+                    />
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2 mt-2 text-[11px]">
+                  {disciplinesThisMonth.map(d => (
+                    <span key={d.name} className="inline-flex items-center gap-1">
+                      <span style={{ background: DISCIPLINE_COLORS[d.name] }} className="w-2 h-2 rounded-full inline-block"></span>
+                      <span className="font-semibold">{DISCIPLINE_ICONS[d.name]} {d.name}: {d.sessions}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
           {/* השוואה */}
           {(diffPct !== null || isBestMonth) && (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -499,28 +543,7 @@ export default function MyProgressSection({ profile }) {
         </div>
       </div>
 
-      {/* ===== פילוח לפי תחום (החודש) ===== */}
-      {disciplinesThisMonth.length > 0 && (
-        <div className="bg-white rounded-xl border shadow-sm p-4">
-          <h4 className="font-bold text-gray-800 text-sm mb-3">פילוח לפי תחום</h4>
-          <div className="grid grid-cols-2 gap-2">
-            {disciplinesThisMonth.map(d => {
-              const mins = hoursByDiscipline[d.name] || 0
-              const hrs = mins / 60
-              return (
-                <div key={d.name} className="rounded-lg p-3 border" style={{ background: DISCIPLINE_BG[d.name], borderColor: DISCIPLINE_COLORS[d.name] + '33' }}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xl">{DISCIPLINE_ICONS[d.name]}</span>
-                    <span className="font-bold text-sm" style={{ color: DISCIPLINE_COLORS[d.name] }}>{d.name}</span>
-                  </div>
-                  <div className="text-2xl font-extrabold leading-none mt-2" style={{ color: DISCIPLINE_COLORS[d.name] }}>{d.sessions}</div>
-                  <div className="text-[11px] text-gray-600 mt-1">{hrs.toFixed(hrs < 10 ? 1 : 0)} שעות · {d.sessions === 1 ? 'אימון' : 'אימונים'}</div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      {/* פילוח לפי תחום מוצג עכשיו בתוך ה-Hero card למעלה — קומפקטי וחוסך מקום */}
 
       {/* ===== סטריפ 28 ימים אחרונים — קומפקטי ===== */}
       <div className="bg-white rounded-xl border shadow-sm p-3">
@@ -561,7 +584,7 @@ export default function MyProgressSection({ profile }) {
         )}
       </div>
 
-      {/* ===== רצף שבועות + סה"כ שעות (כל הזמן) ===== */}
+      {/* ===== רצף שבועות + סה"כ יחידות (כל הזמן) ===== */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-white rounded-xl border shadow-sm p-4 text-center">
           <div className="text-2xl mb-1">🔥</div>
@@ -572,10 +595,10 @@ export default function MyProgressSection({ profile }) {
           )}
         </div>
         <div className="bg-white rounded-xl border shadow-sm p-4 text-center">
-          <div className="text-2xl mb-1">⏱️</div>
-          <div className="text-2xl font-extrabold text-emerald-700 leading-none">{Math.round(stats.allTimeHours)}</div>
-          <div className="text-[11px] text-gray-600 mt-1">שעות מזרון בסה"כ</div>
-          <div className="text-[10px] text-gray-400 mt-1">{stats.allTimeSessions} אימונים</div>
+          <div className="text-2xl mb-1">🥋</div>
+          <div className="text-2xl font-extrabold text-emerald-700 leading-none">{stats.allTimeSessions}</div>
+          <div className="text-[11px] text-gray-600 mt-1">יחידות אימון בסה"כ</div>
+          <div className="text-[10px] text-gray-400 mt-1">מאז ההצטרפות</div>
         </div>
       </div>
 

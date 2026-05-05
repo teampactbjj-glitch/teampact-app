@@ -411,6 +411,30 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     const membershipType = member.membership_type || member.subscription_type
     const limit = WEEKLY_LIMITS[membershipType] ?? 2
 
+    // בדיקה דיפנסיבית: אולי המתאמן נרשם עצמית בדיוק עכשיו (race condition).
+    // נשלוף את class_registrations של אותו שבוע ונוודא שהוא לא כבר שם.
+    const weekStartCheck = (() => {
+      const d = startOfDay(selectedDate)
+      d.setDate(d.getDate() - d.getDay())
+      return d.toISOString().split('T')[0]
+    })()
+    const { data: existingReg, error: existingErr } = await supabase
+      .from('class_registrations')
+      .select('athlete_id')
+      .eq('class_id', classId)
+      .eq('athlete_id', member.id)
+      .eq('week_start', weekStartCheck)
+      .maybeSingle()
+    if (existingErr) console.error('addRegisteredMember existing check error:', existingErr)
+    if (existingReg) {
+      toast.error(`${member.full_name} כבר רשום/ה לשיעור הזה השבוע`)
+      // ניקוי החיפוש ורענון כדי להראות את המצב האמיתי
+      setVisitorSearch(p => ({ ...p, [classId]: '' }))
+      setVisitorResults(p => ({ ...p, [classId]: [] }))
+      fetchClassDetails(classId)
+      return
+    }
+
     // בדיקת מכסה (פרט לשיעורי מזרן פתוח/ספארינג)
     if (!openMat && limit !== Infinity) {
       const { weekStart, weekEnd } = getWeekRange(selectedDate)
@@ -563,9 +587,30 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
 
     if (error) console.error('searchVisitor error:', error)
 
-    // Filter out already-registered members
-    const registered = new Set((classData[classId]?.members || []).map(m => m.id))
-    const results = (data || []).filter(m => !registered.has(m.id))
+    // לא מסננים — מציגים גם רשומים. מסמנים לכל תוצאה אם היא כבר רשומה
+    // (כדי שב-UI נציג "רשום ✓" באפור במקום כפתור הוספה).
+    // מקורות לבדיקה:
+    // 1) Constant members of the class (member_classes)
+    // 2) Athletes who self-registered for the current week (class_registrations) —
+    //    גם מהמטמון וגם משאילתה טרייה לתפוס רישום עצמי שנעשה ברגע האחרון.
+    const constantIds = (classData[classId]?.members || []).map(m => m.id)
+    const cachedWeeklyIds = (classData[classId]?.weeklyRegistrants || []).map(m => m.id)
+
+    const weekStartStr = (() => {
+      const d = startOfDay(selectedDate)
+      d.setDate(d.getDate() - d.getDay())
+      return d.toISOString().split('T')[0]
+    })()
+    const { data: freshRegRows, error: freshRegErr } = await supabase
+      .from('class_registrations')
+      .select('athlete_id')
+      .eq('class_id', classId)
+      .eq('week_start', weekStartStr)
+    if (freshRegErr) console.error('searchVisitor fresh reg error:', freshRegErr)
+    const freshWeeklyIds = (freshRegRows || []).map(r => r.athlete_id).filter(Boolean)
+
+    const registered = new Set([...constantIds, ...cachedWeeklyIds, ...freshWeeklyIds])
+    const results = (data || []).map(m => ({ ...m, isRegistered: registered.has(m.id) }))
     setVisitorResults(p => ({ ...p, [classId]: results }))
     setVisitorLoading(p => ({ ...p, [classId]: false }))
   }
@@ -1313,10 +1358,16 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                         <ul className="mt-1 border rounded-lg divide-y bg-white shadow-sm">
                           {visitorResults[cls.id].map(m => {
                             const mtype = m.membership_type || m.subscription_type
+                            const isReg = m.isRegistered
                             return (
-                              <li key={m.id} className="flex items-center justify-between px-3 py-2">
+                              <li
+                                key={m.id}
+                                className={`flex items-center justify-between px-3 py-2 ${isReg ? 'bg-gray-50' : ''}`}
+                              >
                                 <div>
-                                  <p className="text-sm font-medium text-gray-800">{m.full_name}</p>
+                                  <p className={`text-sm font-medium ${isReg ? 'text-gray-400' : 'text-gray-800'}`}>
+                                    {m.full_name}
+                                  </p>
                                   <p className="text-xs text-gray-400">
                                     {mtype === '2x_week' ? '2× שבוע'
                                       : mtype === '4x_week' ? '4× שבוע'
@@ -1325,12 +1376,21 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                                       : mtype || '—'}
                                   </p>
                                 </div>
-                                <button
-                                  onClick={() => addRegisteredMember(cls, m)}
-                                  className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg font-bold transition"
-                                >
-                                  + הוסף
-                                </button>
+                                {isReg ? (
+                                  <span
+                                    title="המתאמן כבר רשום לשיעור הזה השבוע"
+                                    className="text-xs bg-gray-100 text-gray-500 border border-gray-200 px-2.5 py-1 rounded-lg font-bold cursor-not-allowed select-none"
+                                  >
+                                    ✓ רשום
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => addRegisteredMember(cls, m)}
+                                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg font-bold transition"
+                                  >
+                                    + הוסף
+                                  </button>
+                                )}
                               </li>
                             )
                           })}

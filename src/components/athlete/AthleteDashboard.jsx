@@ -1616,7 +1616,7 @@ export default function AthleteDashboard({ profile }) {
           const occStart = computeOccurrenceStart()
           const checkedAt = new Date(occStart); checkedAt.setHours(12, 0, 0, 0)
           const checkinDate = `${checkedAt.getFullYear()}-${String(checkedAt.getMonth() + 1).padStart(2, '0')}-${String(checkedAt.getDate()).padStart(2, '0')}`
-          await supabase.from('checkins').upsert(
+          const { error: chkErr } = await supabase.from('checkins').upsert(
             {
               class_id: cls.id,
               athlete_id: athleteId,
@@ -1626,6 +1626,11 @@ export default function AthleteDashboard({ profile }) {
             },
             { onConflict: 'class_id,athlete_id,checkin_date', ignoreDuplicates: true }
           )
+          // אם ה-checkin נכשל (למשל RLS), לוג ברור.
+          // ה-class_registration כבר נשמר — לא מתבטל. אבל ההתקדמות לא תתעדכן עד backfill.
+          if (chkErr) {
+            console.error('[register] auto-checkin failed (registration saved, but progress will not show this class):', chkErr)
+          }
         }
       } catch (e) {
         console.error('register error:', e)

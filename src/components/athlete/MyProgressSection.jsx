@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { getBeltMeta, getBeltLabel, formatYearsMonths, formatHebrewMonthYear } from '../../lib/belts'
 
 // ============================================================
 // MyProgressSection — דוח התקדמות אישי למתאמן
@@ -457,8 +458,68 @@ export default function MyProgressSection({ profile, member }) {
     hoursByDiscipline[e.discipline] = (hoursByDiscipline[e.discipline] || 0) + e.durationMin
   }
 
+  // ===== כרטיס חגורה — רק אם trains_gi=true ויש חגורה =====
+  const beltMeta = member?.belt ? getBeltMeta(member.belt) : null
+  const showBeltCard = !!member?.trains_gi && !!beltMeta
+  const beltReceivedMs = member?.belt_received_at ? new Date(member.belt_received_at).getTime() : null
+  const bjjUnitsSinceBelt = (beltReceivedMs && events.length)
+    ? events.filter(e => e.discipline === 'BJJ' && e.timeMs >= beltReceivedMs).length
+    : 0
+
   return (
     <div className="space-y-4">
+      {/* ===== Belt card — מופיע רק למתאמני Gi ===== */}
+      {showBeltCard && (
+        <div className="rounded-xl shadow-sm overflow-hidden border-2"
+          style={{ borderColor: beltMeta.color }}>
+          <div className="p-4" style={{ background: beltMeta.color, color: beltMeta.text }}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🥋</span>
+                <div>
+                  <div className="text-xs opacity-80 font-medium">החגורה שלי</div>
+                  <div className="text-xl font-extrabold leading-tight">
+                    {getBeltLabel(member.belt)}
+                  </div>
+                </div>
+              </div>
+              {member.belt_stripes > 0 && (
+                <div className="flex items-center gap-1" aria-label={`${member.belt_stripes} פסים`}>
+                  {Array.from({ length: member.belt_stripes }, (_, i) => (
+                    <span key={i} className="block w-1.5 h-7 rounded-sm"
+                      style={{ background: beltMeta.text === '#FFFFFF' ? '#FFFFFF' : '#1f2937' }} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="bg-white p-3 grid grid-cols-3 gap-2 text-center">
+            {member.belt_received_at && (
+              <div>
+                <div className="text-[10px] text-gray-500 leading-tight">קבלתי</div>
+                <div className="text-xs font-semibold text-gray-800 mt-0.5">
+                  {formatHebrewMonthYear(member.belt_received_at)}
+                </div>
+              </div>
+            )}
+            {member.belt_received_at && (
+              <div>
+                <div className="text-[10px] text-gray-500 leading-tight">על החגורה</div>
+                <div className="text-xs font-semibold text-gray-800 mt-0.5">
+                  {formatYearsMonths(member.belt_received_at) || '—'}
+                </div>
+              </div>
+            )}
+            <div>
+              <div className="text-[10px] text-gray-500 leading-tight">יחידות BJJ מאז</div>
+              <div className="text-base font-extrabold text-amber-700 mt-0.5 leading-none">
+                {bjjUnitsSinceBelt}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== Hero card — כותרת + מספר החודש + פילוח תחום קומפקטי ===== */}
       <div className="rounded-xl shadow-sm overflow-hidden"
         style={{ background: 'linear-gradient(135deg, #047857 0%, #059669 50%, #10b981 100%)' }}>

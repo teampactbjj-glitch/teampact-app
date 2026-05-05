@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import ImportAthletes from './ImportAthletes'
+import ImportBelts from './ImportBelts'
 import { notifyPush } from '../../lib/notifyPush'
 import { allAdminUserIds } from '../../lib/notifyTargets'
 import { useToast, useConfirm } from '../a11y'
+import { ADULT_BELTS, KIDS_BELTS, getBeltMeta, getMaxStripes } from '../../lib/belts'
 
 const MEMBERSHIP_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 const SESSION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
@@ -23,6 +25,13 @@ const EMPTY_FORM = {
   group_ids: [],
   active: true,
   branch_ids: [],
+  // Belt fields
+  trains_gi: true,
+  belt_category: 'adult',
+  belt: '',
+  belt_received_at: '',
+  belt_stripes: 0,
+  bjj_start_date: '',
 }
 
 export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null, stackedLayout = false, extraTop = null }) {
@@ -129,6 +138,13 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       active: form.active,
       branch_ids: form.branch_ids,
       branch_id: form.branch_ids[0] || null,
+      // Belt fields
+      trains_gi: !!form.trains_gi,
+      belt_category: form.trains_gi ? (form.belt_category || 'adult') : null,
+      belt: form.trains_gi && form.belt ? form.belt : null,
+      belt_received_at: form.trains_gi && form.belt_received_at ? form.belt_received_at : null,
+      belt_stripes: form.trains_gi && form.belt ? Number(form.belt_stripes || 0) : 0,
+      bjj_start_date: form.trains_gi && form.bjj_start_date ? form.bjj_start_date : null,
     }
     let error
     if (editing === 'new') {
@@ -338,6 +354,13 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       group_ids: athlete.group_ids || (athlete.group_id ? [athlete.group_id] : []),
       active: athlete.active ?? true,
       branch_ids: branchIds,
+      // Belt fields
+      trains_gi: athlete.trains_gi ?? true,
+      belt_category: athlete.belt_category || (athlete.belt?.startsWith?.('kids_') ? 'kids' : 'adult'),
+      belt: athlete.belt || '',
+      belt_received_at: athlete.belt_received_at || '',
+      belt_stripes: athlete.belt_stripes ?? 0,
+      bjj_start_date: athlete.bjj_start_date || '',
     })
     setEditing(athlete.id)
   }
@@ -362,8 +385,9 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
         <h2 className="text-lg font-bold text-gray-800">ניהול מתאמנים</h2>
         {/* הוספה/ייבוא — מנהל בלבד. מאמן רגיל = קריאה בלבד */}
         {isAdmin && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <ImportAthletes onImported={fetchAthletes} isAdmin={isAdmin} />
+            <ImportBelts onImported={fetchAthletes} existingAthletes={athletes} />
             <button onClick={openAdd} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
               + הוסף מתאמן
             </button>
@@ -466,6 +490,109 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
               onChange={e => setForm(p => ({ ...p, active: e.target.checked }))} className="w-4 h-4" />
             מתאמן פעיל
           </label>
+
+          {/* === BJJ / Gi belt section === */}
+          <div className="border rounded-lg p-3 space-y-3 bg-amber-50/30">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={!!form.trains_gi}
+                onChange={e => setForm(p => ({
+                  ...p,
+                  trains_gi: e.target.checked,
+                  // אם מבטלים גי — מנקים שדות חגורה
+                  belt: e.target.checked ? p.belt : '',
+                  belt_received_at: e.target.checked ? p.belt_received_at : '',
+                  belt_stripes: e.target.checked ? p.belt_stripes : 0,
+                  bjj_start_date: e.target.checked ? p.bjj_start_date : '',
+                }))} className="w-4 h-4 accent-amber-600" />
+              🥋 מתאמן ב-Gi (BJJ עם חליפה)
+            </label>
+
+            {form.trains_gi && (
+              <>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">קטגוריה</label>
+                  <div className="flex gap-2">
+                    <button type="button"
+                      onClick={() => setForm(p => ({ ...p, belt_category: 'adult', belt: '' }))}
+                      className={`flex-1 px-3 py-1.5 rounded-lg text-sm border transition ${
+                        form.belt_category === 'adult'
+                          ? 'bg-amber-600 text-white border-amber-600'
+                          : 'bg-white text-gray-600 border-gray-300'
+                      }`}>
+                      מבוגרים (16+)
+                    </button>
+                    <button type="button"
+                      onClick={() => setForm(p => ({ ...p, belt_category: 'kids', belt: '' }))}
+                      className={`flex-1 px-3 py-1.5 rounded-lg text-sm border transition ${
+                        form.belt_category === 'kids'
+                          ? 'bg-amber-600 text-white border-amber-600'
+                          : 'bg-white text-gray-600 border-gray-300'
+                      }`}>
+                      ילדים (4-15)
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">חגורה נוכחית</label>
+                  <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                    value={form.belt}
+                    onChange={e => {
+                      const val = e.target.value
+                      const max = getMaxStripes(val)
+                      setForm(p => ({
+                        ...p,
+                        belt: val,
+                        belt_stripes: Math.min(p.belt_stripes || 0, max),
+                      }))
+                    }}>
+                    <option value="">— בחר חגורה —</option>
+                    {(form.belt_category === 'kids' ? KIDS_BELTS : ADULT_BELTS).map(b => (
+                      <option key={b.value} value={b.value}>{b.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {form.belt && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      פסים על החגורה (0-{getMaxStripes(form.belt)})
+                    </label>
+                    <div className="flex gap-2">
+                      {Array.from({ length: getMaxStripes(form.belt) + 1 }, (_, i) => (
+                        <button key={i} type="button"
+                          onClick={() => setForm(p => ({ ...p, belt_stripes: i }))}
+                          className={`flex-1 py-1.5 rounded-lg text-sm border transition ${
+                            form.belt_stripes === i
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white text-gray-600 border-gray-300'
+                          }`}>
+                          {i}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">תאריך קבלת חגורה נוכחית</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={form.belt_received_at || ''}
+                    onChange={e => setForm(p => ({ ...p, belt_received_at: e.target.value }))} />
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    אם יש רק חודש ושנה — בחר את ה-1 לחודש (למשל: 01/06/2018)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">תאריך התחלת BJJ (חגורה לבנה)</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={form.bjj_start_date || ''}
+                    onChange={e => setForm(p => ({ ...p, bjj_start_date: e.target.value }))} />
+                </div>
+              </>
+            )}
+          </div>
 
           {saveError && <p className="text-red-500 text-xs bg-red-50 rounded p-2">{saveError}</p>}
 

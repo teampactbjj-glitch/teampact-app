@@ -1,5 +1,232 @@
 # MEMORY - TeamPact App
 
+> ## 🔴 Session 05.05.2026 (אחה"צ) — באג קריטי: RLS חוסם checkins של מתאמנים
+>
+> **My last pending task:** מחכה ש**דודי יריץ את 2 השאילתות SQL** (תיקון RLS + backfill) ב-Supabase, יבדוק שהמספרים בהתקדמות התעדכנו, ואז נעשה build + push של הקוד שתוקן ב-`AthleteDashboard.jsx` (handleRegister מציג error אם ה-checkin נכשל).
+>
+> ### 🐛 הבאג
+>
+> דודי המתאמן נרשם ל-2 אימונים שהסתיימו (5/4 ו-5/5) אבל "ההתקדמות שלי" לא התעדכנה. שורש: ה-policy `checkins_write` דורש `profiles.role='trainer'` — אין policy שמתיר למתאמן להכניס checkin של עצמו. ה-`auth.uid() = athlete_id` המקורי הוחלף באחת המיגרציות במשהו מחמיר. ה-`handleRegister` גם לא בדק error של ה-checkin upsert, אז הוא נכשל בשקט.
+>
+> ### 🛠️ התיקון (2 קבצים)
+>
+> 1. **`src/lib/migration-checkins-rls-athlete.sql`** — חדש. מוסיף policy `checkins_athlete_self_write` (מותאם לפי `auth.uid()=athlete_id` legacy או email match בין `auth.users` ל-`members`). כולל backfill ל-class_registrations של 30 ימים אחרונים שאין להם checkin תואם.
+> 2. **`src/components/athlete/AthleteDashboard.jsx`** — `handleRegister` עכשיו לוגג error אם checkin upsert נכשל (במקום שתיקה).
+>
+> ### 📋 SQL להרצה ב-Supabase SQL Editor
+>
+> ```sql
+> -- שאילתה 1: תיקון RLS
+> DROP POLICY IF EXISTS "checkins_athlete_self_write" ON checkins;
+> CREATE POLICY "checkins_athlete_self_write" ON checkins
+>   FOR ALL TO authenticated
+>   USING (
+>     auth.uid() = athlete_id
+>     OR EXISTS (SELECT 1 FROM members m
+>       WHERE m.id = checkins.athlete_id
+>         AND lower(m.email) = lower((SELECT email FROM auth.users WHERE id = auth.uid())))
+>   )
+>   WITH CHECK (
+>     auth.uid() = athlete_id
+>     OR EXISTS (SELECT 1 FROM members m
+>       WHERE m.id = checkins.athlete_id
+>         AND lower(m.email) = lower((SELECT email FROM auth.users WHERE id = auth.uid())))
+>   );
+>
+> -- שאילתה 2: Backfill checkins חסרים
+> INSERT INTO checkins (class_id, athlete_id, status, checked_in_at, checkin_date)
+> SELECT r.class_id, r.athlete_id, 'present',
+>   ((r.week_start::date + cls.day_of_week)::timestamp + cls.start_time::time)::timestamptz,
+>   (r.week_start::date + cls.day_of_week)::date
+> FROM class_registrations r
+> JOIN classes cls ON cls.id = r.class_id
+> WHERE r.week_start >= CURRENT_DATE - INTERVAL '30 days'
+>   AND r.week_start <= CURRENT_DATE + INTERVAL '7 days'
+>   AND NOT EXISTS (SELECT 1 FROM checkins c
+>     WHERE c.class_id = r.class_id AND c.athlete_id = r.athlete_id
+>       AND c.checkin_date = (r.week_start::date + cls.day_of_week)::date)
+> ON CONFLICT (class_id, athlete_id, checkin_date) DO NOTHING;
+> ```
+>
+> ### ⚠️ באג UTC ב-getWeekStart נשאר (לא נגעתי בו!)
+>
+> `getWeekStart()` משתמש ב-`toISOString().split('T')[0]` → ב-IDT, יום ראשון לוקאל נשמר כ"שבת UTC" (`week_start='2026-05-02'` במקום `'2026-05-03'`). לא שובר כלום (כל הקוד עקבי) אבל מבלבל ב-DB. דודי הזכיר את זה — לא תיקנתי כי דורש backfill מלא בסשן ייעודי.
+>
+> ### 🚀 לדחיפה (אחרי שדודי מאשר שהמספרים התעדכנו)
+>
+> ```bash
+> cd /Users/dudibenzaken/teampact-app
+> npm run build
+> git add src/lib/migration-checkins-rls-athlete.sql \
+>         src/components/athlete/AthleteDashboard.jsx \
+>         MEMORY.md
+> git commit -m "fix(checkins): RLS policy for athlete self-writes + error logging"
+> git push origin main
+> ```
+>
+> ---
+
+> ## 🔴 Session 05.05.2026 — תיקון אבטחה דחוף: דליפת PII ל-authenticated
+>
+> **My last pending task:** Phase 1 הורץ בהצלחה ב-Supabase ע"י דודי, אומת ב-VERIFY (3 SELECT policies על members, 4 על profiles), ובדיקה ידנית במסך מתאמן הראתה שהוא לא רואה מתאמנים אחרים — **הדליפה הקריטית סגורה**. **Phase 2 ממתין להרצה ע"י דודי** — הקובץ `2026-05-05-phase-2-close-using-true-policies.sql` נוצר בריפו (לתיעוד) וה-SQL נשלח לדודי בתשובה ב-chat. אחרי ההרצה צריך לבדוק: חשבון מתאמן (צ'קאינים שלו, רישום לשיעור, MyProgress), חשבון מאמן (TodayClasses, ReportsManager, ProductRequests). אין צורך ב-build/push לקוד — אלה רק מיגרציות SQL.
+>
+> ### הסיפור
+>
+> תלמיד של דודי דיווח שהצליח להוציא את כל טבלת המתאמנים (שמות, מיילים, טלפונים, חגורות, סוגי מנוי) דרך supabase-js עם ה-anon key אחרי שנכנס לחשבון שלו כמתאמן רגיל. שלח screenshot.
+>
+> ### חקירה
+>
+> - **Phase A מ-2026-05-02** סגרה את חשיפת `members` ל-anon (Phase B עם drop של `members_select_anon` הורץ אז) — אז זה לא היה דרך anon.
+> - **הוקטור האמיתי:** הוא היה מאומת. בדקנו את כל ה-RLS policies ומצאנו **שני באגים**:
+>   1. `members."members read self"` — `SELECT TO authenticated USING (deleted_at IS NULL)` — בלי שום בדיקת בעלות. כל מתאמן מאומת רואה את כל הטבלה.
+>   2. `profiles."allow authenticated read profiles"` — `SELECT TO authenticated USING (true)` — כל מתאמן מאומת רואה את כל הפרופילים.
+>
+> ### תיקון Phase 1 (הורץ ב-Supabase ב-05.05.2026)
+>
+> קובץ: `supabase/migrations/2026-05-05-fix-authenticated-pii-leak.sql`
+>
+> 1. `DROP POLICY "members read self" ON members` — נמחקה. הצרכים מכוסים ע"י `members_select_self_authenticated` (עצמי) + `members_select_trainer` (מאמן) + `members_select` (admin/coach בסניף).
+> 2. `DROP POLICY "allow authenticated read profiles" ON profiles` — נמחקה.
+> 3. `CREATE POLICY profiles_select_public_coaches` — מתאמן רואה רק פרופילים של מאמנים מאושרים (`role='trainer' AND is_approved=true`). נדרש ל-`AthleteDashboard.jsx:847` שמציג טלפון של המאמן.
+> 4. `CREATE POLICY profiles_select_trainer` — מאמן מאושר (`is_approved_trainer()`) רואה הכל.
+> 5. `CREATE POLICY profiles_select_admin` — מנהל (`is_approved_admin()`) רואה הכל.
+> 6. `קרא פרופיל עצמי` (קיים) — נשאר, מרשה לכל אחד לקרוא את עצמו.
+>
+> **VERIFY הצליח:** members מ-4 SELECT policies → 3, profiles מ-2 → 4 (מדויקות). דודי בדק במסך מתאמן ואישר שהוא לא רואה מתאמנים אחרים.
+>
+> ### Phase 2 (ממתין להרצה — SQL נשלח בצ'אט)
+>
+> קובץ: `supabase/migrations/2026-05-05-phase-2-close-using-true-policies.sql`
+>
+> 4 דליפות נוספות עם `USING (true)` שמצאתי תוך כדי החקירה (לא קשורות לדליפה הספציפית, אבל קיימות):
+>
+> 1. `attendance.\"ניהול נוכחות\"` — `ALL public USING (true)` — anon יכול לקרוא+למחוק. הטבלה לא משומשת בקוד בכלל. סוגרים לחלוטין: רק `attendance_select_admin` + `attendance_select_trainer`.
+> 2. `checkins.checkins_select` — `USING (true)` — מחליפים ב-3 policies: self (`athlete_id = auth.uid()`) + trainer + admin.
+> 3. `class_registrations.class_registrations_read` — אותו עיקרון.
+> 4. `product_requests.product_requests_read` — מוחקים. ה-policies הקיימות `product_req_select_own` ו-`product_req_select` (למאמן) מספיקות, מוסיפים רק `product_req_select_admin`.
+>
+> ### בדיקות שצריך לעשות אחרי Phase 2
+>
+> - **חשבון מתאמן:** AthleteDashboard, ClassSchedule (רישום+ביטול שיעור), MyProgressSection (היסטוריית צ'קאינים), בקשות מוצרים (יצירה+צפייה).
+> - **חשבון מאמן:** TodayClasses (כל ה-flow של צ'קאינים), ReportsManager, ProductRequests, ShopManager.
+>
+> אם משהו נשבר — יש Rollback מלא בקובץ ה-migration.
+
+---
+
+> ## 🟢 Session 05.05.2026 — שלב 1: מערכת חגורות + Import + UI מתאמן
+>
+> **My last pending task:** הקוד נכתב ועבר syntax check. מחכה ש**דודי יריץ את ה-SQL Migration ב-Supabase**, יבדוק `npm run dev` לוקאלית, יאשר, ואז יבצע build + push. ה-CSV של 87 המתאמנים לא נגיש לי מהסשן הקודם — דודי יצטרך להעלות אותו שוב **לתוך** הריצה הנוכחית או להשתמש ב-UI הייבוא לאחר הדפלוי.
+>
+> ### 🛠️ מה נעשה (קבצים)
+>
+> 1. **`src/lib/migration-belts.sql`** — Migration חדש: עמודות `belt`, `belt_received_at`, `belt_stripes`, `belt_category`, `bjj_start_date`, `trains_gi` ל-`members` + check constraints + indexes + view `v_belt_summary`.
+> 2. **`src/lib/belts.js`** — קבועים (ADULT_BELTS, KIDS_BELTS) + helpers: `getBeltMeta`, `getBeltLabel`, `getMaxStripes`, `parseHebrewMonthYear` (תומך "ינואר 2018", "06/2018", "2018"), `yearsSince`, `formatYearsMonths`, `formatHebrewMonthYear`.
+> 3. **`src/components/trainer/AthleteManagement.jsx`** — הוספה לטופס עריכת מתאמן: checkbox "מתאמן ב-Gi", קטגוריה (מבוגרים/ילדים), dropdown צבע חגורה, כפתורי פסים (0-4 או 0-6 לשחורה), תאריך קבלה, תאריך התחלת BJJ. ה-payload נשמר בכל update/insert. גם הוסף כפתור "🥋 ייבוא חגורות" ליד כפתור הייבוא הקיים.
+> 4. **`src/components/trainer/ImportBelts.jsx`** — קומפוננטה חדשה: dialog לייבוא חגורות מ-CSV/XLSX. פרסור פורמט "ינואר 2012", זיהוי החגורה האחרונה שמולאה כחגורה הנוכחית, fuzzy match Levenshtein לפי שם (>=85% auto, 60-85% review, <60% skip), טבלת תצוגה מקדימה עם dropdown לבחירה ידנית של מתאמן והפעולה (update/review/skip), commit עם UPDATE bulk.
+> 5. **`src/components/athlete/MyProgressSection.jsx`** — הוסף import של helpers החגורה. כרטיס "🥋 החגורה שלי" חדש שמופיע בראש המסך **רק אם** `member.trains_gi=true` ו-`member.belt` קיים. מציג: שם החגורה (עם פסים בולטים בצבע מנוגד), תאריך קבלה (חודש/שנה בעברית), שנים על החגורה, ויחידות BJJ מאז קבלת החגורה (count מ-events).
+>
+> ### 📋 SQL להרצה ב-Supabase SQL Editor (לפני הבדיקה הלוקאלית!)
+>
+> ```sql
+> -- ============================================================
+> -- Migration: Belt System for BJJ members
+> -- Date: 2026-05-05
+> -- ============================================================
+>
+> ALTER TABLE members ADD COLUMN IF NOT EXISTS belt              text;
+> ALTER TABLE members ADD COLUMN IF NOT EXISTS belt_received_at  date;
+> ALTER TABLE members ADD COLUMN IF NOT EXISTS belt_stripes      int  DEFAULT 0;
+> ALTER TABLE members ADD COLUMN IF NOT EXISTS belt_category     text;
+> ALTER TABLE members ADD COLUMN IF NOT EXISTS bjj_start_date    date;
+> ALTER TABLE members ADD COLUMN IF NOT EXISTS trains_gi         boolean DEFAULT true;
+>
+> ALTER TABLE members DROP CONSTRAINT IF EXISTS members_belt_check;
+> ALTER TABLE members ADD  CONSTRAINT members_belt_check
+>   CHECK (belt IS NULL OR belt IN (
+>     'white','blue','purple','brown','black',
+>     'black_1','black_2','black_3','black_4','black_5','black_6',
+>     'coral_red_black','coral_red_white','red',
+>     'kids_white','kids_gray_white','kids_gray','kids_gray_black',
+>     'kids_yellow_white','kids_yellow','kids_yellow_black',
+>     'kids_orange_white','kids_orange','kids_orange_black',
+>     'kids_green_white','kids_green','kids_green_black'
+>   ));
+>
+> ALTER TABLE members DROP CONSTRAINT IF EXISTS members_belt_category_check;
+> ALTER TABLE members ADD  CONSTRAINT members_belt_category_check
+>   CHECK (belt_category IS NULL OR belt_category IN ('adult','kids'));
+>
+> ALTER TABLE members DROP CONSTRAINT IF EXISTS members_belt_stripes_check;
+> ALTER TABLE members ADD  CONSTRAINT members_belt_stripes_check
+>   CHECK (belt_stripes IS NULL OR (belt_stripes >= 0 AND belt_stripes <= 6));
+>
+> CREATE INDEX IF NOT EXISTS idx_members_belt           ON members(belt)              WHERE belt IS NOT NULL;
+> CREATE INDEX IF NOT EXISTS idx_members_belt_received  ON members(belt_received_at)  WHERE belt_received_at IS NOT NULL;
+> CREATE INDEX IF NOT EXISTS idx_members_trains_gi      ON members(trains_gi);
+>
+> UPDATE members SET trains_gi = true WHERE trains_gi IS NULL;
+>
+> CREATE OR REPLACE VIEW v_belt_summary AS
+> SELECT belt_category, belt, COUNT(*) AS member_count,
+>        MIN(belt_received_at) AS oldest_received,
+>        MAX(belt_received_at) AS newest_received
+> FROM members
+> WHERE deleted_at IS NULL
+>   AND status NOT IN ('pending', 'pending_deletion')
+>   AND trains_gi = true
+>   AND belt IS NOT NULL
+> GROUP BY belt_category, belt
+> ORDER BY belt_category, belt;
+> ```
+>
+> ### 🎯 איך לבדוק לוקאלית
+>
+> 1. **קודם — להריץ את ה-SQL** ב-Supabase SQL Editor (אחרת ה-app יזרוק שגיאות `column does not exist`).
+> 2. ב-`/Users/dudibenzaken/teampact-app`:
+>    ```bash
+>    npm run dev
+>    ```
+> 3. כניסה כמנהל (TrainerDashboard עם isAdmin=true) → ניהול מתאמנים → לערוך מתאמן BJJ קיים → לראות את הסקציה החדשה "🥋 מתאמן ב-Gi" עם dropdown חגורה. לסמן חגורה + תאריך + שמירה.
+> 4. כניסה כמתאמן (אותו אחד שעדכנת) → "ההתקדמות שלי" → לראות בראש את כרטיס "🥋 החגורה שלי" עם הצבע, הפסים, התאריך, ויחידות BJJ מאז.
+> 5. לבדוק שאם `trains_gi=false` (checkbox מופסק) — הכרטיס לא מופיע.
+> 6. לחיצה על "🥋 ייבוא חגורות" → להעלות את ה-CSV (87 מתאמנים) → לראות שהמערכת זיהתה את הצבעים והתאריכים → לסמן ידנית התאמות לא ברורות → "עדכן N מתאמנים".
+>
+> ### ⚠️ חשוב לדעת
+>
+> - **ה-CSV של 87 המתאמנים לא נגיש לי בסשן הזה** (היה ב-uploads של סשן קודם שכבר לא mounted). דודי צריך להעלות אותו שוב או להשתמש בכפתור הייבוא ב-UI אחרי הדפלוי. הקוד יודע לעבד גם CSV וגם XLSX.
+> - **ImportBelts מסמן `belt_category='adult'` בכל ייבוא**. אם ה-CSV מכיל ילדים — צריך לעדכן ידנית בעריכה (או להוסיף עמודת קטגוריה ל-CSV ולהרחיב את הקוד).
+> - **`belt_stripes` מתאפס ל-0 בייבוא** (ה-CSV לא מכיל פסים, רק תאריכי קבלת חגורה). מאמן יכול לעדכן ידנית אחר כך.
+> - **תצוגת החגורה למתאמן** משתמשת ב-`member.belt_received_at` (לא ב-`bjj_start_date`) לחישוב יחידות "מאז". זה ההגיון: המתאמן רואה כמה התאמן מאז שקיבל את החגורה הנוכחית, לא מתחילת המסע.
+>
+> ### 🚀 לדחיפה ב-main (אחרי שדודי בודק לוקאלית ומאשר!)
+>
+> ```bash
+> cd /Users/dudibenzaken/teampact-app
+> npm run build
+> git add src/lib/migration-belts.sql src/lib/belts.js \
+>         src/components/trainer/AthleteManagement.jsx \
+>         src/components/trainer/ImportBelts.jsx \
+>         src/components/athlete/MyProgressSection.jsx \
+>         MEMORY.md
+> git commit -m "feat(belts): add belt system + CSV import + athlete belt card
+>
+> - DB migration: belt, belt_received_at, belt_stripes, belt_category, bjj_start_date, trains_gi
+> - Trainer UI: belt edit section in AthleteManagement (Gi toggle, category, color dropdown, stripes 0-6, dates)
+> - ImportBelts component: CSV/XLSX upload with Hebrew month parsing, fuzzy name matching, preview table
+> - Athlete UI: belt card in MyProgressSection (only if trains_gi=true), shows color, stripes, date, years on belt, BJJ units since
+> - belts.js helpers: ADULT_BELTS, KIDS_BELTS, parseHebrewMonthYear, formatYearsMonths"
+> git push origin main
+> git log --oneline -3
+> ```
+>
+> ### ⏭️ סדר עדיפויות לסשן הבא
+>
+> **שלב 2 — מערכת אירועי קידום (לא בוצע! נדחה לסשן הבא לפי בקשת דודי).**
+> שלב 3, 4 — לפי MEMORY הישן (ראה למטה).
+
+---
+
 > ## 🟢 Session 05.05.2026 — Bug Fix: member.id vs profile.id + UI Refresh של "ההתקדמות שלי"
 >
 > **My last pending task:** הסתיימו 2 שלבים מתוך 4 בתיקון. מחכה לאישור build + push למאסטר אחרי שהמשתמש יריץ `npm run build` בעצמו (sandbox שלי לא יכל בגלל permissions על dist/). הסשן הבא: יישום הפיצ'רים הגדולים מהמוקאפ.

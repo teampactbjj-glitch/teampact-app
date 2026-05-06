@@ -64,10 +64,20 @@ const HEBREW_MONTHS = {
 /**
  * Parses Hebrew "month year" strings like "ינואר 2012" or "יוני 2018".
  * Returns ISO date string (YYYY-MM-01) of the FIRST day of that month, or null.
+ *
+ * עמיד בפני "מלכודות" של גוגל-שיטס/Excel:
+ *   - תווי כיוון בלתי-נראים: RLM (‏), LRM (‎), ZWSP, ZWJ, ZWNJ, BOM
+ *   - נון-ברייקינג ספייס ( ) שלא נחתך ע"י .trim()
+ *   - הקפדה לפני שפה הוסרים — אחרת ה-regex של אות עברית `[֐-׿]` נכשל.
  */
 export function parseHebrewMonthYear(input) {
   if (!input) return null
-  const s = String(input).trim()
+  const s = String(input)
+    // הסרת directional marks ו-zero-width chars שגוגל-שיטס מכניסה לטקסט עברי
+    .replace(/[​-‏‪-‮⁠﻿]/g, '')
+    // החלפת נון-ברייקינג ספייס ברווח רגיל
+    .replace(/ /g, ' ')
+    .trim()
   if (!s) return null
 
   // Try Hebrew "month year"

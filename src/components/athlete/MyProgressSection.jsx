@@ -103,6 +103,7 @@ export default function MyProgressSection({ profile, member }) {
   const [classMap, setClassMap] = useState(new Map()) // class_id -> {name, class_type, duration_minutes, start_time, coach_id, coach_name}
   const [coachMap, setCoachMap] = useState(new Map()) // coach_id -> {name}
   const [promotionCandidate, setPromotionCandidate] = useState(null) // { event_name, event_date, status, target_belt, target_stripes, promoted_at }
+  const [beltHistory, setBeltHistory] = useState([])                  // היסטוריית חגורות (שלב 3) — sorted ASC לפי received_at
   const [err, setErr] = useState(null)
 
   // ה-checkins נשמרים תחת members.id (לפי FK ב-DB).
@@ -188,11 +189,26 @@ export default function MyProgressSection({ profile, member }) {
           console.warn('[MyProgress] promotion candidate load skipped:', e?.message || e)
         }
 
+        // 5) belt_history — כל השורות של המתאמן הזה, מיון ASC לפי received_at
+        let bhResult = []
+        try {
+          const { data: bhData } = await supabase
+            .from('belt_history')
+            .select('id, belt, belt_stripes, received_at, source, event_id, notes')
+            .eq('member_id', athleteId)
+            .order('received_at', { ascending: true })
+          bhResult = bhData || []
+        } catch (e) {
+          // אם הטבלה לא קיימת עדיין — מתעלמים בשקט
+          console.warn('[MyProgress] belt_history load skipped:', e?.message || e)
+        }
+
         if (!cancelled) {
           setCheckins(checkinsData)
           setClassMap(cm)
           setCoachMap(coachMap2)
           setPromotionCandidate(pcResult)
+          setBeltHistory(bhResult)
         }
       } catch (e) {
         console.warn('[MyProgress] load failed', e)
@@ -652,6 +668,56 @@ export default function MyProgressSection({ profile, member }) {
                 {bjjUnitsSinceBelt}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== ההיסטוריה שלי — Timeline אנכי של כל החגורות (שלב 3) ===== */}
+      {showBeltCard && beltHistory.length > 0 && (
+        <div className="rounded-xl shadow-sm bg-white border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 bg-gradient-to-l from-amber-50 to-white border-b border-amber-100">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2 text-sm">
+              <span>📜</span>
+              <span>ההיסטוריה שלי</span>
+              <span className="text-xs text-gray-500 font-normal">({beltHistory.length} {beltHistory.length === 1 ? 'חגורה' : 'חגורות'})</span>
+            </h3>
+          </div>
+          <div className="p-4">
+            <ol className="relative" style={{ borderInlineStart: '2px solid #e5e7eb' }}>
+              {beltHistory.map((h, idx) => {
+                const meta = getBeltMeta(h.belt)
+                const isCurrent = idx === beltHistory.length - 1 && h.belt === member.belt
+                return (
+                  <li key={h.id || idx} className="ms-4 pb-4 last:pb-0 relative">
+                    {/* נקודה על הקו */}
+                    <span
+                      className={`absolute -start-[22px] top-1 flex items-center justify-center rounded-full ring-4 ring-white ${isCurrent ? 'w-5 h-5' : 'w-4 h-4'}`}
+                      style={{ background: meta?.color || '#10b981' }}
+                      aria-label={isCurrent ? 'החגורה הנוכחית' : 'הושלם'}>
+                      <span className="text-[10px]" style={{ color: meta?.text || '#fff' }}>
+                        {isCurrent ? '★' : '✓'}
+                      </span>
+                    </span>
+                    <div className={`flex items-baseline justify-between gap-2 ${isCurrent ? 'font-bold' : ''}`}>
+                      <span className={isCurrent ? 'text-gray-900' : 'text-gray-700'}>
+                        {getBeltLabel(h.belt)}
+                        {h.belt_stripes > 0 && (
+                          <span className="text-xs text-gray-500"> · {h.belt_stripes} פסים</span>
+                        )}
+                      </span>
+                      <span className="text-xs text-gray-500 whitespace-nowrap">
+                        {formatHebrewMonthYear(h.received_at)}
+                      </span>
+                    </div>
+                    {isCurrent && (
+                      <div className="mt-1 inline-block bg-amber-100 text-amber-800 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                        החגורה הנוכחית
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ol>
           </div>
         </div>
       )}

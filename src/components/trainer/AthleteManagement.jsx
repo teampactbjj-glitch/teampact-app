@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import ImportAthletes from './ImportAthletes'
 import ImportBelts from './ImportBelts'
+import BeltHistoryEditor from './BeltHistoryEditor'
 import { notifyPush } from '../../lib/notifyPush'
 import { allAdminUserIds } from '../../lib/notifyTargets'
 import { useToast, useConfirm } from '../a11y'
@@ -590,6 +591,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                     value={form.bjj_start_date || ''}
                     onChange={e => setForm(p => ({ ...p, bjj_start_date: e.target.value }))} />
                 </div>
+
+                {/* היסטוריית חגורות — רק למתאמן קיים (לא ב-'new') */}
+                {editing && editing !== 'new' && (
+                  <BeltHistoryEditor
+                    memberId={editing}
+                    memberName={form.full_name}
+                    memberCategory={form.belt_category || 'adult'}
+                  />
+                )}
               </>
             )}
           </div>

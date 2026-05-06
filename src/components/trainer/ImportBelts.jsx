@@ -105,48 +105,68 @@ function parseFile(file) {
   })
 }
 
+// findHeaderIndex עם רשימת אינדקסים שכבר נתפסו (למניעה של "חגורה שחורה" ו"חגורה שחורה דאן 1" שתופסים את אותה עמודה)
+function findHeaderIndexExcluding(headers, keys, excludedIdx) {
+  for (let i = 0; i < headers.length; i++) {
+    if (excludedIdx.has(i)) continue
+    const h = String(headers[i] || '').trim().toLowerCase()
+    for (const k of keys) {
+      if (h === k.toLowerCase() || h.includes(k.toLowerCase())) return i
+    }
+  }
+  return -1
+}
+
 function processRows(headers, rows) {
   const nameIdx = findHeaderIndex(headers, NAME_KEYS)
   if (nameIdx === -1) {
     return { error: 'לא נמצאה עמודת "שם" בקובץ' }
   }
 
-  // Map each progression belt → column index
-  const beltCols = BELT_PROGRESSION.map(b => ({
-    ...b,
-    colIdx: findHeaderIndex(headers, b.keys),
-  }))
+  // Map each progression belt → column index. עוברים מהספציפי לכללי כך ש"דאן 1"
+  // יתפוס את "חגורה שחורה דאן 1" לפני ש"חגורה שחורה" יתפוס אותה.
+  const claimed = new Set([nameIdx])
+  const beltCols = []
+  // עיבוד מהדאן הגבוה ביותר לדאן 1, ואז שחורה→...→לבנה — פתיחה הפוכה כדי לתפוס keys ספציפיים קודם.
+  const reverseOrder = [...BELT_PROGRESSION].reverse()
+  for (const b of reverseOrder) {
+    const colIdx = findHeaderIndexExcluding(headers, b.keys, claimed)
+    if (colIdx !== -1) claimed.add(colIdx)
+    beltCols.push({ ...b, colIdx })
+  }
+  // החזרה לסדר התקדמות (לבן → דאן 6) לעיבוד הלוגי
+  beltCols.reverse()
 
   const results = rows.map(row => {
     const csvName = String(row[nameIdx] || '').trim()
     if (!csvName) return null
 
-    // Walk progression from highest to lowest, pick first non-empty
-    let currentBelt = null
-    let currentDate = null
+    // אסוף כל החגורות שמולאו בשורה
+    const historyRows = []
     let whiteDate = null
 
-    for (let i = beltCols.length - 1; i >= 0; i--) {
-      const bc = beltCols[i]
+    for (const bc of beltCols) {
       if (bc.colIdx === -1) continue
       const cell = row[bc.colIdx]
       const parsed = parseHebrewMonthYear(cell)
       if (parsed) {
-        if (!currentBelt) {
-          currentBelt = bc.value
-          currentDate = parsed
-        }
-        if (bc.value === 'white') {
-          whiteDate = parsed
-        }
+        historyRows.push({ belt: bc.value, received_at: parsed })
+        if (bc.value === 'white') whiteDate = parsed
       }
     }
+
+    // החגורה הנוכחית = האחרונה בסדר ההתקדמות (היא תהיה האחרונה ב-historyRows כי הסדר שמור)
+    const last = historyRows[historyRows.length - 1] || null
+    const currentBelt = last?.belt || null
+    const currentDate = last?.received_at || null
 
     return {
       csvName,
       currentBelt,
       currentDate,
       whiteDate,
+      historyRows,
+      historyCount: historyRows.length,
       raw: beltCols.reduce((acc, bc) => {
         if (bc.colIdx !== -1) acc[bc.value] = row[bc.colIdx]
         return acc
@@ -165,6 +185,7 @@ export default function ImportBelts({ onImported, existingAthletes = [] }) {
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [doneCount, setDoneCount] = useState(0)
+  const [doneHistoryCount, setDoneHistoryCount] = useState(0)
   const fileRef = useRef(null)
   const toast = useToast()
 
@@ -174,6 +195,7 @@ export default function ImportBelts({ onImported, existingAthletes = [] }) {
     setMatches([])
     setErrorMsg('')
     setDoneCount(0)
+    setDoneHistoryCount(0)
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -212,10 +234,13 @@ export default function ImportBelts({ onImported, existingAthletes = [] }) {
     setSaving(true)
     setErrorMsg('')
     let success = 0
+    let historyInserted = 0
     const failures = []
 
     for (const m of matches) {
       if (m.action !== 'update' || !m.athleteId || !m.currentBelt) continue
+
+      // 1) עדכון members.belt לחגורה הנוכחית (כמו בעבר)
       const payload = {
         belt: m.currentBelt,
         belt_received_at: m.currentDate,
@@ -225,16 +250,44 @@ export default function ImportBelts({ onImported, existingAthletes = [] }) {
         belt_stripes: 0,
       }
       const { error } = await supabase.from('members').update(payload).eq('id', m.athleteId)
-      if (error) failures.push(`${m.csvName}: ${error.message}`)
-      else success++
+      if (error) {
+        failures.push(`${m.csvName}: ${error.message}`)
+        continue
+      }
+      success++
+
+      // 2) UPSERT לכל ההיסטוריה ל-belt_history (ignoreDuplicates — מבוסס UNIQUE constraint)
+      const historyPayload = (m.historyRows || []).map(h => ({
+        member_id: m.athleteId,
+        belt: h.belt,
+        belt_stripes: 0,
+        received_at: h.received_at,
+        source: 'import',
+        notes: `יובא מ-${m.csvName}`,
+      }))
+      if (historyPayload.length) {
+        const { error: hErr, count } = await supabase
+          .from('belt_history')
+          .upsert(historyPayload, {
+            onConflict: 'member_id,belt,belt_stripes',
+            ignoreDuplicates: true,
+            count: 'exact',
+          })
+        if (hErr) {
+          failures.push(`${m.csvName} (היסטוריה): ${hErr.message}`)
+        } else {
+          historyInserted += count ?? historyPayload.length
+        }
+      }
     }
 
     setSaving(false)
     setDoneCount(success)
+    setDoneHistoryCount(historyInserted)
     if (failures.length) {
-      setErrorMsg(`עודכנו ${success}, נכשלו ${failures.length}:\n` + failures.slice(0, 5).join('\n'))
+      setErrorMsg(`עודכנו ${success} מתאמנים (+${historyInserted} רשומות היסטוריה), נכשלו ${failures.length}:\n` + failures.slice(0, 5).join('\n'))
     } else {
-      toast.success(`עודכנו ${success} חגורות בהצלחה`)
+      toast.success(`עודכנו ${success} מתאמנים · נשמרו ${historyInserted} רשומות היסטוריה`)
     }
     setStep('done')
     onImported?.()
@@ -252,6 +305,9 @@ export default function ImportBelts({ onImported, existingAthletes = [] }) {
   const updateCount = matches.filter(m => m.action === 'update' && m.athleteId && m.currentBelt).length
   const reviewCount = matches.filter(m => m.action === 'review').length
   const skipCount = matches.filter(m => m.action === 'skip').length
+  const totalHistoryRows = matches
+    .filter(m => m.action === 'update' && m.athleteId)
+    .reduce((sum, m) => sum + (m.historyCount || 0), 0)
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -283,10 +339,11 @@ export default function ImportBelts({ onImported, existingAthletes = [] }) {
 
           {step === 'preview' && (
             <div className="space-y-3">
-              <div className="flex gap-3 text-sm">
+              <div className="flex gap-3 text-sm flex-wrap">
                 <span className="bg-green-100 text-green-800 px-2 py-1 rounded">✓ עדכון: {updateCount}</span>
                 <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded">⚠️ לבדיקה: {reviewCount}</span>
                 <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded">⏭️ דלג: {skipCount}</span>
+                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">📜 היסטוריה: {totalHistoryRows}</span>
               </div>
 
               <div className="border rounded-lg overflow-hidden">
@@ -295,8 +352,9 @@ export default function ImportBelts({ onImported, existingAthletes = [] }) {
                     <tr>
                       <th className="p-2 text-right">שם בקובץ</th>
                       <th className="p-2 text-right">התאמה</th>
-                      <th className="p-2 text-right">חגורה</th>
+                      <th className="p-2 text-right">חגורה נוכחית</th>
                       <th className="p-2 text-right">תאריך</th>
+                      <th className="p-2 text-right">היסטוריה</th>
                       <th className="p-2 text-right">פעולה</th>
                     </tr>
                   </thead>
@@ -328,6 +386,11 @@ export default function ImportBelts({ onImported, existingAthletes = [] }) {
                         </td>
                         <td className="p-2">{m.currentBelt ? getBeltLabel(m.currentBelt) : '—'}</td>
                         <td className="p-2">{m.currentDate || '—'}</td>
+                        <td className="p-2 text-center">
+                          <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[11px]" title={`${m.historyCount || 0} רשומות היסטוריה`}>
+                            📜 {m.historyCount || 0}
+                          </span>
+                        </td>
                         <td className="p-2">
                           <select className="border rounded px-1 py-0.5 text-xs"
                             value={m.action}
@@ -350,7 +413,8 @@ export default function ImportBelts({ onImported, existingAthletes = [] }) {
           {step === 'done' && (
             <div className="text-center py-6">
               <div className="text-5xl mb-3">✅</div>
-              <p className="font-medium text-gray-800">עודכנו {doneCount} חגורות בהצלחה</p>
+              <p className="font-medium text-gray-800">עודכנו {doneCount} מתאמנים בהצלחה</p>
+              <p className="text-sm text-blue-700 mt-1">📜 נשמרו {doneHistoryCount} רשומות היסטוריה</p>
               {errorMsg && <p className="text-red-600 text-sm bg-red-50 rounded p-2 mt-3 whitespace-pre-line">{errorMsg}</p>}
             </div>
           )}

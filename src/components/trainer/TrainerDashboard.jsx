@@ -139,6 +139,24 @@ export default function TrainerDashboard({ profile, isAdmin }) {
               console.warn('[lazy-promotion] member update error:', memErr.message, c.member_id)
               continue
             }
+            // INSERT ל-belt_history עם source='promotion' + event_id (idempotent עם UNIQUE)
+            const { error: histErr } = await supabase.from('belt_history')
+              .upsert({
+                member_id: c.member_id,
+                belt: c.target_belt,
+                belt_stripes: c.target_stripes ?? 0,
+                received_at: ev.event_date,
+                source: 'promotion',
+                event_id: ev.id,
+                notes: `קודם דרך אירוע: ${ev.name}`,
+              }, {
+                onConflict: 'member_id,belt,belt_stripes',
+                ignoreDuplicates: true,
+              })
+            if (histErr) {
+              console.warn('[lazy-promotion] belt_history insert error:', histErr.message, c.member_id)
+              // לא חוסם — ההיסטוריה כשלה אבל הקידום עצמו הצליח. ממשיכים.
+            }
             // עדכון candidate.status
             const { error: cErr } = await supabase.from('promotion_candidates')
               .update({ status: 'promoted', promoted_at: new Date().toISOString() })

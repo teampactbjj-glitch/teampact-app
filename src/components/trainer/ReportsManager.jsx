@@ -228,6 +228,7 @@ export default function ReportsManager({ isAdmin, profile }) {
   const [checkins, setCheckins] = useState([]) // נוכחויות — לצורך דוחות מבוססי נוכחות בפועל
   const [trialVisits, setTrialVisits] = useState([]) // ביקורי ניסיון אנונימיים (טבלה נפרדת)
   const [registrations, setRegistrations] = useState([]) // class_registrations — מי רשום לאיזו קבוצה
+  const [beltHistory, setBeltHistory] = useState([])     // belt_history — תאריכי קבלת חגורה היסטוריים (שלב 3)
 
   // ===== Push notification state (לסקציית "מתאמנים שלא הגיעו") =====
   // pushSending: Set של memberIds ששליחת ה-Push אליהם כרגע בתהליך
@@ -259,7 +260,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       const ROW_LIMIT = 100000
       const sinceMaxISO = new Date(Date.now() - 180 * DAY_MS).toISOString()
 
-      const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes] = await Promise.all([
+      const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes, bhRes] = await Promise.all([
         supabase
           .from('members')
           .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at, belt, belt_received_at, belt_stripes, belt_category, trains_gi, bjj_start_date')
@@ -287,6 +288,12 @@ export default function ReportsManager({ isAdmin, profile }) {
           .select('class_id, athlete_id, week_start')
           .gte('week_start', sinceMaxISO.slice(0, 10))
           .range(0, ROW_LIMIT - 1),
+        // belt_history: תאריכי קבלת חגורה היסטוריים. נטען לחישוב backfill מדויק.
+        // אם הטבלה עוד לא הוקמה (Migration לא רץ) — נטפל בשגיאה בשקט.
+        supabase
+          .from('belt_history')
+          .select('member_id, belt, belt_stripes, received_at, source, event_id')
+          .range(0, ROW_LIMIT - 1),
       ])
       if (mRes.error)   throw mRes.error
       if (cRes.error)   throw cRes.error
@@ -298,6 +305,10 @@ export default function ReportsManager({ isAdmin, profile }) {
         console.error('trial_visits fetch error:', tvRes.error)
       }
       if (regRes.error) console.error('class_registrations fetch error:', regRes.error)
+      // belt_history עלול להיכשל אם המיגרציה עוד לא רצה — לא חוסם
+      if (bhRes.error && !/relation .*belt_history/i.test(bhRes.error.message || '')) {
+        console.error('belt_history fetch error:', bhRes.error)
+      }
       setMembers(mRes.data || [])
       setCoaches(cRes.data || [])
       setClasses(clsRes.data || [])
@@ -305,6 +316,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       setCheckins(chkRes.data || [])
       setTrialVisits(tvRes.data || [])
       setRegistrations(regRes.data || [])
+      setBeltHistory(bhRes.data || [])
 
       // לוג אבחון: מאפשר לוודא בקונסול של הדפדפן (Safari → Develop → Show Web Inspector)
       // שכל הצ'ק-אינים נטענו ולא נחתכו.
@@ -910,6 +922,18 @@ export default function ReportsManager({ isAdmin, profile }) {
   // בונים pivot: לכל מתאמן — כמה checkins מאז ה-belt_received_at שלו
   const promotionSuggestions = useMemo(() => {
     if (!members.length) return []
+    // Map: `${member_id}::${belt}` → MIN(received_at) — תאריך הקבלה הראשון של החגורה הנוכחית.
+    // משתמש בזה לדיוק backfill: אם בהיסטוריה יש "blue ינואר 2018" — זה התאריך לחישוב,
+    // לא members.belt_received_at שיכול להיות "מאי 2024" (מתי קיבל פס נוסף).
+    const earliestByMemberBelt = new Map()
+    for (const h of beltHistory) {
+      if (!h.member_id || !h.belt || !h.received_at) continue
+      const key = `${h.member_id}::${h.belt}`
+      const existing = earliestByMemberBelt.get(key)
+      if (!existing || h.received_at < existing) {
+        earliestByMemberBelt.set(key, h.received_at)
+      }
+    }
     // מספרת checkins לכל athlete_id, רק שיעורי BJJ שהסתיימו
     const bjjClassIds = new Set(
       classes.filter(c => {
@@ -942,7 +966,10 @@ export default function ReportsManager({ isAdmin, profile }) {
       if (m.deleted_at) continue
       if (m.status === 'pending' || m.status === 'pending_deletion') continue
       const thr = PROMOTION_THRESHOLDS[m.belt]
-      const beltReceivedMs = m.belt_received_at ? new Date(m.belt_received_at).getTime() : null
+      // עדיפות: belt_history (תאריך הקבלה הראשון של החגורה הנוכחית) → fallback ל-members.belt_received_at
+      const historyDate = earliestByMemberBelt.get(`${m.id}::${m.belt}`)
+      const effectiveBeltReceivedAt = historyDate || m.belt_received_at
+      const beltReceivedMs = effectiveBeltReceivedAt ? new Date(effectiveBeltReceivedAt).getTime() : null
       const yearsOnBelt = beltReceivedMs ? (nowMs - beltReceivedMs) / (365.25 * 24 * 3600 * 1000) : 0
       const stats = unitsByMember.get(m.id) || { totalUnits: 0, _endMs: [] }
 
@@ -1033,7 +1060,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       return b.score - a.score
     })
     return rows
-  }, [members, checkins, classes, classById])
+  }, [members, checkins, classes, classById, beltHistory])
 
   // ===== סינון לפי תפקיד =====
   // מנהל: רואה את כל המתאמנים בכל הסטטיסטיקות.

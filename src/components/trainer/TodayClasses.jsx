@@ -131,30 +131,35 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     return () => clearInterval(i)
   }, [classes, selectedDate])
 
-  // גלול תמיד אל התאריך הנבחר בסלייד — עם retry שממשיך 2 שניות
-  // פתרון ל-fetchDayClasses שמשנה state כמה פעמים ודורס את הגלילה
+  // גלול אל התאריך הנבחר בסלייד — instantly, ועוצר ברגע שהגעת ליעד.
+  // הקוד הקודם רץ scrollIntoView({behavior:'smooth'}) 20 פעמים עם 100ms ביניהם —
+  // כל אנימציה חדשה התחילה לפני שהקודמת הסתיימה ⇒ ריצוד חזותי בכניסה לטאב.
+  // הפתרון: scrollTo עם behavior:'auto' (קפיצה מיידית, לא אנימציה),
+  // ובדיקה לפני כל ניסיון אם כבר קרובים ליעד (delta<2px) ⇒ לא לעשות כלום.
   useEffect(() => {
     let cancelled = false
     let attempts = 0
-    const MAX_ATTEMPTS = 20
+    const MAX_ATTEMPTS = 10
     const tick = () => {
       if (cancelled) return
       attempts++
       const btn = selectedBtnRef.current
       const container = sliderContainerRef.current
       if (btn && container) {
-        try {
-          btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: didInitialScroll.current && attempts > 1 ? 'smooth' : 'auto' })
-          didInitialScroll.current = true
-        } catch {
-          const btnRect = btn.getBoundingClientRect()
-          const contRect = container.getBoundingClientRect()
-          if (btnRect.width > 0) {
-            const delta = (btnRect.left + btnRect.width / 2) - (contRect.left + contRect.width / 2)
-            container.scrollTo({ left: container.scrollLeft + delta })
+        const btnRect = btn.getBoundingClientRect()
+        const contRect = container.getBoundingClientRect()
+        if (btnRect.width > 0) {
+          const delta = (btnRect.left + btnRect.width / 2) - (contRect.left + contRect.width / 2)
+          // אם כבר קרובים ליעד — לעצור, אין צורך בעוד גלילה
+          if (Math.abs(delta) < 2) {
+            didInitialScroll.current = true
+            return
           }
+          container.scrollTo({ left: container.scrollLeft + delta, behavior: 'auto' })
+          didInitialScroll.current = true
         }
       }
+      // נמשיך לנסות רק אם DOM עדיין לא מוכן או fetchDayClasses דרס את הגלילה
       if (attempts < MAX_ATTEMPTS) setTimeout(tick, 100)
     }
     tick()

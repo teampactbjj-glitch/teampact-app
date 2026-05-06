@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { notifyPush } from '../../lib/notifyPush'
 import { useToast, useConfirm } from '../a11y'
 import PromotionEvents from './PromotionEvents'
+import BeltHistoryEditor from './BeltHistoryEditor'
 import { getBeltMeta, getBeltLabel, ADULT_BELTS, KIDS_BELTS } from '../../lib/belts'
 
 // ===== Helpers =====
@@ -246,6 +247,8 @@ export default function ReportsManager({ isAdmin, profile }) {
   const [selectedCandidates, setSelectedCandidates] = useState(() => new Set())
   // initialEventCandidates: כשמשתמש לוחץ "צור אירוע עם מסומנים" → מועבר ל-PromotionEvents
   const [initialEventCandidates, setInitialEventCandidates] = useState(null)
+  // editingHistoryMember: כשהמנהל/מאמן לוחץ ✏️ ליד שורה בדוח → modal של BeltHistoryEditor
+  const [editingHistoryMember, setEditingHistoryMember] = useState(null)
 
   // טעינה: מנהל רואה הכל. מאמן רגיל גם — אבל הסינון לקואצ' שלו נעשה ב-useMemo (filteredMembers).
   useEffect(() => { if (isAdmin || profile?.id) fetchAll() }, [isAdmin, profile?.id])
@@ -1560,6 +1563,7 @@ export default function ReportsManager({ isAdmin, profile }) {
                       <th className="p-2 text-right">יחידות מאז</th>
                       <th className="p-2 text-right">ציון</th>
                       <th className="p-2 text-right">המלצה</th>
+                      <th className="p-2 text-center">✏️</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1640,6 +1644,20 @@ export default function ReportsManager({ isAdmin, profile }) {
                               {recLabel}
                             </span>
                           </td>
+                          <td className="p-2 text-center">
+                            {(isAdmin || (myAthleteIds && myAthleteIds.has(r.member.id))) && (
+                              <button type="button"
+                                onClick={() => setEditingHistoryMember({
+                                  id: r.member.id,
+                                  name: r.member.full_name,
+                                  category: r.member.belt_category || 'adult',
+                                })}
+                                title="ערוך היסטוריית חגורות"
+                                className="text-amber-700 hover:text-amber-900 text-base">
+                                ✏️
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       )
                     })}
@@ -1692,6 +1710,39 @@ export default function ReportsManager({ isAdmin, profile }) {
       </div>
       </>}
       {/* ====== סוף קטעי קידום ====== */}
+
+      {/* ================================================================
+          ✏️ Modal: עריכת היסטוריית חגורות מתוך דוח קידום
+      ================================================================ */}
+      {editingHistoryMember && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => setEditingHistoryMember(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={e => e.stopPropagation()}>
+            <div className="border-b p-4 flex items-center justify-between">
+              <h3 className="font-bold text-gray-800">📜 עריכת היסטוריה — {editingHistoryMember.name}</h3>
+              <button onClick={() => setEditingHistoryMember(null)}
+                className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div className="overflow-y-auto p-4 flex-1">
+              <BeltHistoryEditor
+                memberId={editingHistoryMember.id}
+                memberName={editingHistoryMember.name}
+                memberCategory={editingHistoryMember.category}
+              />
+              <p className="text-[11px] text-gray-500 mt-3">
+                ℹ️ שינויים נשמרים אוטומטית. סגור וחזור לדוח כדי לראות את הנתונים המעודכנים (יקרה fetch אוטומטי בסגירה).
+              </p>
+            </div>
+            <div className="border-t p-3 flex justify-end bg-gray-50">
+              <button onClick={() => { setEditingHistoryMember(null); fetchAll() }}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">
+                סגור ורענן דוח
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

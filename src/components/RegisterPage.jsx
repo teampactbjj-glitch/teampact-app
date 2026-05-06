@@ -318,10 +318,10 @@ export default function RegisterPage() {
                 value={form.subscription_type}
                 onChange={e => setForm(p => ({ ...p, subscription_type: e.target.value }))}
               >
+                <option value="1x_week">1× שבוע (באישור מנהל בלבד)</option>
                 <option value="2x_week">2× שבוע</option>
                 <option value="4x_week">4× שבוע</option>
                 <option value="unlimited">ללא הגבלה</option>
-                <option value="1x_week">1× שבוע (באישור מנהל בלבד)</option>
               </select>
             )}
           </Field>

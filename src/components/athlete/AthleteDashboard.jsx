@@ -467,7 +467,7 @@ function AnnouncementsTab({ announcements, profile, member }) {
   const toast = useToast()
   const confirm = useConfirm()
   const athleteName = member?.full_name || profile?.full_name || profile?.email || 'לא ידוע'
-  const general = announcements.filter(a => a.type === 'general' || a.type === 'announcement')
+  const general = announcements.filter(a => a.type === 'general' || a.type === 'announcement' || a.type === 'promotion')
   const seminars = announcements.filter(a => a.type === 'seminar')
   const storageKey = profile?.id ? `seminars_ordered_${profile.id}` : null
   const [ordered, setOrdered] = useState(() => {
@@ -1466,7 +1466,7 @@ export default function AthleteDashboard({ profile }) {
     const statusFilter = 'status.eq.approved,status.is.null'
     const [itemsRes, generalRes] = await Promise.all([
       supabase.from('announcements').select('*').in('type', ['product', 'seminar']).or(statusFilter).order('created_at', { ascending: false }),
-      supabase.from('announcements').select('*').in('type', ['general', 'announcement']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
+      supabase.from('announcements').select('*').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
     ])
     setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])
   }

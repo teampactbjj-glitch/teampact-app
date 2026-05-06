@@ -3,7 +3,7 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
     ? [
         { id: 'schedule',      icon: '📅', label: 'לו״ז' },
         { id: 'athletes',      icon: '👥', label: 'מתאמנים' },
-        ...(isAdmin ? [{ id: 'reports', icon: '📊', label: 'דוחות' }] : []),
+        { id: 'reports', icon: '📊', label: 'דוחות' },
         ...(isAdmin ? [{ id: 'coaches', icon: '🥋', label: 'מאמנים' }] : []),
         { id: 'shop',          icon: '🛒', label: 'חנות' },
         { id: 'announcements', icon: '📢', label: 'הודעות' },

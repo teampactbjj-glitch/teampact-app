@@ -1,8 +1,226 @@
 # MEMORY - TeamPact App
 
-> ## 🔴 Session 05.05.2026 (אחה"צ) — באג קריטי: RLS חוסם checkins של מתאמנים
+> ## 🟡 Session 06.05.2026 — שלב 2 שלם: אירועי קידום + דוח + Backfill + פתיחה למאמן + Lazy execution + באנרי מתאמן
 >
-> **My last pending task:** מחכה ש**דודי יריץ את 2 השאילתות SQL** (תיקון RLS + backfill) ב-Supabase, יבדוק שהמספרים בהתקדמות התעדכנו, ואז נעשה build + push של הקוד שתוקן ב-`AthleteDashboard.jsx` (handleRegister מציג error אם ה-checkin נכשל).
+> **My last pending task:** **כל הקוד נכתב ועבר parser**. דודי בדק tester-trainer view, עבד. עכשיו צריך **רק build + push לפרודקשן**, אחרי שדודי בודק לוקאלית את 2 השלבים האחרונים (lazy execution + באנרי מתאמן). תרחיש בדיקה: ליצור אירוע עם תאריך עבר (אתמול) → לפתוח dashboard → לראות שהמתאמן מקבל חגורה חדשה ב-DB + announcement יוצר + push נשלח. ואז לבדוק כמתאמן את ה-3 באנרים (planned/promoted).
+>
+> ### 🆕 המאמצים האחרונים בסשן (אחרי backfill+פתיחה למאמן):
+>
+> 1. **תיקון myAthleteIds:** היה `m.coach_id === profile.id` (שגוי — coach_id מצביע ל-coaches.id). תוקן: matching דרך `requested_coach_name = profile.full_name` או `requested_coach_names.includes(...)` או `coach_id` ל-`coaches.name = profile.full_name`. אותו pattern של AthleteManagement.jsx 115-117.
+>
+> 2. **Backfill — fixed:** במקום ממוצע מ-window כולל, עכשיו רק לפי 3 חודשים ראשונים מה-first BJJ checkin של המתאמן. בלי subscription fallback (יכול להיות 4x_week עם 2 BJJ + 2 מואי תאי). אם אין BJJ checkin בכלל → 0 משוער. אם פחות מ-90 ימי תצפית → 0 משוער (מחכים).
+>
+> 3. **Lazy execution (TrainerDashboard.jsx):** useEffect חדש שרץ פעם אחת בפתיחת dashboard:
+>    - מאתר events עם `status='planned' AND event_date < today AND deleted_at IS NULL`
+>    - לכל event: עוברים candidates עם status='planned'
+>    - מעדכנים `members.belt`+`belt_stripes`+`belt_received_at` ל-target
+>    - candidate.status='promoted', promoted_at=now()
+>    - event.status='completed', completed_at=now()
+>    - INSERT announcement type='promotion' (כותרת: "🏆 {event_name} — N מתאמנים קיבלו חגורה")
+>    - שולח notifyPush לכל מי שקודם, מוצא user_id דרך match על email
+>    - tag=`promotion-{event_id}-{member_id}` למניעת spam
+>    - race-safe via status='planned' check (idempotent updates)
+>
+> 4. **באנרי מתאמן (MyProgressSection.jsx):** קומפוננטה חדשה `promotionBanner` (inline) שמבוססת על state `promotionCandidate`:
+>    - **status='planned'** → באנר זהוב "🎉 סומנת לקידום!" עם countdown ימים, target_belt+stripes, מסר מוטיבציה.
+>    - **status='promoted' (≤30 יום אחרון)** → באנר סגול-זוהר "🏆 מזל טוב! קיבלת חגורה" + תאריך + שם האירוע.
+>    - מופיע **לפני** כרטיס "🥋 החגורה שלי" הקיים. כרטיס החגורה הקיים מציג כבר את החגורה החדשה (כי lazy execution כבר עדכן members.belt).
+>
+> 5. **AthleteDashboard.jsx:** הוספתי 'promotion' ל-type filter של announcements (שורה 1469) + ל-AnnouncementsTab filter (שורה 470). אחרת ההודעות לא היו מופיעות.
+>
+> ### 📁 קבצים שנגעו (סה"כ הסשן)
+>
+> | קובץ | מה |
+> |---|---|
+> | `src/lib/migration-promotion-events.sql` | חדש (DB schema + RLS) |
+> | `src/components/trainer/PromotionEvents.jsx` | חדש (~800 שורות, UI מלא) |
+> | `src/components/trainer/ReportsManager.jsx` | דוח מועמדים + סינון מאמן + backfill |
+> | `src/components/trainer/TrainerDashboard.jsx` | lazy execution + push + פתיחה לכל-מאמן |
+> | `src/components/athlete/MyProgressSection.jsx` | באנרי promotion + fetch promotion_candidate |
+> | `src/components/athlete/AthleteDashboard.jsx` | הוספת 'promotion' ל-type filters |
+> | `src/components/BottomNav.jsx` | טאב reports גם למאמן |
+>
+> ### 🧪 לבדיקה אצל דודי בלוקאל
+>
+> 1. **בדיקת lazy execution:** ליצור אירוע עם event_date אתמול עם candidate planned. לסגור ולפתוח dashboard מאמן. לראות:
+>    - הודעה ב-console: `[lazy-promotion]` ללא warnings
+>    - members.belt התעדכן ב-DB
+>    - announcement חדש נוצר (type='promotion')
+>    - באנר "🏆" יופיע אצל המתאמן ב-MyProgressSection
+> 2. **בדיקת באנר 'planned':** ליצור אירוע עם event_date בעתיד עם candidate planned → התחבר כמתאמן → לראות באנר "🎉 סומנת לקידום!" עם countdown.
+>
+> ### ⚠️ עדיין לא נדחף לפרודקשן
+>
+> ### 🆕 הוספות בסשן הזה (מעבר ל-DB+UI הבסיסי)
+>
+> 1. **תיקון RLS (auth.jwt instead of auth.users SELECT)** — ראה למטה.
+> 2. **שיניתי לבן→כחול ל-200 יחידות** (היה 150). ריאליסטי יותר (~2.5/שבוע אחרי חגים).
+> 3. **הוספתי thresholds לחגורות שחורות** + הצגת "כל" המתאמנים בדוח (גם בלי threshold), עם 4 קטגוריות: בשלים / מתקרבים / עוד מוקדם / לא במעקב.
+> 4. **Backfill יחידות היסטוריות (היברידי):**
+>    - `SYSTEM_START_ISO = '2026-01-01'`
+>    - לכל מתאמן עם `belt_received_at < SYSTEM_START_ISO`:
+>      - אם יש ≥ 90 ימים בתצפית + 5+ checkins → ממוצע נצפה מוקרן אחורה.
+>      - אחרת → לפי `subscription_type`: `2x_week=2.0`, `4x_week=4.0`, `unlimited=4.0`. ברירת מחדל 2.0.
+>    - `× HOLIDAY_FACTOR=0.86` (תיקון ~14% לחגי ישראל ותקופות חירום).
+>    - בUI: מספר היחידות מסומן ב-`~` כשכולל הערכה. tooltip מסביר מה שניצפה ומה משוער.
+> 5. **פתיחת דוחות למאמן רגיל:**
+>    - `BottomNav.jsx`: טאב "דוחות" מוצג גם למאמן (היה רק `isAdmin`).
+>    - `TrainerDashboard.jsx`: הסרתי `&& isAdmin` מהשורה של ReportsManager.
+>    - `ReportsManager.jsx`: נטען גם ל-`profile?.id`. סטטיסטיקות כלליות עטופות ב-`{isAdmin && <>...</>}`. דוח קידום + PromotionEvents מוצגים תמיד. `myAthleteIds` = Set של `m.coach_id === profile.id` למאמן רגיל. `visibleSuggestions` = filter שלפי `myAthleteIds` (ל-admin null = הכל).
+>    - באנר זיהוי תפקיד למאמן: "👤 תצוגת מאמן: אתה רואה N מתאמנים שרשומים אצלך".
+>    - PromotionEvents עדיין מציג את כל ה-events ואת כל המתאמנים בדרופדאון בחירה (RLS מאפשר לכל trainer מאושר). זה בסדר — מאמן יכול לסמן כל מתאמן באקדמיה לאירוע. אם תרצו filter בעתיד — לעטוף ב-PromotionEvents.jsx.
+>
+> ### 🐛 הבאג RLS שתוקן ב-DB
+>
+> ### 🐛 הבאג RLS שתוקן ב-DB
+>
+> ```sql
+> -- חובה להריץ ב-Supabase SQL Editor:
+> DROP POLICY IF EXISTS pe_select_candidate ON promotion_events;
+> CREATE POLICY pe_select_candidate ON promotion_events FOR SELECT TO authenticated
+>   USING (EXISTS (SELECT 1 FROM promotion_candidates pc JOIN members m ON m.id = pc.member_id
+>                  WHERE pc.event_id = promotion_events.id
+>                    AND lower(m.email) = lower(auth.jwt() ->> 'email')));
+>
+> DROP POLICY IF EXISTS pc_select_self ON promotion_candidates;
+> CREATE POLICY pc_select_self ON promotion_candidates FOR SELECT TO authenticated
+>   USING (EXISTS (SELECT 1 FROM members m WHERE m.id = promotion_candidates.member_id
+>                  AND lower(m.email) = lower(auth.jwt() ->> 'email')));
+> ```
+>
+> **למה זה קרה:** `(SELECT email FROM auth.users WHERE id = auth.uid())` דורש GRANT SELECT על `auth.users` שאין למשתמשים authenticated. הפתרון Supabase-native: `auth.jwt() ->> 'email'` שמוציא ישירות מה-JWT.
+>
+> **לקח לסשנים הבאים:** **לעולם** לא להשתמש ב-`SELECT FROM auth.users` ב-RLS policies — תמיד `auth.jwt() ->> 'email'`. ה-policy `checkins_athlete_self_write` מסשן 1 עדיין כתוב הישן — צריך לבדוק אם הוא גם נכשל בשקט. (לבדוק בסשן הבא.)
+>
+> ### 🎯 ההחלטות שדודי קיבל
+>
+> 1. **התראה:** Push + רשומה בטאב הודעות (`announcements.type='promotion'`).
+> 2. **עריכת אירוע:** מלאה לפני event_date · אחרי = read-only (status='completed').
+> 3. **lazy execution:** רץ **יום אחרי** האירוע (event_date < today), כדי לתת חלון של 24 שעות לתיקון רגע אחרון.
+> 4. **גישה אוטומטית:** lazy execution מקדמת את כל מי שעדיין `status='planned'`. אם מישהו לא הגיע — דודי יוריד אותו ידנית בערב האירוע (לפני שהמערכת תרוץ למחרת).
+> 5. **סניפים:** רב-בחירה (`branch_ids uuid[]`).
+> 6. **מיקום UI:** **הכל בטאב דוחות** — לא בטאב מתאמנים. דודי שאל "אם הזרימה הטבעית מ-דוחות, למה גם במתאמנים?" וצדק. מקום אחד = פחות בלבול.
+>
+> ### 📁 קבצים שנגעו
+>
+> | קובץ | מה |
+> |---|---|
+> | `src/lib/migration-promotion-events.sql` | **חדש**. 2 טבלאות (events + candidates) + RLS + indexes + הרחבת `announcements.type` ל-`'promotion'` |
+> | `src/components/trainer/PromotionEvents.jsx` | **חדש**. 800 שורות. UI מלא: רשימה (היום/עתיד/עבר), Dialog יצירה+עריכה+ביטול+מחיקה, ניהול candidates עם target_belt+target_stripes, multi-branch select, תמיכה ב-`initialCandidateMemberIds` (כניסה מהדוח) |
+> | `src/components/trainer/ReportsManager.jsx` | **שונה**. הוספת imports, הוספת `belt`+`belt_received_at`+`belt_stripes`+`belt_category`+`trains_gi`+`bjj_start_date` ל-`members.select`, useMemo `promotionSuggestions` עם ספי IBJJF, הוספת state ל-`suggestionFilter`+`selectedCandidates`+`initialEventCandidates`, 2 SectionCard חדשים בסוף ה-render: דוח "מועמדים לקידום" + embed של PromotionEvents |
+> | `src/components/trainer/TrainerDashboard.jsx` | **שונה (מיני)**. שינוי אחד: `<ReportsManager isAdmin={isAdmin} profile={profile} />` (היה בלי profile) |
+>
+> ### 📋 SQL להרצה ב-Supabase SQL Editor
+>
+> ```sql
+> -- ===== Tables =====
+> CREATE TABLE IF NOT EXISTS promotion_events (
+>   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+>   name          text NOT NULL,
+>   event_date    date NOT NULL,
+>   branch_ids    uuid[] DEFAULT '{}'::uuid[],
+>   trainer_id    uuid REFERENCES profiles(id) ON DELETE SET NULL,
+>   status        text NOT NULL DEFAULT 'planned'
+>                 CHECK (status IN ('planned','completed','cancelled')),
+>   notes         text,
+>   created_at    timestamptz DEFAULT now(),
+>   updated_at    timestamptz DEFAULT now(),
+>   completed_at  timestamptz,
+>   deleted_at    timestamptz
+> );
+>
+> CREATE TABLE IF NOT EXISTS promotion_candidates (
+>   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+>   event_id        uuid NOT NULL REFERENCES promotion_events(id) ON DELETE CASCADE,
+>   member_id       uuid NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+>   current_belt    text,
+>   current_stripes int  DEFAULT 0,
+>   target_belt     text NOT NULL,
+>   target_stripes  int  DEFAULT 0,
+>   status          text NOT NULL DEFAULT 'planned'
+>                   CHECK (status IN ('planned','promoted','not_promoted','cancelled')),
+>   promoted_at     timestamptz,
+>   notes           text,
+>   created_at      timestamptz DEFAULT now(),
+>   UNIQUE(event_id, member_id)
+> );
+>
+> CREATE INDEX IF NOT EXISTS idx_pe_status         ON promotion_events(status) WHERE deleted_at IS NULL;
+> CREATE INDEX IF NOT EXISTS idx_pe_event_date     ON promotion_events(event_date) WHERE deleted_at IS NULL;
+> CREATE INDEX IF NOT EXISTS idx_pc_event          ON promotion_candidates(event_id);
+> CREATE INDEX IF NOT EXISTS idx_pc_member         ON promotion_candidates(member_id);
+> CREATE INDEX IF NOT EXISTS idx_pc_member_planned ON promotion_candidates(member_id, status) WHERE status = 'planned';
+>
+> ALTER TABLE promotion_events     ENABLE ROW LEVEL SECURITY;
+> ALTER TABLE promotion_candidates ENABLE ROW LEVEL SECURITY;
+>
+> DROP POLICY IF EXISTS pe_select_trainer ON promotion_events;
+> CREATE POLICY pe_select_trainer ON promotion_events FOR SELECT TO authenticated
+>   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'trainer' AND is_approved = true));
+>
+> DROP POLICY IF EXISTS pe_select_candidate ON promotion_events;
+> CREATE POLICY pe_select_candidate ON promotion_events FOR SELECT TO authenticated
+>   USING (EXISTS (SELECT 1 FROM promotion_candidates pc JOIN members m ON m.id = pc.member_id
+>                  WHERE pc.event_id = promotion_events.id
+>                    AND lower(m.email) = lower((SELECT email FROM auth.users WHERE id = auth.uid()))));
+>
+> DROP POLICY IF EXISTS pe_write_trainer ON promotion_events;
+> CREATE POLICY pe_write_trainer ON promotion_events FOR ALL TO authenticated
+>   USING      (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'trainer' AND is_approved = true))
+>   WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'trainer' AND is_approved = true));
+>
+> DROP POLICY IF EXISTS pc_select_trainer ON promotion_candidates;
+> CREATE POLICY pc_select_trainer ON promotion_candidates FOR SELECT TO authenticated
+>   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'trainer' AND is_approved = true));
+>
+> DROP POLICY IF EXISTS pc_select_self ON promotion_candidates;
+> CREATE POLICY pc_select_self ON promotion_candidates FOR SELECT TO authenticated
+>   USING (EXISTS (SELECT 1 FROM members m WHERE m.id = promotion_candidates.member_id
+>                  AND lower(m.email) = lower((SELECT email FROM auth.users WHERE id = auth.uid()))));
+>
+> DROP POLICY IF EXISTS pc_write_trainer ON promotion_candidates;
+> CREATE POLICY pc_write_trainer ON promotion_candidates FOR ALL TO authenticated
+>   USING      (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'trainer' AND is_approved = true))
+>   WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'trainer' AND is_approved = true));
+>
+> ALTER TABLE announcements DROP CONSTRAINT IF EXISTS announcements_type_check;
+> ALTER TABLE announcements ADD  CONSTRAINT announcements_type_check
+>   CHECK (type IN ('announcement','seminar','product','general','promotion'));
+> ```
+>
+> ### 🧪 איך לבדוק לוקאלית
+>
+> ב-`/Users/dudibenzaken/teampact-app`:
+> ```bash
+> npm run dev
+> ```
+>
+> 1. כניסה כמנהל → טאב **דוחות**.
+> 2. גלול למטה — תראה 2 קטעים חדשים:
+>    - **🎓 מועמדים לקידום** — טבלה ממוינת לפי score. פילטרים: בשלים / מתקרבים / הכל.
+>    - **🎓 אירועי קידום** — רשימה ריקה כרגע. לחץ "+ אירוע חדש".
+> 3. סמן 2-3 מתאמנים בדוח → לחץ "🎓 צור אירוע קידום עם המסומנים" → ה-Dialog נפתח עם candidates מאוכלסים. בחר תאריך + סניפים → שמור.
+> 4. כתוצאה — אירוע יופיע ברשימה. לחץ עליו → תראה Dialog עריכה.
+>
+> ### ⚠️ מה עדיין לא עובד (לסשן הבא)
+>
+> 1. **lazy execution + push** — ה-event רק יושב. **בלי קוד שמעדכן `members.belt` ביום שאחרי האירוע, האירוע אף פעם לא "סוגר".** צריך useEffect ב-`TrainerDashboard.jsx` שירוץ בפתיחה: `events.event_date < today AND status='planned'` → עבור כל candidate `status='planned'` → `members.belt`+`belt_received_at`+`belt_stripes`=target → `candidate.status='promoted'` → `event.status='completed'` → `notifyPush` + INSERT ב-`announcements`.
+> 2. **באנרי מתאמן** — ב-`MyProgressSection.jsx` לטעון `promotion_candidates` של המתאמן (לפי `member.id`) ולהציג: באנר זהוב "🎉 סומנת לקידום!" עם countdown + target_belt אם `status='planned'`. באנר סגול "🏆 קודמת!" אם `status='promoted'` בשבוע האחרון.
+> 3. **build + push** — לא נגעתי. לפי CLAUDE.md, רק אחרי שדודי מאשר לוקאלית.
+>
+> ### ✅ Verification check
+>
+> ```bash
+> # parser בדק את כל 3 הקבצים — OK.
+> cd /sessions/practical-beautiful-heisenberg/mnt/teampact-app
+> # מספר שורות: PromotionEvents=799, ReportsManager=1471 (היה 1205), TrainerDashboard=339
+> ```
+>
+> ---
+
+> ## ✅ Session 05.05.2026 (אחה"צ) — שלב 1 הושלם: חגורות + תיקון RLS + דחיפה לפרודקשן
+>
+> **My last pending task:** הסתיים. קומיט `7069631` ב-main + ב-origin/main. דודי אישר שההתקדמות מציגה 10 יחידות במאי / 24 סה"כ אחרי ה-backfill. מחכה ל-Vercel build + hard-refresh של דודי במכשירים.
 >
 > ### 🐛 הבאג
 >

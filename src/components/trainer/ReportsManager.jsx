@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { notifyPush } from '../../lib/notifyPush'
 import { useToast, useConfirm } from '../a11y'
+import PromotionEvents from './PromotionEvents'
+import { getBeltMeta, getBeltLabel, ADULT_BELTS, KIDS_BELTS } from '../../lib/belts'
 
 // ===== Helpers =====
 const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -212,7 +214,7 @@ function SectionCard({ title, icon, children, footer }) {
 }
 
 // ===== Main Component =====
-export default function ReportsManager({ isAdmin }) {
+export default function ReportsManager({ isAdmin, profile }) {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   // סלייד אחד מאוחד שמשפיע על כל הדוחות (נרשמים חדשים + נטישה + נוכחות)
@@ -236,7 +238,16 @@ export default function ReportsManager({ isAdmin }) {
   const toast = useToast()
   const confirm = useConfirm()
 
-  useEffect(() => { if (isAdmin) fetchAll() }, [isAdmin])
+  // ===== Promotion suggestions state =====
+  // suggestionFilter: 'ready' | 'getting_close' | 'all'
+  const [suggestionFilter, setSuggestionFilter] = useState('ready')
+  // selectedCandidates: Set של member_id שסומנו ב-checkbox בדוח
+  const [selectedCandidates, setSelectedCandidates] = useState(() => new Set())
+  // initialEventCandidates: כשמשתמש לוחץ "צור אירוע עם מסומנים" → מועבר ל-PromotionEvents
+  const [initialEventCandidates, setInitialEventCandidates] = useState(null)
+
+  // טעינה: מנהל רואה הכל. מאמן רגיל גם — אבל הסינון לקואצ' שלו נעשה ב-useMemo (filteredMembers).
+  useEffect(() => { if (isAdmin || profile?.id) fetchAll() }, [isAdmin, profile?.id])
 
   async function fetchAll() {
     setLoading(true)
@@ -251,7 +262,7 @@ export default function ReportsManager({ isAdmin }) {
       const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes] = await Promise.all([
         supabase
           .from('members')
-          .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at')
+          .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at, belt, belt_received_at, belt_stripes, belt_category, trains_gi, bjj_start_date')
           .range(0, ROW_LIMIT - 1),
         supabase.from('coaches').select('id, name, branch_id').range(0, ROW_LIMIT - 1),
         supabase.from('classes').select('id, name, class_type, coach_id, coach_name, branch_id, day_of_week, start_time, duration_minutes').range(0, ROW_LIMIT - 1),
@@ -840,14 +851,254 @@ export default function ReportsManager({ isAdmin }) {
     }
   }, [activeMembers, filteredMembers, periodDays, coachById, classById, registrations])
 
-  if (!isAdmin) {
-    return (
-      <div className="bg-yellow-50 border border-yellow-300 rounded-2xl p-4 text-yellow-900">
-        <div className="flex items-center gap-2 font-bold mb-1"><span>🔒</span> גישה מוגבלת</div>
-        <p className="text-sm">הדוחות זמינים למנהל המערכת בלבד.</p>
-      </div>
-    )
+  // ============================================================
+  // ===== Promotion Suggestions: ספי IBJJF + score =====
+  // ============================================================
+  //
+  // == Backfill יחידות BJJ היסטוריות ==
+  // בעיה: מתאמן שקיבל חגורה ב-2024-05 (לפני שהמערכת קיימת) — הסיסטם רואה 0 BJJ
+  // checkins מאז, אבל בפועל הוא התאמן.
+  //
+  // לוגיקה:
+  //   1. אם למתאמן **אין** ולו checkin אחד של BJJ במערכת → 0 משוער. אנחנו לא
+  //      יודעים אם הוא בכלל מתאמן BJJ (גם אם יש לו subscription_type='4x_week' —
+  //      יכול להיות שעושה 2 BJJ + 2 מואי תאי, ויכול להיות שעוד לא הגיע).
+  //   2. אם יש לו לפחות checkin BJJ אחד:
+  //      - מוצאים את ה-checkin הראשון שלו (`first_bjj_checkin_ms`).
+  //      - אם עברו ≥ 90 ימים מאז + יש ≥ 5 checkins ב-3 חודשים אלה →
+  //        ממוצע = checkins / (90/7) שבועות.
+  //      - אחרת → 0 משוער (חוזרים אחרי 3 חודשים שיהיה דאטה אמין).
+  //      - הקרנה אחורה רק על הפער: `first_bjj_checkin - belt_received_at`.
+  //   3. תיקון × 0.86 על חגי ישראל ותקופות חירום (~6 שבועות בשנה אבודים).
+  // ============================================================
+  const HOLIDAY_FACTOR   = 0.86 // ~6 שבועות בשנה אבודים (חגים+חירום) → 86% מהשבועות פעילים
+  const MIN_OBSERVATION_DAYS = 90       // מינימום תצפית כדי לחשב ממוצע
+  const MIN_OBSERVED_UNITS   = 5        // מינימום checkins כדי שהממוצע יהיה אמין
+
+  // ספים מינימליים לקידום (IBJJF guidelines + טיוב לפי ניסיון של דודי).
+  // ניתן לכוונן בעתיד דרך טבלה במקום קוד.
+  const PROMOTION_THRESHOLDS = {
+    white:  { years: 1.5, units: 200, next: 'blue'   },
+    blue:   { years: 2.0, units: 250, next: 'purple' },
+    purple: { years: 1.5, units: 300, next: 'brown'  },
+    brown:  { years: 1.0, units: 400, next: 'black'  },
+    // שחורה (מבוגרים): קידום בין דאנים. IBJJF: 3 שנים בין דאן 1-3, 5 שנים 3-6, 7 שנים → קורל.
+    black:    { years: 3.0, units: 300, next: 'black_1' },
+    black_1:  { years: 3.0, units: 300, next: 'black_2' },
+    black_2:  { years: 3.0, units: 300, next: 'black_3' },
+    black_3:  { years: 5.0, units: 400, next: 'black_4' },
+    black_4:  { years: 5.0, units: 400, next: 'black_5' },
+    black_5:  { years: 5.0, units: 400, next: 'black_6' },
+    black_6:  { years: 7.0, units: 400, next: 'coral_red_black' },
+    coral_red_black: { years: 7.0, units: 300, next: 'coral_red_white' },
+    coral_red_white: { years: 10.0, units: 300, next: 'red' },
+    // ילדים: זמן יותר קצר בין דרגות
+    kids_white:        { years: 0.7, units: 60,  next: 'kids_gray_white'   },
+    kids_gray_white:   { years: 0.7, units: 60,  next: 'kids_gray'         },
+    kids_gray:         { years: 0.7, units: 60,  next: 'kids_gray_black'   },
+    kids_gray_black:   { years: 0.7, units: 60,  next: 'kids_yellow_white' },
+    kids_yellow_white: { years: 0.7, units: 60,  next: 'kids_yellow'       },
+    kids_yellow:       { years: 0.7, units: 60,  next: 'kids_yellow_black' },
+    kids_yellow_black: { years: 0.7, units: 60,  next: 'kids_orange_white' },
+    kids_orange_white: { years: 0.7, units: 60,  next: 'kids_orange'       },
+    kids_orange:       { years: 0.7, units: 60,  next: 'kids_orange_black' },
+    kids_orange_black: { years: 0.7, units: 60,  next: 'kids_green_white'  },
+    kids_green_white:  { years: 0.7, units: 60,  next: 'kids_green'        },
+    kids_green:        { years: 0.7, units: 60,  next: 'kids_green_black'  },
   }
+
+  // בונים pivot: לכל מתאמן — כמה checkins מאז ה-belt_received_at שלו
+  const promotionSuggestions = useMemo(() => {
+    if (!members.length) return []
+    // מספרת checkins לכל athlete_id, רק שיעורי BJJ שהסתיימו
+    const bjjClassIds = new Set(
+      classes.filter(c => {
+        const explicit = (c.class_type || '').toLowerCase()
+        const disc = explicit && explicit !== 'regular' ? detectDiscipline(explicit) : detectDiscipline(c.name || '')
+        return disc === 'BJJ'
+      }).map(c => c.id)
+    )
+    // אגירת checkins לפי athlete_id (רק BJJ + השיעור הסתיים בפועל)
+    const nowMs = Date.now()
+    const unitsByMember = new Map() // member_id → { totalUnits, unitsSinceBelt }
+    for (const c of checkins) {
+      if (!bjjClassIds.has(c.class_id)) continue
+      const cls = classById.get(c.class_id)
+      if (!cls) continue
+      const endMs = classEndMs(c.checkin_date, cls.start_time, cls.duration_minutes)
+      if (endMs == null || endMs > nowMs) continue
+      const cur = unitsByMember.get(c.athlete_id) || { totalUnits: 0, unitsSinceBelt: 0, _endMs: [] }
+      cur.totalUnits++
+      cur._endMs.push(endMs)
+      unitsByMember.set(c.athlete_id, cur)
+    }
+
+    // עבור כל מתאמן Gi עם חגורה — מחשבים years_on_belt + units_since_belt + score
+    // **חשוב:** מציגים את כולם, גם בלי threshold (כמו אדומה/red) — recommendation='no_threshold'
+    const rows = []
+    for (const m of members) {
+      if (m.trains_gi === false) continue
+      if (!m.belt) continue
+      if (m.deleted_at) continue
+      if (m.status === 'pending' || m.status === 'pending_deletion') continue
+      const thr = PROMOTION_THRESHOLDS[m.belt]
+      const beltReceivedMs = m.belt_received_at ? new Date(m.belt_received_at).getTime() : null
+      const yearsOnBelt = beltReceivedMs ? (nowMs - beltReceivedMs) / (365.25 * 24 * 3600 * 1000) : 0
+      const stats = unitsByMember.get(m.id) || { totalUnits: 0, _endMs: [] }
+
+      // ===== חישוב יחידות נצפות (observed) — מ-checkins של ה-DB =====
+      const observedUnits = beltReceivedMs
+        ? stats._endMs.filter(e => e >= beltReceivedMs).length
+        : stats.totalUnits
+
+      // ===== חישוב יחידות BJJ משוערות (estimated) למילוי הפער ההיסטורי =====
+      // לוגיקה: ממוצע מחושב לפי **3 החודשים הראשונים מה-BJJ checkin הראשון** של
+      // המתאמן במערכת (חלון יציב). מוקרן אחורה רק על הפער בין belt_received_at לבין
+      // ה-checkin הראשון. אם אין BJJ checkin בכלל → 0 משוער.
+      let estimatedUnits = 0
+      let estimateBasis = null   // 'observed_first_3mo' | 'no_bjj_yet' | 'no_data' | null
+
+      if (beltReceivedMs) {
+        if (stats._endMs.length === 0) {
+          // אין BJJ checkin אחד אפילו → לא יודעים שהוא בכלל מתאמן BJJ
+          estimateBasis = 'no_bjj_yet'
+        } else {
+          const firstBjjCheckinMs = Math.min.apply(null, stats._endMs)
+          // הקרנה אחורה רק עד first_bjj_checkin (לא לפני). אם החגורה ניתנה
+          // אחרי ה-first_bjj_checkin → אין פער היסטורי
+          if (firstBjjCheckinMs > beltReceivedMs) {
+            const gapMs    = firstBjjCheckinMs - beltReceivedMs
+            const gapWeeks = gapMs / (7 * 24 * 3600 * 1000)
+
+            const calibWindowEndMs = firstBjjCheckinMs + (MIN_OBSERVATION_DAYS * 24 * 3600 * 1000)
+            // נדרשים 3 חודשים מלאים: ה-window הסתיים לפני היום
+            if (calibWindowEndMs <= nowMs) {
+              const checkinsInWindow = stats._endMs.filter(e =>
+                e >= firstBjjCheckinMs && e <= calibWindowEndMs
+              ).length
+              if (checkinsInWindow >= MIN_OBSERVED_UNITS) {
+                const windowWeeks = MIN_OBSERVATION_DAYS / 7
+                const frequencyPerWeek = checkinsInWindow / windowWeeks
+                estimatedUnits = Math.round(gapWeeks * frequencyPerWeek * HOLIDAY_FACTOR)
+                estimateBasis = 'observed_first_3mo'
+              } else {
+                estimateBasis = 'no_data'
+              }
+            } else {
+              estimateBasis = 'no_data' // עוד אין 3 חודשי תצפית
+            }
+          }
+        }
+      }
+
+      const unitsSinceBelt = observedUnits + estimatedUnits
+
+      let recommendation, score, thresholdYears, thresholdUnits, nextBelt
+      if (thr) {
+        // החלש מבין השניים (כי אסור לקדם רק על בסיס זמן בלי אימונים)
+        const yearsProgress = Math.min(yearsOnBelt / thr.years, 1.5)
+        const unitsProgress = Math.min(unitsSinceBelt / thr.units, 1.5)
+        score = Math.min(yearsProgress, unitsProgress)
+        recommendation = score >= 1.0 ? 'ready'
+                       : score >= 0.7 ? 'getting_close'
+                       : 'not_yet'
+        thresholdYears = thr.years
+        thresholdUnits = thr.units
+        nextBelt = thr.next
+      } else {
+        // חגורה ללא ספים (לא במעקב — למשל אדומה)
+        score = 0
+        recommendation = 'no_threshold'
+      }
+
+      rows.push({
+        member: m,
+        beltLabel: getBeltLabel(m.belt),
+        yearsOnBelt,
+        unitsSinceBelt,
+        observedUnits,
+        estimatedUnits,
+        estimateBasis,
+        thresholdYears,
+        thresholdUnits,
+        nextBelt,
+        score,
+        recommendation,
+      })
+    }
+    // מיון: ready → getting_close → not_yet → no_threshold (לפי score, ואז no_threshold בסוף)
+    rows.sort((a, b) => {
+      if (a.recommendation === 'no_threshold' && b.recommendation !== 'no_threshold') return 1
+      if (b.recommendation === 'no_threshold' && a.recommendation !== 'no_threshold') return -1
+      return b.score - a.score
+    })
+    return rows
+  }, [members, checkins, classes, classById])
+
+  // ===== סינון לפי תפקיד =====
+  // מנהל: רואה את כל המתאמנים בכל הסטטיסטיקות.
+  // מאמן רגיל: רק את המתאמנים שמשויכים אליו (3 דרכים אפשריות):
+  //   1. members.coach_id ∈ coaches שלו (coaches.user_id = profile.id)
+  //   2. members.requested_coach_name = שם של אחד מה-coaches שלו
+  //   3. members.requested_coach_names array מכיל שם של coach שלו
+  //
+  // (אותו pattern של AthleteManagement.jsx שורות 115-117.)
+  const myAthleteIds = useMemo(() => {
+    if (isAdmin || !profile?.id) return null // null = "אל תסנן"
+    // coaches מ-fetchAll נטען עם id, name, branch_id, אבל בלי user_id.
+    // לכן נשווה לפי name = profile.full_name.
+    const myCoachNames = new Set()
+    for (const c of coaches) {
+      if (c.name && c.name === profile.full_name) myCoachNames.add(c.name)
+    }
+    // אם אין למאמן רישום ב-coaches עם השם שלו — fallback: נסה direct match על profile.id
+    // (הוספה: גם אם לא נמצא, נחפש לפי full_name במידה והמתאמן כתב במפורש)
+    const ids = new Set()
+    for (const m of members) {
+      if (m.requested_coach_name && profile.full_name && m.requested_coach_name === profile.full_name) {
+        ids.add(m.id); continue
+      }
+      if (Array.isArray(m.requested_coach_names) && profile.full_name && m.requested_coach_names.includes(profile.full_name)) {
+        ids.add(m.id); continue
+      }
+      // עבור coach_id — נצטרך לחפש את ה-coach המתאים. בינתיים נשתמש ב-name match.
+      if (m.coach_id && myCoachNames.size > 0) {
+        const coach = coaches.find(c => c.id === m.coach_id)
+        if (coach && myCoachNames.has(coach.name)) {
+          ids.add(m.id); continue
+        }
+      }
+    }
+    return ids
+  }, [isAdmin, profile?.id, profile?.full_name, members, coaches])
+
+  // מסננים את ה-suggestions למאמן רגיל
+  const visibleSuggestions = useMemo(() => {
+    if (!myAthleteIds) return promotionSuggestions
+    return promotionSuggestions.filter(r => myAthleteIds.has(r.member.id))
+  }, [promotionSuggestions, myAthleteIds])
+
+  // ===== האם המאמן הנוכחי מלמד BJJ? =====
+  // קידום זה רק עניין של BJJ. מאמן מואי תאי לא צריך לראות דוח קידום.
+  // נחשב על בסיס classes שלו: אם לפחות שיעור אחד מסווג כ-BJJ (כולל NoGi/grappling) → מאמן BJJ.
+  // detectDiscipline (כבר קיים בקובץ) מזהה: bjj, jiujitsu, nogi, grappling, גיוגיטסו, נוגי, ברזיל, openmat, וכו'
+  const isBjjCoach = useMemo(() => {
+    if (isAdmin) return true                    // מנהל = רואה הכל
+    if (!profile?.full_name) return false
+    // מצא את ה-coach.id-ים של המאמן הנוכחי בטבלת coaches (יכולים להיות כמה — סניף לסניף)
+    const myCoachIds = new Set(
+      coaches.filter(c => c.name === profile.full_name).map(c => c.id)
+    )
+    if (myCoachIds.size === 0) return false
+    // בודק אם לפחות class אחד שלו הוא BJJ
+    for (const cls of classes) {
+      if (!myCoachIds.has(cls.coach_id)) continue
+      const explicit = (cls.class_type || '').toLowerCase()
+      const disc = explicit && explicit !== 'regular' ? detectDiscipline(explicit) : detectDiscipline(cls.name || '')
+      if (disc === 'BJJ') return true
+    }
+    return false
+  }, [isAdmin, profile?.full_name, coaches, classes])
 
   if (loading) {
     return <div className="text-center text-gray-500 py-8">טוען דוחות…</div>
@@ -893,14 +1144,36 @@ export default function ReportsManager({ isAdmin }) {
         </div>
       </div>
 
-      {/* סיכום מהיר */}
+      {/* באנר זיהוי תפקיד למאמן רגיל */}
+      {!isAdmin && myAthleteIds && isBjjCoach && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-900">
+          <span className="font-bold">👤 תצוגת מאמן:</span> אתה רואה {myAthleteIds.size} מתאמנים שרשומים אצלך. סטטיסטיקות כלליות זמינות למנהל בלבד.
+        </div>
+      )}
+
+      {/* באנר למאמן שלא-BJJ — אין מה להציג */}
+      {!isAdmin && !isBjjCoach && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
+          <div className="text-3xl mb-2">📊</div>
+          <div className="font-bold text-gray-800">אין דוחות זמינים עבורך</div>
+          <p className="text-sm text-gray-600 mt-2">
+            דוחות הקידום מיועדים למאמני <b>גיו ג׳יטסו</b> (כולל NoGi). אם זו טעות — בדוק שהשם שלך בטבלת המאמנים תואם בדיוק לפרופיל שלך, ושיש לך לפחות שיעור BJJ אחד משויך.
+          </p>
+        </div>
+      )}
+
+      {/* סיכום מהיר — מנהל בלבד */}
+      {isAdmin && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="מתאמנים פעילים" value={totalActive} tone="blue" />
         <StatCard label={`נרשמים חדשים (${periodDays} ימים)`} value={newMembers.length} tone="green" />
         <StatCard label="ממתינים לאישור" value={totalPending} tone="orange" />
         <StatCard label={`% נטישה (${periodDays} ימים)`} value={`${churnPctTotal}%`} sub={`${totalChurned} ביטולים מתוך ${totalActiveBase}`} tone="red" />
       </div>
+      )}
 
+      {/* ====== סטטיסטיקות כלליות — מנהל בלבד ====== */}
+      {isAdmin && <>
       {/* סלייד אחד מאוחד — משפיע על כל הדוחות (נוכחות + נרשמים חדשים + נטישה) */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-3 flex items-center gap-2 flex-wrap">
         <span className="text-xs text-gray-600 font-semibold">טווח זמן לכל הדוחות:</span>
@@ -1200,6 +1473,198 @@ export default function ReportsManager({ isAdmin }) {
           ))
         )}
       </SectionCard>
+      </>}
+      {/* ====== סוף סטטיסטיקות מנהל ====== */}
+
+      {/* ================================================================
+          🎓 מועמדים לקידום (suggestion engine) — רק למנהל או מאמן BJJ
+      ================================================================ */}
+      {(isAdmin || isBjjCoach) && <>
+      <SectionCard
+        title={isAdmin ? 'מועמדים לקידום' : 'מועמדים לקידום (אצלי)'}
+        icon="🎓"
+        footer={`מבוסס על שנים מקבלת החגורה + יחידות BJJ שהתאמן מאז. ספים: לבן→כחול 1.5 שנים+200 יחידות, כחול→סגול 2/250, סגול→חום 1.5/300, חום→שחור 1/400, שחור↔דאנים 3-7 שנים+300-400 יחידות. הציון = החלש מבין שנים ויחידות. סימן ~ ביחידות = כולל הערכה היסטורית. הלוגיקה: לוקחים את הממוצע ב-3 החודשים הראשונים מה-BJJ checkin הראשון של המתאמן ומקרינים אחורה רק עד תאריך קבלת החגורה. אם אין BJJ checkin בכלל / אין 3 חודשי תצפית — אין הערכה (חוזרים מאוחר יותר). תיקון ×0.86 לחגי ישראל ותקופות חירום (~6 שבועות בשנה). סה"כ ${visibleSuggestions.length} מתאמני Gi עם חגורה${myAthleteIds ? ' (אצלך)' : ''}.`}
+      >
+        {/* פילטר תצוגה */}
+        <div className="flex items-center gap-1 mb-3 flex-wrap">
+          {[
+            { v: 'ready',         label: '✅ בשלים',     count: visibleSuggestions.filter(r => r.recommendation === 'ready').length },
+            { v: 'getting_close', label: '🟡 מתקרבים', count: visibleSuggestions.filter(r => r.recommendation === 'getting_close').length },
+            { v: 'not_yet',       label: '⏳ עוד מוקדם', count: visibleSuggestions.filter(r => r.recommendation === 'not_yet').length },
+            { v: 'all',           label: '👀 הכל',       count: visibleSuggestions.length },
+          ].map(opt => (
+            <button
+              key={opt.v}
+              onClick={() => setSuggestionFilter(opt.v)}
+              className={`text-xs px-3 py-1.5 rounded-lg font-bold ${
+                suggestionFilter === opt.v ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {opt.label} ({opt.count})
+            </button>
+          ))}
+        </div>
+
+        {(() => {
+          const visibleRows = visibleSuggestions.filter(r =>
+            suggestionFilter === 'all' ? true : r.recommendation === suggestionFilter
+          )
+          if (visibleRows.length === 0) {
+            return (
+              <p className="text-sm text-gray-500 text-center py-4">
+                אין מתאמנים בקטגוריה זו.
+              </p>
+            )
+          }
+          const selectedCount = Array.from(selectedCandidates).filter(id =>
+            visibleRows.some(r => r.member.id === id)
+          ).length
+
+          return (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 text-gray-700">
+                    <tr>
+                      <th className="p-2 text-right">✓</th>
+                      <th className="p-2 text-right">שם</th>
+                      <th className="p-2 text-right">חגורה</th>
+                      <th className="p-2 text-right">שנים</th>
+                      <th className="p-2 text-right">יחידות מאז</th>
+                      <th className="p-2 text-right">ציון</th>
+                      <th className="p-2 text-right">המלצה</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleRows.map(r => {
+                      const meta = getBeltMeta(r.member.belt)
+                      const isSelected = selectedCandidates.has(r.member.id)
+                      const recColor = r.recommendation === 'ready'
+                        ? 'text-emerald-700 bg-emerald-50'
+                        : r.recommendation === 'getting_close'
+                          ? 'text-amber-700 bg-amber-50'
+                          : r.recommendation === 'no_threshold'
+                            ? 'text-purple-700 bg-purple-50'
+                            : 'text-gray-500 bg-gray-50'
+                      const recLabel = r.recommendation === 'ready'
+                        ? '✓ בשל'
+                        : r.recommendation === 'getting_close'
+                          ? '◐ מתקרב'
+                          : r.recommendation === 'no_threshold'
+                            ? '— לא במעקב'
+                            : '○ עוד מוקדם'
+                      return (
+                        <tr key={r.member.id} className="border-t border-gray-100 hover:bg-gray-50">
+                          <td className="p-2">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                setSelectedCandidates(prev => {
+                                  const next = new Set(prev)
+                                  if (e.target.checked) next.add(r.member.id)
+                                  else next.delete(r.member.id)
+                                  return next
+                                })
+                              }}
+                              className="w-4 h-4"
+                            />
+                          </td>
+                          <td className="p-2 font-bold text-gray-900">{r.member.full_name}</td>
+                          <td className="p-2">
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border"
+                              style={{ background: meta?.color, color: meta?.text, borderColor: meta?.color }}
+                            >
+                              {r.beltLabel}
+                              {r.member.belt_stripes > 0 && ` · ${r.member.belt_stripes}`}
+                            </span>
+                          </td>
+                          <td className="p-2">
+                            {r.yearsOnBelt > 0 ? r.yearsOnBelt.toFixed(1) : '—'}
+                            {r.thresholdYears != null && (
+                              <span className="text-[10px] text-gray-400 mr-1">/ {r.thresholdYears}</span>
+                            )}
+                          </td>
+                          <td className="p-2">
+                            <span title={
+                              r.estimatedUnits > 0
+                                ? `${r.observedUnits} נצפו במערכת + ${r.estimatedUnits} משוערים (לפי ממוצע ב-3 חודשים הראשונים מה-BJJ checkin הראשון × 0.86 לחגים)`
+                                : r.estimateBasis === 'no_bjj_yet'
+                                  ? 'אין checkin של BJJ במערכת — אין הערכה אחורה'
+                                  : r.estimateBasis === 'no_data'
+                                    ? 'אין מספיק תצפית (פחות מ-3 חודשים או פחות מ-5 אימונים) — חוזרים אחרי תצפית מספיקה'
+                                    : `${r.observedUnits} נצפו במערכת`
+                            }>
+                              {r.unitsSinceBelt}
+                              {r.estimatedUnits > 0 && (
+                                <span className="text-[10px] text-amber-600 mr-1">~</span>
+                              )}
+                            </span>
+                            {r.thresholdUnits != null && (
+                              <span className="text-[10px] text-gray-400 mr-1">/ {r.thresholdUnits}</span>
+                            )}
+                          </td>
+                          <td className="p-2 font-bold">
+                            {r.recommendation === 'no_threshold' ? '—' : `${(r.score * 100).toFixed(0)}%`}
+                          </td>
+                          <td className="p-2">
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${recColor}`}>
+                              {recLabel}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* כפתור פעולה */}
+              {selectedCount > 0 && (
+                <div className="mt-3 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <span className="text-sm text-blue-900 font-bold">
+                    סומנו {selectedCount} מועמדים
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedCandidates(new Set())}
+                      className="text-xs bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold px-3 py-1.5 rounded-lg"
+                    >
+                      נקה
+                    </button>
+                    <button
+                      onClick={() => {
+                        setInitialEventCandidates(Array.from(selectedCandidates))
+                        // גוללים למטה ל-PromotionEvents
+                        setTimeout(() => {
+                          document.getElementById('promotion-events-anchor')?.scrollIntoView({ behavior: 'smooth' })
+                        }, 100)
+                      }}
+                      className="text-xs bg-blue-700 hover:bg-blue-800 text-white font-bold px-4 py-1.5 rounded-lg"
+                    >
+                      🎓 צור אירוע קידום עם המסומנים
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )
+        })()}
+      </SectionCard>
+
+      {/* ================================================================
+          📅 אירועי קידום
+      ================================================================ */}
+      <div id="promotion-events-anchor" className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
+        <PromotionEvents
+          profile={profile}
+          isAdmin={isAdmin}
+          initialCandidateMemberIds={initialEventCandidates}
+        />
+      </div>
+      </>}
+      {/* ====== סוף קטעי קידום ====== */}
     </div>
   )
 }

@@ -102,6 +102,7 @@ export default function MyProgressSection({ profile, member }) {
   const [checkins, setCheckins] = useState([])
   const [classMap, setClassMap] = useState(new Map()) // class_id -> {name, class_type, duration_minutes, start_time, coach_id, coach_name}
   const [coachMap, setCoachMap] = useState(new Map()) // coach_id -> {name}
+  const [promotionCandidate, setPromotionCandidate] = useState(null) // { event_name, event_date, status, target_belt, target_stripes, promoted_at }
   const [err, setErr] = useState(null)
 
   // ה-checkins נשמרים תחת members.id (לפי FK ב-DB).
@@ -147,10 +148,51 @@ export default function MyProgressSection({ profile, member }) {
         }
         const coachMap2 = new Map(coaches.map(c => [c.id, c]))
 
+        // 4) promotion candidate הכי רלוונטי: planned (עתידי) או promoted (אחרון)
+        // מחפשים את ה-candidate של המתאמן הזה. אם יש כמה — נעדיף 'planned'; אחרת 'promoted'
+        // האחרון (לפי promoted_at).
+        let pcResult = null
+        try {
+          const { data: cands } = await supabase
+            .from('promotion_candidates')
+            .select('id, event_id, status, target_belt, target_stripes, promoted_at, current_belt')
+            .eq('member_id', athleteId)
+            .in('status', ['planned', 'promoted'])
+          if (cands && cands.length > 0) {
+            // נטען event_id-ים כדי לקבל name + event_date
+            const eventIds = [...new Set(cands.map(c => c.event_id))]
+            const { data: evs } = await supabase
+              .from('promotion_events')
+              .select('id, name, event_date, status')
+              .in('id', eventIds)
+              .is('deleted_at', null)
+            const evMap = new Map((evs || []).map(e => [e.id, e]))
+
+            // מועדף: planned (קרוב ביותר); אחרת — promoted (אחרון)
+            const planned = cands.find(c => c.status === 'planned' && evMap.has(c.event_id))
+            if (planned) {
+              const ev = evMap.get(planned.event_id)
+              pcResult = { ...planned, event_name: ev.name, event_date: ev.event_date }
+            } else {
+              const promotedList = cands.filter(c => c.status === 'promoted' && evMap.has(c.event_id))
+              if (promotedList.length > 0) {
+                promotedList.sort((a, b) => (b.promoted_at || '').localeCompare(a.promoted_at || ''))
+                const p = promotedList[0]
+                const ev = evMap.get(p.event_id)
+                pcResult = { ...p, event_name: ev.name, event_date: ev.event_date }
+              }
+            }
+          }
+        } catch (e) {
+          // אם הטבלה לא קיימת עדיין — מתעלמים בשקט
+          console.warn('[MyProgress] promotion candidate load skipped:', e?.message || e)
+        }
+
         if (!cancelled) {
           setCheckins(checkinsData)
           setClassMap(cm)
           setCoachMap(coachMap2)
+          setPromotionCandidate(pcResult)
         }
       } catch (e) {
         console.warn('[MyProgress] load failed', e)
@@ -466,8 +508,102 @@ export default function MyProgressSection({ profile, member }) {
     ? events.filter(e => e.discipline === 'BJJ' && e.timeMs >= beltReceivedMs).length
     : 0
 
+  // ===== באנרי קידום =====
+  const promotionBanner = (() => {
+    if (!promotionCandidate) return null
+    const targetMeta = getBeltMeta(promotionCandidate.target_belt)
+    if (!targetMeta) return null
+
+    if (promotionCandidate.status === 'planned') {
+      // מצב: סומנת לקידום
+      const evDateMs = new Date(promotionCandidate.event_date + 'T12:00:00').getTime()
+      const todayMs = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime() })()
+      const daysUntil = Math.round((evDateMs - todayMs) / (1000 * 60 * 60 * 24))
+      return (
+        <div className="rounded-xl shadow-sm overflow-hidden border-2 border-amber-400"
+             style={{ background: 'linear-gradient(135deg,#fef3c7,#fde68a)' }}>
+          <div className="p-4">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-3xl">🎉</span>
+              <div className="flex-1">
+                <div className="text-[10px] text-amber-900 font-bold uppercase tracking-wider">סומנת לקידום!</div>
+                <div className="text-base font-extrabold text-amber-900 leading-tight">
+                  {promotionCandidate.event_name}
+                </div>
+              </div>
+            </div>
+            <div className="bg-white/70 rounded-lg p-3 grid grid-cols-2 gap-2 text-center">
+              <div>
+                <div className="text-[10px] text-amber-900 font-bold">היעד שלך</div>
+                <div className="flex items-center justify-center gap-1.5 mt-1">
+                  <span className="inline-block w-3 h-3 rounded-sm border border-gray-400"
+                        style={{ background: targetMeta.color }} />
+                  <span className="text-sm font-extrabold" style={{ color: targetMeta.text === '#FFFFFF' ? targetMeta.color : '#1f2937' }}>
+                    {targetMeta.label}
+                  </span>
+                </div>
+                {promotionCandidate.target_stripes > 0 && (
+                  <div className="text-[10px] text-amber-800 mt-0.5">+ {promotionCandidate.target_stripes} פסים</div>
+                )}
+              </div>
+              <div>
+                <div className="text-[10px] text-amber-900 font-bold">
+                  {daysUntil > 0 ? 'עוד' : daysUntil === 0 ? 'היום!' : 'עבר'}
+                </div>
+                {daysUntil > 0 && (
+                  <>
+                    <div className="text-2xl font-black text-amber-900 leading-none mt-1">{daysUntil}</div>
+                    <div className="text-[10px] text-amber-800">ימים</div>
+                  </>
+                )}
+                {daysUntil === 0 && (
+                  <div className="text-xl font-black text-amber-900 mt-1">🔥</div>
+                )}
+              </div>
+            </div>
+            <div className="mt-2 text-center text-[11px] text-amber-900">
+              💪 תחזק נוכחות. תופיע. תהיה שם.
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (promotionCandidate.status === 'promoted') {
+      // מצב: ברכות, קודמת!
+      const promotedDate = promotionCandidate.promoted_at
+        ? new Date(promotionCandidate.promoted_at)
+        : null
+      const daysSince = promotedDate
+        ? Math.round((Date.now() - promotedDate.getTime()) / (1000 * 60 * 60 * 24))
+        : null
+      // נציג את הבאנר רק אם הקידום קרה ב-30 הימים האחרונים
+      if (daysSince != null && daysSince > 30) return null
+      return (
+        <div className="rounded-xl shadow-md overflow-hidden border-0 text-center text-white"
+             style={{ background: 'linear-gradient(135deg,#581c87 0%,#7c3aed 50%,#a855f7 100%)' }}>
+          <div className="p-5">
+            <div className="text-5xl">🏆</div>
+            <div className="text-[11px] opacity-90 mt-2 font-bold tracking-wider">מזל טוב! קיבלת חגורה</div>
+            <div className="text-2xl font-black mt-1">{targetMeta.label}</div>
+            {promotionCandidate.target_stripes > 0 && (
+              <div className="text-sm opacity-90 mt-1">{promotionCandidate.target_stripes} פסים</div>
+            )}
+            <div className="text-[11px] opacity-85 mt-2">
+              "{promotionCandidate.event_name}"
+            </div>
+          </div>
+        </div>
+      )
+    }
+    return null
+  })()
+
   return (
     <div className="space-y-4">
+      {/* ===== באנרי קידום ===== */}
+      {promotionBanner}
+
       {/* ===== Belt card — מופיע רק למתאמני Gi ===== */}
       {showBeltCard && (
         <div className="rounded-xl shadow-sm overflow-hidden border-2"

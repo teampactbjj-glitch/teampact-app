@@ -12,6 +12,8 @@ import BottomNav from '../BottomNav'
 import InstallBanner from '../InstallBanner'
 import EnablePushBanner from '../EnablePushBanner'
 import { supabase } from '../../lib/supabase'
+import { notifyPush } from '../../lib/notifyPush'
+import { getBeltLabel } from '../../lib/belts'
 import { isStandalone } from '../../lib/platform'
 import logoUrl from '../../assets/logo.png'
 
@@ -82,6 +84,130 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   const lastSeenKey = profile?.id ? `announcements_last_seen_${profile.id}` : null
 
   useEffect(() => { refreshCounts() }, [])
+
+  // ============================================================
+  // 🎓 Lazy execution של אירועי קידום שעבר תאריכם
+  // ============================================================
+  // רץ פעם אחת בכל פתיחת dashboard. מאתר אירועים עם:
+  //   status='planned' AND event_date < today AND deleted_at IS NULL
+  // עבור כל candidate עם status='planned':
+  //   - מעדכן members.belt + belt_received_at + belt_stripes (ל-target)
+  //   - candidate.status='promoted', promoted_at=now()
+  //   - שולח push notification + יוצר announcement type='promotion'
+  // אחרי כל ה-candidates: event.status='completed', completed_at=now().
+  //
+  // race condition: אם 2 מאמנים פותחים ב-bo'אזית — שניהם ינסו לעדכן אבל UPDATE
+  // הוא idempotent (אותם target_belt). push notification עלול להישלח כפול
+  // (acceptable — מתאמן יקבל 2 הודעות).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const today = new Date().toISOString().slice(0, 10)
+        const { data: events, error } = await supabase
+          .from('promotion_events')
+          .select('id, name, event_date, trainer_id')
+          .eq('status', 'planned')
+          .lt('event_date', today)
+          .is('deleted_at', null)
+        if (error) { console.warn('[lazy-promotion] events fetch error:', error.message); return }
+        if (!events || events.length === 0) return
+        if (cancelled) return
+
+        for (const ev of events) {
+          // 1. שלוף candidates planned של האירוע
+          const { data: cands, error: candErr } = await supabase
+            .from('promotion_candidates')
+            .select('id, member_id, target_belt, target_stripes, current_belt, current_stripes')
+            .eq('event_id', ev.id)
+            .eq('status', 'planned')
+          if (candErr) { console.warn('[lazy-promotion] candidates fetch error:', candErr.message); continue }
+
+          // 2. עדכון לכל candidate
+          const promotedMemberIds = []
+          const promotionDetails = [] // { member_id, target_belt, target_stripes }
+          for (const c of (cands || [])) {
+            // עדכון members.belt
+            const { error: memErr } = await supabase.from('members')
+              .update({
+                belt: c.target_belt,
+                belt_stripes: c.target_stripes ?? 0,
+                belt_received_at: ev.event_date,
+              })
+              .eq('id', c.member_id)
+            if (memErr) {
+              console.warn('[lazy-promotion] member update error:', memErr.message, c.member_id)
+              continue
+            }
+            // עדכון candidate.status
+            const { error: cErr } = await supabase.from('promotion_candidates')
+              .update({ status: 'promoted', promoted_at: new Date().toISOString() })
+              .eq('id', c.id)
+            if (cErr) {
+              console.warn('[lazy-promotion] candidate update error:', cErr.message, c.id)
+              continue
+            }
+            promotedMemberIds.push(c.member_id)
+            promotionDetails.push({
+              member_id: c.member_id,
+              target_belt: c.target_belt,
+              target_stripes: c.target_stripes ?? 0,
+            })
+          }
+
+          // 3. סגירת האירוע
+          await supabase.from('promotion_events')
+            .update({ status: 'completed', completed_at: new Date().toISOString() })
+            .eq('id', ev.id)
+
+          // 4. announcement כללי על האירוע (type='promotion' → מופיע בטאב הודעות של מתאמנים)
+          if (promotedMemberIds.length > 0) {
+            const beltSummary = [...new Set(promotionDetails.map(d => getBeltLabel(d.target_belt)))].join(', ')
+            await supabase.from('announcements').insert({
+              trainer_id: ev.trainer_id || profile?.id || null,
+              type: 'promotion',
+              title: `🏆 ${ev.name} — ${promotedMemberIds.length} מתאמנים קיבלו חגורה`,
+              content: `מזל טוב למקודמים: ${beltSummary}!`,
+              event_date: new Date(ev.event_date + 'T12:00:00').toISOString(),
+            })
+
+            // 5. push לכל מי שקיבל קידום
+            // מוצאים user_id לפי email של ה-member (members.email → profiles.email → profile.id)
+            const memberDetails = await supabase.from('members')
+              .select('id, email, full_name, belt')
+              .in('id', promotedMemberIds)
+            if (!memberDetails.error && memberDetails.data) {
+              const emails = memberDetails.data.map(m => m.email).filter(Boolean)
+              if (emails.length > 0) {
+                const { data: profs } = await supabase.from('profiles').select('id, email').in('email', emails)
+                const userIdByEmail = new Map((profs || []).map(p => [String(p.email).toLowerCase(), p.id]))
+                for (const detail of promotionDetails) {
+                  const mem = memberDetails.data.find(x => x.id === detail.member_id)
+                  if (!mem?.email) continue
+                  const uid = userIdByEmail.get(String(mem.email).toLowerCase())
+                  if (!uid) continue
+                  const beltLabel = getBeltLabel(detail.target_belt)
+                  await notifyPush({
+                    userIds: [uid],
+                    title: '🏆 קודמת בחגורה!',
+                    body: `${mem.full_name}, קיבלת ${beltLabel}${detail.target_stripes > 0 ? ` · ${detail.target_stripes} פסים` : ''}!`,
+                    url: '/',
+                    tag: `promotion-${ev.id}-${detail.member_id}`,
+                  })
+                }
+              }
+            }
+          }
+        }
+
+        // עדכון counts אחרי הקידום
+        if (!cancelled) refreshCounts()
+      } catch (e) {
+        console.warn('[lazy-promotion] unexpected error:', e?.message || e)
+      }
+    })()
+    return () => { cancelled = true }
+  }, []) // רץ פעם אחת בכל פתיחת dashboard
 
   useEffect(() => {
     const ch = supabase.channel('announcements-trainer')
@@ -303,8 +429,8 @@ export default function TrainerDashboard({ profile, isAdmin }) {
             </div>
           )}
 
-          {activeTab === 'reports' && isAdmin && (
-            <ReportsManager isAdmin={isAdmin} />
+          {activeTab === 'reports' && (
+            <ReportsManager isAdmin={isAdmin} profile={profile} />
           )}
 
           {activeTab === 'coaches' && isAdmin && (

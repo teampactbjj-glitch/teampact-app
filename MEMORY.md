@@ -1,8 +1,320 @@
 # MEMORY - TeamPact App
 
-> ## 🟡 Session 06.05.2026 — שלב 2 שלם: אירועי קידום + דוח + Backfill + פתיחה למאמן + Lazy execution + באנרי מתאמן
+## ✅ תיקון נתונים — 07.05.2026 — שם שיעור יום שלישי 18:00 בחולון-בג'י
+
+**סטטוס:** הסתיים. דודי אישר "עובד".
+
+- **שיעור:** יום שלישי 18:00, סניף "חולון - בג'י" (id: `274936fb-2268-4931-ae50-264273bcec60`)
+- **שינוי:** `ג'יוג'יטסו גי` → `ג'יוג'יטסו גי נוער`
+- **SQL שרץ:** `UPDATE classes SET name = 'ג''יוג''יטסו גי נוער' WHERE id = '274936fb-2268-4931-ae50-264273bcec60';`
+- **קוד:** לא נגענו. תיקון נתונים בלבד.
+- **לקח:** הסניף שדודי קורא לו "בלוז" נקרא ב-DB **"חולון - בג'י"** — לזכור למיפוי הבא.
+
+---
+
+## 🟡 My last pending task — 07.05.2026 — הוספת מנוי "1× שבוע (באישור מנהל)"
+
+**סטטוס:** קוד מוכן + build עבר. **לא נדחף לפרודקשן** — ממתין לבדיקה לוקאלית של דודי + הרצת SQL ב-Supabase.
+
+### מה השתנה (10 קבצים)
+| קובץ | שינוי |
+|---|---|
+| `src/components/RegisterPage.jsx` | תווית '1× שבוע' ב-SUB_LABELS + option חדש בטופס "1× שבוע (באישור מנהל בלבד)" |
+| `src/components/trainer/AthleteManagement.jsx` | MEMBERSHIP_LABELS + SESSION_LIMITS=1 + option בדרופדאון |
+| `src/components/athlete/AthleteDashboard.jsx` | SUBSCRIPTION_LIMITS + SUBSCRIPTION_LABELS + totalSessionsAllowed + option בבקשת שינוי מנוי |
+| `src/components/athlete/ClassSchedule.jsx` | SUBSCRIPTION_LIMITS=1 |
+| `src/components/trainer/TodayClasses.jsx` | WEEKLY_LIMITS=1 + תווית בשני אזורי תצוגה |
+| `src/components/trainer/LeadsManager.jsx` | SUB_LABELS |
+| `src/components/trainer/ReportsManager.jsx` | SUB_LABELS |
+| `src/components/trainer/ProfileChangeRequests.jsx` | SUB_LABELS |
+| `src/components/trainer/ImportAthletes.jsx` | MEMBERSHIP_MAP (1, 1x, פעם, פעם בשבוע) + MEMBERSHIP_LABELS |
+| `src/lib/supabase-schema.sql` | check constraint על profiles.subscription_type |
+| `supabase/migrations/2026-05-07-add-1x-week-subscription.sql` | **קובץ חדש** — מיגרציה לפרודקשן |
+
+### מה נשאר לדודי
+1. **להריץ SQL ב-Supabase SQL Editor** (התוכן בתשובה למעלה).
+2. **בדיקה לוקאלית** ב-`localhost:5173` — לוודא שטופס ההצטרפות מציג את האופציה.
+3. **לאשר ל-Claude לדחוף** ל-main.
+
+---
+
+> ## 🎯 הסשן הבא צפוי: מבחני דרגות שנתיים לילדים (יוני)
 >
-> **My last pending task:** **כל הקוד נכתב ועבר parser**. דודי בדק tester-trainer view, עבד. עכשיו צריך **רק build + push לפרודקשן**, אחרי שדודי בודק לוקאלית את 2 השלבים האחרונים (lazy execution + באנרי מתאמן). תרחיש בדיקה: ליצור אירוע עם תאריך עבר (אתמול) → לפתוח dashboard → לראות שהמתאמן מקבל חגורה חדשה ב-DB + announcement יוצר + push נשלח. ואז לבדוק כמתאמן את ה-3 באנרים (planned/promoted).
+> **קונטקסט עסקי:** דודי ביקש שבסשן הבא נטפל במבחני דרגות לילדים (עד גיל 16) פעם בשנה בחודש יוני (לפני חופש גדול שמשפחות טסות). אחוז נשירה גבוה אצל ילדים → המבחן השנתי שכולם עוברים הוא כלי החזרה ומחויבות.
+>
+> **פרומפט מוכן בסוף הקובץ הזה** — דודי אמור להעתיק אותו לסשן חדש.
+>
+> ---
+>
+> ## ✅ Session 06.05.2026 (סיכום מלא — 4 חלקים) — שלב 3: היסטוריית חגורות מלאה
+>
+> **סטטוס:** הסתיים. כל הקוד בפרודקשן. דודי בדק לוקאלית ואישר אחרי כל שלב.
+>
+> ### 📊 רצף הקומיטים
+>
+> | קומיט | תיאור |
+> |---|---|
+> | `1fe7581` | fix: parseHebrewMonthYear עמיד מ-RLM/LRM/ZWSP מגוגל-שיטס |
+> | `7658e27` | feat: כפתור ✏️ עריכת היסטוריה בדוח מועמדים (modal עם BeltHistoryEditor) |
+> | `4f133c3` | feat: שלב 3 — היסטוריית חגורות מלאה (DB + UI + Import) |
+> | `3bf7fb9` | (סשן קודם) feat(promotion): מערכת אירועי קידום מלאה |
+>
+> ### 🧠 מה האפליקציה יודעת היום (מצב נוכחי)
+>
+> 1. **DB:** `members.belt + belt_received_at` (חגורה נוכחית) + טבלה חדשה `belt_history` (כל ההיסטוריה).
+> 2. **PromotionEvents:** אירוע קידום מתוכנן → candidates → lazy execution ביום אחרי event_date → מעדכן members + INSERT ל-belt_history עם source='promotion' + event_id.
+> 3. **ImportBelts:** קובץ Excel עברי → upsert לכל החגורות שמולאו → עמיד ל-RLM/LRM של Google Sheets.
+> 4. **Timeline אצל מתאמן:** "📜 ההיסטוריה שלי" — נקודות צבעוניות עם תאריך, החגורה הנוכחית בולטת.
+> 5. **עורך היסטוריה למנהל:** inline ב-AthleteManagement + modal עם ✏️ בדוח קידום.
+> 6. **Backfill מדויק:** דוח קידום משתמש ב-MIN(received_at) מ-belt_history במקום belt_received_at הגולמי.
+>
+> ### ⚠️ פתוח להמשך
+>
+> 1. **המתאמן הבודד שלא רשום באפליקציה** — לזכור להוסיף ידנית כשיירשם.
+> 2. **RLS חזק יותר ל-belt_history** (defense-in-depth) — לא קריטי כרגע.
+> 3. **בדיקה עמוקה של backfill** — דודי לא הספיק לאמת שמתאמנים עם תאריך ישן מ-Excel מקבלים years_on_belt נכון בדוח.
+>
+> ### 📚 לקחים מצטברים
+>
+> 1. **תווי כיוון בלתי-נראים מ-Excel/Sheets** — תמיד להסיר RLM/LRM/ZWSP/BOM לפני regex של עברית.
+> 2. **`String.prototype.trim()`** לא חותך directional marks. צריך `.replace(/[​-‏‪-‮⁠﻿]/g, '')` ידנית.
+> 3. **upsert ב-supabase-js** — `ignoreDuplicates: true` לאי-דריסה, `false` לעדכון.
+> 4. **Vite build ב-sandbox** — תמיד `--outDir /tmp/X --emptyOutDir`.
+> 5. **git index.lock** — לתת לדודי בלוק מאוחד עם `rm -f .git/index.lock` בתחילתו.
+> 6. **לעולם לא RLS עם `SELECT FROM auth.users`** — דורש GRANT שאין למשתמשים. תמיד `auth.jwt() ->> 'email'`.
+>
+> ### 🥋 פרומפט לסשן הבא — מבחני דרגות שנתיים לילדים (יוני)
+>
+> ```
+> שלום, ממשיכים ב-TeamPact App. הסשן הבא: מבחני דרגות שנתיים לילדים.
+>
+> קודם תקרא את MEMORY.md בתיקיית הפרויקט (/Users/dudibenzaken/teampact-app/MEMORY.md).
+> שם תועד הסטטוס המלא של 4 הסשנים האחרונים. הקומיט האחרון בפרודקשן הוא 1fe7581.
+>
+> הקונטקסט העסקי:
+> 1. אצל ילדים (מבוגרים: 16+, ילדים: 4-15) אחוזי הנשירה גבוהים — המבחן השנתי שכולם עוברים הוא כלי החזרה ומחויבות.
+> 2. המבחן בחודש יוני, לפני חופש גדול (משפחות טסות לחו"ל ועלולות לנשור).
+> 3. **כל ילד עובר** את המבחן — לא רק "המוכנים".
+> 4. הילדים מועברים בקטגוריות החגורות הקיימות: kids_white → kids_gray_white → kids_gray → kids_gray_black → kids_yellow_white → ... → kids_green_black (13 רמות סה"כ).
+>
+> מה כבר יש באפליקציה:
+> - PromotionEvents — מערכת אירועי קידום (מהסשן הקודם). כל אירוע עם event_date + candidates + lazy execution.
+> - belt_history — היסטוריה מלאה של כל חגורה.
+> - PROMOTION_THRESHOLDS לילדים: years=0.7, units=60 לכל חגורה (ב-ReportsManager.jsx).
+> - דוח קידום עם 4 פילטרים: בשלים, מתקרבים, עוד מוקדם, הכל. ללילדים זה כבר עובד אבל הסף הוא רק שנים+יחידות.
+>
+> מה אני רוצה שתבנה:
+>
+> 1. **תבנית "מבחן דרגות שנתי" (event template)**
+>    - אופציה ב-PromotionEvents ליצור אירוע מסוג מיוחד "מבחן דרגות ילדים — יוני YYYY".
+>    - לחיצה על כפתור "🧒 צור מבחן ילדים" → המערכת **מסמנת אוטומטית** את כל מתאמני kids (`belt_category='kids'`) שאינם deleted, status active, כ-candidates.
+>    - כל candidate מקבל target = החגורה הבאה לפי PROMOTION_THRESHOLDS[m.belt].next.
+>    - חריגים: ילד שלא הגיע ל-X% מהאימונים הצפויים — סטטוס='not_promoted' אוטומטית (לא יקודם, אבל יתועד שלא עבר).
+>
+> 2. **דוח "מועמדים למבחן" — view נפרד לילדים**
+>    - בדוחות → טאב חדש או הרחבה של דוח קידום: רק ילדים, מקובצים לפי חגורה נוכחית.
+>    - כל ילד עם: % נוכחות מאז קבלת החגורה, ציון יציבות (האם הגיע באופן עקבי), המלצה (יקודם / לבדיקה / מחכה).
+>    - שונה מ-PROMOTION_THRESHOLDS הרגיל — אצל ילדים זה לא "ספים" אלא "מי לא יקודם בגלל אי-נוכחות".
+>
+> 3. **תזכורות (push + announcement)**
+>    - חודש לפני המבחן (מאי) — push לכל הורי הילדים: "מבחן הדרגות מתקרב. הילד שלך עבר X אימונים. צריך לפחות Y עד יוני."
+>    - שבוע לפני — push: "תוכן המבחן: [טכניקות]. הגיעו עם חליפה לבנה."
+>    - יום אחרי המבחן — אם הילד קודם → push חגיגי. אם לא קודם → push מעודד "המשך להתאמן, נצליח בשנה הבאה".
+>
+> 4. **דוח נשירה לילדים — preventative**
+>    - בדוחות (רק למנהל ומאמן ילדים): ילדים שלא הגיעו ב-X שבועות אחרונים, מקובץ לפי חודש (מאי = "סיכון נשירה לפני המבחן").
+>    - לחיצה על ילד → push להורים "התגעגענו אליו. המבחן השנתי בעוד X שבועות".
+>
+> 5. **מעבר מ-kids ל-adult בגיל 16**
+>    - שדה חדש ב-members: `birth_date` (date) — אם עוד אין.
+>    - דוח חדש "מעבר לקטגוריית מבוגרים": ילדים שיגיעו לגיל 16 בשנה הקרובה.
+>    - באירוע מבחן יוני — אופציה לסמן את אלה כ-target_belt='white' (מבוגרים) במקום כ-target=kids_X. הם "מסיימים" את הילדים ועוברים למסלול מבוגרים.
+>
+> שאלות הבהרה שאני מבקש שתשאל לפני שתתחיל:
+> - האם birth_date כבר קיים ב-members? אם לא, האם להוסיף אותו (Migration קטן)?
+> - מה הסף האחוז נוכחות שמעליו ילד "מקודם בוודאות" באירוע השנתי?
+> - האם רוצה שכל הילדים יסומנו אוטומטית כ-candidate, או רק מי שהוא בקטגוריית גיל מתאימה (קלות + תוכן המבחן יכול להיות שונה לכל קטגוריית גיל)?
+> - האם המבחן הוא לכל הילדים יחד באותו יום, או חלוקה לקטגוריות גיל (5-7, 8-10, 11-15)?
+> - האם רוצה שהמערכת תייצר תוכן מבחן (טכניקות לפי חגורה) או רק ניהול האירוע?
+>
+> תיצור TodoList עם משימה לכל קומפוננטה. תכבד את הפרוטוקול ב-CLAUDE.md (לא לדחוף לפני שאני מאשר לוקאלית, לכתוב SQL כקופי-פייסט מוכן בתשובה, לציין באיזו תיקייה להריץ פקודות, וכו').
+> ```
+>
+> ---
+>
+> ## ✅ Session 06.05.2026 (חלק 4) — תיקון bug: parseHebrewMonthYear נכשל על RLM
+>
+> **My last pending task:** הסתיים. **קומיט `1fe7581` ב-main + ב-origin/main.** דודי איתר את הבאג, תוקן ונדחף.
+>
+> ### 🐛 הבאג שהתגלה
+>
+> דודי הבחין שעידן אמיטין מופיע באפליקציה כ-`belt='white'` למרות שב-Excel רשום: לבן 2017 + **כחולה ינואר 2026**. החקירה גילתה:
+>
+> ```
+> Row 88 ב-Excel: ['עידן אמיטין ', '2017', '‏ינואר 2026 ', ...]
+> ```
+>
+> ה-`‏` הוא **U+200F (RIGHT-TO-LEFT MARK)** — תו כיוון בלתי-נראה שגוגל-שיטס מוסיף אוטומטית לפני טקסט עברי בתאים. הוא **לא נחתך ע"י `.trim()`** של JS (trim חותך רק whitespace רגיל, לא control chars). ה-regex `^([֐-׿]+)\s+(\d{4})$` נכשל כי המחרוזת התחילה בתו לא-עברי. תוצאה: שורת "כחולה" של אמיטין נדלגה בייבוא.
+>
+> ### 🔧 התיקון ב-`src/lib/belts.js`
+>
+> בתחילת `parseHebrewMonthYear`, לפני ה-regex:
+> ```js
+> const s = String(input)
+>   .replace(/[​-‏‪-‮⁠﻿]/g, '')  // RLM, LRM, ZWSP, ZWJ, ZWNJ, BOM
+>   .replace(/ /g, ' ')                                    // NBSP → רווח רגיל
+>   .trim()
+> ```
+>
+> אומת על כל 87 השורות בקובץ של דודי — כולן עוברות אחרי התיקון. אומת ב-Node.js עם 7 test cases (RLM, LRM, NBSP, year-only, standard, header, empty).
+>
+> ### 📁 קבצים שנגעו
+>
+> | קובץ | מה |
+> |---|---|
+> | `src/lib/belts.js` | הסרת directional marks + NBSP בתחילת parseHebrewMonthYear |
+>
+> ### ⚠️ פעולה מתבקשת (אחרי Vercel deploy)
+>
+> דודי בחר אחת מ:
+> - **A:** ייבוא חוזר של אותו Excel — `ignoreDuplicates: true` ידלג על קיים, רק שורת "כחולה" של אמיטין תיווצר. אז `members.belt` תתעדכן ל-blue.
+> - **B:** תיקון ידני דרך BeltHistoryEditor (✏️ בדוח קידום או ב-AthleteManagement) — להוסיף "כחולה ינואר 2026" + לערוך members.belt לידנית.
+>
+> ### 📚 לקח לסשנים הבאים
+>
+> 1. **תווי כיוון בלתי-נראים מ-Google Sheets/Excel** — בכל parser של טקסט עברי שבא מ-spreadsheet, **חובה** להסיר את הטווחים `​-‏‪-‮⁠﻿` לפני ה-regex. גם NBSP (` `) לא נחתך ע"י trim().
+> 2. **`String.prototype.trim()` חותך רק ASCII whitespace + Unicode whitespace** (כולל NBSP בעצם, אבל לא directional marks). RLM/LRM/ZWSP **לא נחתכים**.
+> 3. **דרך לאתר את הבאג מהר:** `python3 openpyxl.load_workbook + repr(cell_value)` — `repr` מציג escape sequences כמו `‏` שאחרת בלתי-נראים.
+>
+> ---
+>
+> ## ✅ Session 06.05.2026 (חלק 3) — תוספת: כפתור עריכת היסטוריה בדוח מועמדים
+>
+> **My last pending task:** הסתיים. **קומיט `7658e27` ב-main + ב-origin/main.** דודי בדק לוקאלית, אישר שעובד, ואז דחפנו.
+>
+> ### 🎯 מה נבנה (בעקבות בקשה של דודי)
+>
+> דודי הצביע על UX issue: בדוח "מועמדים לקידום" אם רואים שורה עם תאריך/דרגה לא נכונים, הדרך היחידה לתקן הייתה לחזור ל-AthleteManagement ולחפש את המתאמן ידנית. תוקן: כפתור ✏️ בכל שורה.
+>
+> - **ReportsManager.jsx** — הוסף:
+>   - import של `BeltHistoryEditor`.
+>   - state חדש `editingHistoryMember = null | {id, name, category}`.
+>   - עמודה חדשה "✏️" בכותרת הטבלה (`<th className="p-2 text-center">✏️</th>`).
+>   - תא חדש בכל שורה עם כפתור 🖊 — מוצג **רק אם** `isAdmin || (myAthleteIds && myAthleteIds.has(r.member.id))`. כלומר admin רואה את כולם, מאמן רגיל רואה רק על המתאמנים שלו.
+>   - modal בתחתית הקומפוננטה (לפני `</div>` הסגירה הסופית) — overlay שחור + פנים לבן עם `BeltHistoryEditor` (ה-modal גם נסגר בלחיצה על overlay).
+>   - כפתור "סגור ורענן דוח" → `setEditingHistoryMember(null); fetchAll()` כדי שהתאריך החדש ישתקף מיד.
+>
+> ### 🧠 הכרעה ארכיטקטונית
+>
+> דודי ביקש: "רק מאמן של אותו תלמיד יוכל לערוך, וגם אני המנהל".
+> - **UI filter בלבד:** הכפתור ✏️ מוצג רק אם המאמן רלוונטי (`myAthleteIds` כבר מחושב לפי matching של `requested_coach_name === profile.full_name` או `coaches.id === coach_id`).
+> - **RLS לא הוקשח:** עדיין `bh_write_trainer` מאפשר לכל מאמן מאושר לכתוב. סיבה: הקשחה תשבור את `lazy execution` של אירועי קידום (כי המאמן שפותח את ה-dashboard לא בהכרח המאמן של המתאמן). אם בעתיד דודי ירצה defense-in-depth — צריך לעדכן את ה-RLS עם בדיקת `members.coach_id` או דומה, ולהוסיף תיקון מקביל ל-lazy execution.
+>
+> ### 📁 קבצים שנגעו
+>
+> | קובץ | מה |
+> |---|---|
+> | `src/components/trainer/ReportsManager.jsx` | עמודה ✏️ + modal עם BeltHistoryEditor + state ניהול |
+>
+> ### 🐛 בעיה חוזרת — git index.lock
+>
+> שוב ה-sandbox לא הצליח להוריד `.git/index.lock`. דודי הריץ ידנית `rm -f .git/index.lock && git add ... && git commit && git push`. **לסשנים הבאים:** מהפעם הראשונה לתת לדודי בלוק קוד אחד מאוחד עם ה-rm + add + commit + push, במקום לנסות ב-sandbox קודם.
+>
+> ---
+>
+> ## ✅ Session 06.05.2026 (חלק 2) — שלב 3 הושלם ונדחף לפרודקשן: היסטוריית חגורות מלאה
+>
+> **My last pending task:** הסתיים. **קומיט `4f133c3` ב-main + ב-origin/main.** 7 קבצים, 502 שורות חדשות. דודי בדק לוקאלית, אישר שעובד, ואז דחפנו. Migration ל-`belt_history` כבר רץ ב-Supabase ב-DB.
+>
+> ### 🎯 מה נבנה
+>
+> 1. **DB: טבלה חדשה `belt_history`**
+>    - שדות: id, member_id (FK ON DELETE CASCADE), belt, belt_stripes (0-4 CHECK), received_at (date), source ('import'/'promotion'/'manual' CHECK), event_id (FK → promotion_events ON DELETE SET NULL), notes, created_at.
+>    - **UNIQUE(member_id, belt, belt_stripes)** — מונע כפילויות בייבוא חוזר.
+>    - INDEX (member_id, received_at DESC) + INDEX על event_id + source.
+>    - RLS: athlete רואה את עצמו (auth.jwt()->>'email'); trainer מאושר רואה הכל; trainer מאושר כותב/מעדכן/מוחק.
+>    - Migration: `src/lib/migration-belt-history.sql`.
+>
+> 2. **ImportBelts.jsx — שדרוג מלא**
+>    - `processRows`: עוברים על **כל** עמודות החגורות (לא רק האחרונה כמו בעבר). לכל שורה נוצר `historyRows: [{belt, received_at}]`.
+>    - תיקון בעיית "חגורה שחורה" + "חגורה שחורה דאן 1": `findHeaderIndexExcluding` עם Set של claimed indices, וסריקה הפוכה (מהדאן הגבוה לכללי) — כך "דאן 1" תופס את העמודה הספציפית לפני ש"שחורה" הכללי תופס את אותה עמודה.
+>    - `commit()`: לכל מתאמן עם action='update' — קודם UPDATE על members.belt (כמו בעבר), ואז `supabase.from('belt_history').upsert(historyPayload, { onConflict: 'member_id,belt,belt_stripes', ignoreDuplicates: true, count: 'exact' })`.
+>    - תצוגה מקדימה: עמודה "היסטוריה" עם 📜 N לכל שורה + תגית כחולה למעלה "📜 היסטוריה: N סך הכל".
+>    - מסך 'done': "עודכנו N מתאמנים · 📜 נשמרו XXX רשומות היסטוריה".
+>
+> 3. **TrainerDashboard.jsx — lazy execution הורחב**
+>    - בלולאת ה-candidates (אחרי UPDATE על members.belt, לפני UPDATE על candidate.status) — `supabase.from('belt_history').upsert({member_id, belt:target_belt, belt_stripes:target_stripes, received_at:event.event_date, source:'promotion', event_id:event.id, notes:'קודם דרך אירוע: ...'}, { onConflict: 'member_id,belt,belt_stripes', ignoreDuplicates: true })`.
+>    - שגיאה ב-belt_history insert לא חוסמת — קודם הצליח ב-members.belt, רק ההיסטוריה לא נשמרה. console.warn ובהמשך הקוד.
+>
+> 4. **ReportsManager.jsx — backfill מדויק יותר**
+>    - הוספתי state `beltHistory` + טעינה ב-`fetchAll` (Promise.all עם 8 ה-rest, fallback אם הטבלה לא קיימת).
+>    - ב-`promotionSuggestions` useMemo: בנוי `earliestByMemberBelt = Map<"${member_id}::${belt}", MIN(received_at)>`.
+>    - חישוב: `historyDate = earliestByMemberBelt.get(`${m.id}::${m.belt}`); effectiveBeltReceivedAt = historyDate || m.belt_received_at`.
+>    - **למה זה חשוב:** מתאמן שקיבל "כחולה ינואר 2018" אבל פס נוסף "כחולה+1 ינואר 2025" — לפני התיקון `belt_received_at=2025` (פחות מ-1 שנה על החגורה!). אחרי התיקון: belt_history נותן 2018 → 7+ שנים.
+>
+> 5. **MyProgressSection.jsx — Timeline למתאמן**
+>    - state חדש `beltHistory` + fetch ב-useEffect: `supabase.from('belt_history').select(...).eq('member_id', athleteId).order('received_at', {ascending:true})`.
+>    - קומפוננטת UI חדשה אחרי כרטיס "🥋 החגורה שלי" (לפני Hero card): כרטיס לבן עם `<ol style={{borderInlineStart:'2px solid #e5e7eb'}}>` — timeline אנכי. כל שורה: נקודה צבעונית (`getBeltMeta(h.belt).color`) עם ✓, טקסט החגורה + תאריך (`formatHebrewMonthYear`).
+>    - השורה האחרונה (אם belt תואם ל-member.belt) — נקודה גדולה יותר, ★ במקום ✓, גופן עבה, תגית "החגורה הנוכחית".
+>
+> 6. **AthleteManagement.jsx + BeltHistoryEditor.jsx — עריכה ידנית למנהל**
+>    - קובץ חדש: `src/components/trainer/BeltHistoryEditor.jsx` (~170 שורות). מציג רשימת היסטוריה למתאמן עם:
+>      - dropdown חגורה (lazy update onChange) + dropdown פסים + שדה תאריך + תווית מקור (📥 ייבוא / 🏆 אירוע קידום / ✍️ ידני) + 🗑.
+>      - כפתור "+ הוסף שורה" → form inline → upsert עם source='manual' (`ignoreDuplicates: false` — מעדכן אם קיים).
+>      - **שורות source='promotion' מוגנות:** select/input disabled, 🗑 disabled עם toast "לא ניתן למחוק שורת קידום".
+>    - import + הצבה ב-AthleteManagement.jsx באזור BJJ section, אחרי שדה "תאריך התחלת BJJ", רק כש-`editing && editing !== 'new'`.
+>
+> ### 📁 קבצים שנגעו (סה"כ הסשן)
+>
+> | קובץ | מה |
+> |---|---|
+> | `src/lib/migration-belt-history.sql` | חדש (DB schema + RLS) |
+> | `src/components/trainer/BeltHistoryEditor.jsx` | חדש (~170 שורות, עורך היסטוריה למנהל) |
+> | `src/components/trainer/ImportBelts.jsx` | קוראים את כל עמודות החגורות + UPSERT ל-belt_history + UI עם 📜 |
+> | `src/components/trainer/TrainerDashboard.jsx` | lazy execution → INSERT ל-belt_history עם source='promotion' + event_id |
+> | `src/components/trainer/ReportsManager.jsx` | fetch belt_history + MIN(received_at) ל-backfill מדויק |
+> | `src/components/athlete/MyProgressSection.jsx` | טעינת היסטוריה + Timeline אנכי "📜 ההיסטוריה שלי" |
+> | `src/components/trainer/AthleteManagement.jsx` | import BeltHistoryEditor + הצבה באזור BJJ section |
+>
+> ### 🐛 baga'ot שצפו במהלך הסשן
+>
+> - **index.lock תקוע ב-.git** — ה-sandbox לא הצליח להוריד אותו, דודי הריץ `rm -f .git/index.lock` ידנית בטרמינל שלו ואז ה-commit עבר.
+> - **build בסביבת sandbox** — `npx vite build` נכשל ב-cleanup של dist (EPERM). פתרון: `--outDir /tmp/teampact_dist_final --emptyOutDir`. ה-build עצמו עבר נקי (104 modules, 1.29s).
+>
+> ### 🎯 ההחלטות שדודי קיבל בסשן
+>
+> 1. **UNIQUE constraint:** (member_id, belt, belt_stripes) — מאפשר עקיבה גם של פסים נפרדים, גם של דאנים נפרדים.
+> 2. **event_id FK:** כן, nullable ON DELETE SET NULL — לעקיבות מאירוע קידום ללא חסימת מחיקת האירוע.
+> 3. **Stripes ב-Excel:** ברירת מחדל 0 לכל שורה מיובאת. דאנים → belt='black_1' עם stripes=0.
+> 4. **פרטיות:** מתאמן רואה רק את עצמו. מאמן/מנהל רואה הכל (RLS).
+> 5. **מתאמן יחיד שלא רשום עדיין** (1 מתוך 87): דודי בחר B — לטפל ידנית אחר כך דרך AthleteManagement → BeltHistoryEditor → "+ הוסף שורה".
+>
+> ### ⚠️ עדיין פתוח / לבדיקה בעתיד
+>
+> 1. **המתאמן הבודד שלא רשום ב-Excel** — דודי צריך לזכור: כשהוא יירשם, להיכנס לעריכה שלו ולהוסיף ידנית את שורות ההיסטוריה דרך BeltHistoryEditor.
+> 2. **בדיקה עמוקה של backfill** — דודי לא הספיק לבדוק את שלב 5 (ReportsManager.jsx). חשוב לבדוק שמתאמנים שיובאו עם תאריך ישן ב-belt_history מקבלים years_on_belt נכון בדוח קידום.
+> 3. **אופציה עתידית:** יצירת שורת members בסטטוס 'archived' אוטומטית בייבוא עבור מתאמנים שלא רשומים — לא נבנה כי רק 1 מ-87 לא רשום. אם בעתיד יהיה ייבוא של 50+ לא-רשומים — שווה לבנות.
+>
+> ### 🔄 הוראות לטעינה מחדש בפרודקשן
+>
+> 1. **Vercel build:** GitHub `main` → Vercel auto-deploy. דודי לבדוק ב-Vercel dashboard שה-build הצליח (~2-3 דקות אחרי push).
+> 2. **PWA cache:** Cmd+Shift+R על המכשיר. אם זה לא עוזר: DevTools → Application → Service Workers → Unregister, ואז reload.
+> 3. **בדיקת sanity בפרודקשן:** להיכנס מהמובייל/דפדפן רגיל ולוודא שהכרטיס "📜 ההיסטוריה שלי" מופיע אצל מתאמן עם היסטוריה.
+>
+> ### 📚 לקחים לסשנים הבאים
+>
+> 1. **Vite build ב-sandbox:** תמיד `--outDir /tmp/X --emptyOutDir` לפלט. הסביבה שלי לא יכולה למחוק קבצים בתיקיית dist הקיימת.
+> 2. **git lock files:** `.git/index.lock` של דודי תקוע — אם sandbox לא יכול להסיר, לבקש ממנו `rm -f .git/index.lock` בטרמינל.
+> 3. **upsert ב-supabase-js:** `ignoreDuplicates: true` עם `count: 'exact'` עובד טוב לבחירה האם לדלג על קיים. עם `ignoreDuplicates: false` הוא יבצע UPDATE.
+> 4. **Hebrew Excel parsing:** "חגורה שחורה" ו"חגורה שחורה דאן 1" — שתיהן יתפסו את אותה עמודה אם משתמשים ב-`includes`. הפתרון: סריקה הפוכה מהספציפי לכללי + Set של claimed indices.
+>
+> ---
+>
+> ## ✅ Session 06.05.2026 — שלב 2 הושלם ונדחף לפרודקשן
+>
+> **My last pending task:** הסתיים. **קומיט `3bf7fb9` ב-main + ב-origin/main.** הכל בפרודקשן. 9 קבצים, 1951 שורות חדשות. דודי אישר שהאפליקציה עובדת בפרודקשן עם הפיצ'רים החדשים.
+>
+> **לקח לסשנים הבאים:** היזהר עם `(SELECT email FROM auth.users …)` ב-RLS — תמיד `auth.jwt() ->> 'email'`. גם, `nextBeltDefault` מציע דאן הבא לחגורות שחורות (לא קופץ לקורל).
 >
 > ### 🆕 המאמצים האחרונים בסשן (אחרי backfill+פתיחה למאמן):
 >

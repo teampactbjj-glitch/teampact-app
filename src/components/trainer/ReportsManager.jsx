@@ -7,7 +7,7 @@ import BeltHistoryEditor from './BeltHistoryEditor'
 import { getBeltMeta, getBeltLabel, ADULT_BELTS, KIDS_BELTS } from '../../lib/belts'
 
 // ===== Helpers =====
-const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
+const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
 // נורמליזציה: lowercase + הסרת גרש/גרשיים/רווחים/מקפים — כדי שכל הצורות
 // (ג׳יו ג׳יטסו / ג'יוג'יטסו / גיוגיטסו / ג'יו גיטסו) ימופו לאותה מחרוזת אחת.

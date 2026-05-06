@@ -4,7 +4,7 @@ import { notifyPush } from '../../lib/notifyPush'
 import { allTrainerUserIds, allAdminUserIds } from '../../lib/notifyTargets'
 import { useToast, useConfirm } from '../a11y'
 
-const WEEKLY_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
+const WEEKLY_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 const DAYS_HE_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
@@ -1290,7 +1290,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                                       )}
                                     </div>
                                     <p className="text-xs text-gray-400 mt-0.5">
-                                      {membershipType === '2x_week' ? '2× שבוע'
+                                      {membershipType === '1x_week' ? '1× שבוע'
+                                        : membershipType === '2x_week' ? '2× שבוע'
                                         : membershipType === '4x_week' ? '4× שבוע'
                                         : membershipType === 'unlimited' ? 'ללא הגבלה'
                                         : membershipType || '—'}
@@ -1369,7 +1370,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                                     {m.full_name}
                                   </p>
                                   <p className="text-xs text-gray-400">
-                                    {mtype === '2x_week' ? '2× שבוע'
+                                    {mtype === '1x_week' ? '1× שבוע'
+                                      : mtype === '2x_week' ? '2× שבוע'
                                       : mtype === '4x_week' ? '4× שבוע'
                                       : mtype === 'unlimited' ? 'ללא הגבלה'
                                       : mtype === 'trial' ? 'ניסיון'

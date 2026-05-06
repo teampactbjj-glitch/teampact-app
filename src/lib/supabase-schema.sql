@@ -7,7 +7,7 @@ create table if not exists profiles (
   email text,
   phone text,
   role text check (role in ('trainer', 'athlete')) default 'athlete',
-  subscription_type text check (subscription_type in ('2x_week', '4x_week', 'unlimited')),
+  subscription_type text check (subscription_type in ('1x_week', '2x_week', '4x_week', 'unlimited')),
   group_name text,
   created_at timestamptz default now()
 );

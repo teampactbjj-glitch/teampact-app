@@ -11,8 +11,8 @@ import MyProgressSection from './MyProgressSection'
 import { useToast, useConfirm } from '../a11y'
 import logoUrl from '../../assets/logo.png'
 
-const SUBSCRIPTION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
-const SUBSCRIPTION_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
+const SUBSCRIPTION_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
+const SUBSCRIPTION_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 const DAYS_HE_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
@@ -904,7 +904,7 @@ function ProfileTab({ profile, member }) {
     setBranchSessions(s => ({ ...s, [id]: n }))
   }
 
-  const totalSessionsAllowed = requestedSub === '2x_week' ? 2 : requestedSub === '4x_week' ? 4 : null
+  const totalSessionsAllowed = requestedSub === '1x_week' ? 1 : requestedSub === '2x_week' ? 2 : requestedSub === '4x_week' ? 4 : null
   // סופרים רק את הסניפים שהמשתמש באמת בחר (מתעלמים מערכים תקועים)
   const totalSelectedSessions = requestedBranchIds.reduce((a, id) => a + (branchSessions[id] || 0), 0)
 
@@ -1131,6 +1131,7 @@ function ProfileTab({ profile, member }) {
           <>
             <select value={requestedSub} onChange={e => setRequestedSub(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <option value="1x_week">1× שבוע</option>
               <option value="2x_week">2× שבוע</option>
               <option value="4x_week">4× שבוע</option>
               <option value="unlimited">ללא הגבלה</option>

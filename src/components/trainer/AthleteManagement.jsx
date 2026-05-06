@@ -8,8 +8,8 @@ import { allAdminUserIds } from '../../lib/notifyTargets'
 import { useToast, useConfirm } from '../a11y'
 import { ADULT_BELTS, KIDS_BELTS, getBeltMeta, getMaxStripes } from '../../lib/belts'
 
-const MEMBERSHIP_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
-const SESSION_LIMITS = { '2x_week': 2, '4x_week': 4, unlimited: Infinity }
+const MEMBERSHIP_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
+const SESSION_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 
 function formatClassOption(cls) {
@@ -458,6 +458,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
 
           <select className="w-full border rounded-lg px-3 py-2 text-sm"
             value={form.membership_type} onChange={e => handleMembershipChange(e.target.value)}>
+            <option value="1x_week">1× שבוע</option>
             <option value="2x_week">2× שבוע</option>
             <option value="4x_week">4× שבוע</option>
             <option value="unlimited">ללא הגבלה</option>

@@ -5,7 +5,7 @@ import { notifyPush } from '../lib/notifyPush'
 import { trainerUserIdsForMember } from '../lib/notifyTargets'
 import { Field } from './a11y'
 
-const SUB_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
+const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
 export default function RegisterPage() {
   const [branches, setBranches] = useState([])
@@ -321,6 +321,7 @@ export default function RegisterPage() {
                 <option value="2x_week">2× שבוע</option>
                 <option value="4x_week">4× שבוע</option>
                 <option value="unlimited">ללא הגבלה</option>
+                <option value="1x_week">1× שבוע (באישור מנהל בלבד)</option>
               </select>
             )}
           </Field>

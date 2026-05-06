@@ -5,6 +5,8 @@ import { useToast } from '../a11y'
 
 // Map Hebrew / various formats → internal membership_type
 const MEMBERSHIP_MAP = {
+  '1': '1x_week', '1x': '1x_week', '1x_week': '1x_week',
+  '1 פעם': '1x_week', 'פעם': '1x_week', 'פעם בשבוע': '1x_week',
   '2': '2x_week', '2x': '2x_week', '2x_week': '2x_week',
   '2 פעמים': '2x_week', 'פעמיים': '2x_week',
   '4': '4x_week', '4x': '4x_week', '4x_week': '4x_week',
@@ -13,7 +15,7 @@ const MEMBERSHIP_MAP = {
   'חופשי': 'unlimited', 'בלתי מוגבל': 'unlimited',
 }
 
-const MEMBERSHIP_LABELS = { '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
+const MEMBERSHIP_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
 // Lookup table: any variant → internal field name
 const HEADER_MAP = {

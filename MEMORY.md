@@ -1,20 +1,370 @@
 # MEMORY - TeamPact App
 
-## ✅ תיקון נתונים — 07.05.2026 — שם שיעור יום שלישי 18:00 בחולון-בג'י
+## ✅ Session 07.05.2026 (NoGi + בקשת אישור דרגה) — COMPLETED
 
-**סטטוס:** הסתיים. דודי אישר "עובד".
+> **My last pending task:** **הפיצ'ר הושלם במלואו ובפרודקשן.** Merge commit `15ca959` ב-main + commit `38f0db4` "feat: NoGi support + athlete belt approval requests". 8 קבצים שונו, 378 שורות נוספו. SQL Migration רץ ע"י דודי לפני ה-push. דודי בדק לוקאלית מ-worktree והאישר שהכל עובד.
 
-- **שיעור:** יום שלישי 18:00, סניף "חולון - בג'י" (id: `274936fb-2268-4931-ae50-264273bcec60`)
-- **שינוי:** `ג'יוג'יטסו גי` → `ג'יוג'יטסו גי נוער`
-- **SQL שרץ:** `UPDATE classes SET name = 'ג''יוג''יטסו גי נוער' WHERE id = '274936fb-2268-4931-ae50-264273bcec60';`
-- **קוד:** לא נגענו. תיקון נתונים בלבד.
-- **לקח:** הסניף שדודי קורא לו "בלוז" נקרא ב-DB **"חולון - בג'י"** — לזכור למיפוי הבא.
+### 📊 הקומיט הבולט
+| קומיט | תיאור |
+|---|---|
+| `38f0db4` | feat: NoGi support + athlete belt approval requests |
+| `15ca959` | Merge commit ל-main |
+
+### 🎯 מה נבנה (סיכום מלא)
+
+**חלק א': תמיכת NoGi (פשוט, כמו שתוכנן)**
+- `members.trains_nogi` boolean — מתאמן יכול לעשות גי, נו-גי, או שניהם.
+- **Gi+NoGi הם אותה הדרגה** — שיעור = יחידה אחת לדירוג, ללא הבדל.
+- AthleteManagement: שני checkboxes (גי / נו-גי), שדות חגורה נשמרים אם אחד מהם true.
+- ReportsManager + PromotionEvents: הוסר הפילטור `trains_gi !== false` → NoGi-בלבד מופיע במועמדים ובדוחות.
+- ImportAthletes: עמודות אופציונליות `trains_gi` / `trains_nogi` (גם ערכים בעברית: כן/לא, גי/נוגי).
+- MyProgressSection: כרטיס חגורה למתאמני NoGi-בלבד + תווית "סוג אימון: גי + נו-גי".
+
+**חלק ב': בקשת אישור דרגה — הוחלט להרחיב את `profile_change_requests` הקיים (לא טבלה חדשה!)**
+- שיקול: מנגנון ה-approval, ה-badge, וה-RLS כבר קיימים. הרחבה = פחות קוד, פחות RLS, חוויה אחידה.
+- 7 עמודות חדשות: `requested_belt`, `requested_belt_stripes`, `requested_belt_received_at`, `requested_bjj_start_date`, `requested_trains_gi`, `requested_trains_nogi`, `prior_academy`.
+- CHECK constraint מורחב: `change_type IN ('email','subscription','belt')`.
+- מתאמן: סקציית טופס בפרופיל (כל השדות + הערה + אקדמיה קודמת) → INSERT עם `change_type='belt'`.
+- Push notification אוטומטית לכל ה-trainers (`allTrainerUserIds`).
+- מנהל: ProfileChangeRequests מציג כרטיס נפרד לבקשת חגורה + פרטים מלאים. ON APPROVE → UPDATE members + UPSERT ל-belt_history (source='manual', `onConflict: 'member_id,belt,belt_stripes'`).
+- ה-badge הקיים בנאבבר ("פניות") כבר ספר את כל ה-`profile_change_requests.status='pending'` — בקשות חגורה נספרות אוטומטית, ללא קוד נוסף.
+
+### 📁 קבצים שנגעו (8 + migration)
+
+| קובץ | מה |
+|---|---|
+| `src/lib/migration-nogi-belt-requests.sql` | חדש — תיעוד ה-DB changes |
+| `src/components/trainer/AthleteManagement.jsx` | dual checkboxes + תיקון לוגיקת ניקוי שדות חגורה |
+| `src/components/trainer/ReportsManager.jsx` | trains_nogi בשליפה + תנאי `trainsBjj = trains_gi OR trains_nogi` |
+| `src/components/trainer/PromotionEvents.jsx` | הסרת `trains_gi !== false` משלושה מקומות |
+| `src/components/trainer/ImportAthletes.jsx` | header map + parseBoolCell + payload |
+| `src/components/trainer/ProfileChangeRequests.jsx` | טיפול ב-`change_type='belt'`, כתיבה ל-belt_history |
+| `src/components/athlete/AthleteDashboard.jsx` | טופס חדש "בקשת אישור דרגה" + תצוגה ב-pending list + push notification |
+| `src/components/athlete/MyProgressSection.jsx` | `showBeltCard = trainsBjj && beltMeta` + תווית "סוג אימון" |
+
+### 🔍 לוגיקת קידום למתאמן NoGi חדש (מענה לשאלת דודי)
+
+המערכת **כבר עושה** בדיוק את הצורה הנכונה — לא צריך שינוי:
+- `belt_received_at` (אם מוצהר) → אבל `units_since_belt = 0` עד שיש 90 ימי תצפית + 5 צ'ק-אינים.
+- חלון התצפית מתחיל מה-checkin **הראשון** (לא מההצטרפות).
+- ציון = `min(years_progress, units_progress)` — השלב החלש קובע, אז גם 5 שנים על החגורה לא יקפיצו אותו ל'ready' אם אין יחידות.
+- אחרי 90 יום + 5 checkins: המערכת מקרינה אחורה ממוצע × `HOLIDAY_FACTOR=0.86` × גאפ היסטורי → `estimated_units` נצבר.
+
+קבועים ב-`ReportsManager.jsx` שורות 931-933:
+```
+HOLIDAY_FACTOR = 0.86
+MIN_OBSERVATION_DAYS = 90
+MIN_OBSERVED_UNITS = 5
+```
+
+### 📚 לקחים מהסשן
+
+1. **הרחבה > טבלה חדשה** — בדקתי תחילה אם יש מנגנון Profile Change Requests קיים, מצאתי שכן, והחלטתי להרחיב במקום לשכפל. חסך RLS חדש, badge חדש, UI חדש. **זה היה השיקול הנכון** — המנהל יראה את כל הבקשות (email/sub/belt) במקום אחד.
+2. **`DO $$ ... EXCEPTION WHEN OTHERS THEN NULL`** ל-CHECK constraint — דפוס ידידותי לתנאי "אם קיים, הסר; הוסף חדש; אם משהו נכשל בדרך, השתק". בטוח להריץ פעמיים.
+3. **`upsert` עם `onConflict: 'member_id,belt,belt_stripes', ignoreDuplicates: true`** — `belt_history` יש לו UNIQUE constraint על השלשה. אישור חוזר של אותה דרגה = no-op בשקט.
+4. **שמירת שדות חגורה כש-trains_gi=false** — שינוי זה נדרש כי אחרת מתאמן NoGi-בלבד היה מאבד חגורה. הלוגיקה החדשה: "אם trains_gi=true OR trains_nogi=true → שמור". מומלץ לזכור את זה אם פעם נוספים שדות חדשים בעתיד.
+5. **למתאמן `profile.id === member.id`** — דפוס קיים בקוד. ה-INSERT לבקשה משתמש ב-`profile.id`, ה-UPDATE של המנהל ב-`req.athlete_id` כ-`members.id` — וזה עובד.
+
+### ⚠️ דבר אחד שדודי הזכיר ואני נזהר ממנו בעתיד
+> "אין צורך [בבקרה נוספת] כי בכל מקרה אני קובע אם הם באמת יקודמו... המערכת רק מזכירה לי ועוזרת לי"
+
+→ במשימות עתידיות שעוסקות באוטומציה של החלטות (קידום, מחיקה, אישור) — לא לבנות בקרות על-בקרות. דודי הוא ה-final approver. המערכת היא tool, לא decision-maker.
 
 ---
 
-## 🟡 My last pending task — 07.05.2026 — הוספת מנוי "1× שבוע (באישור מנהל)"
+## ✅ Session 07.05.2026 (מבחני דרגות ילדים — מלא) — COMPLETED
 
-**סטטוס:** קוד מוכן + build עבר. **לא נדחף לפרודקשן** — ממתין לבדיקה לוקאלית של דודי + הרצת SQL ב-Supabase.
+> **My last pending task:** **הפיצ'ר הושלם במלואו ובפרודקשן.** קומיט `cf7ae2d` ב-main: "feat: kids annual belt test — UI + promotion readiness". **חלק א' (DB)** נבנה ב-Cowork (4 SQLs ב-Supabase). **חלק ב' (UI)** נבנה בסשן Claude Code נפרד שדודי הריץ — 9 קבצים, 2004 שורות, כולל בונוסים שלא היו בתכנון המקורי.
+>
+> **בקשה חדשה שנפתחה בסוף הסשן:** דודי ביקש מבנה חגורות מקביל ל-NoGi (אותן חגורות כמו Gi, אותם ספי קידום). תועד בסקציה "🆕 בקשה חדשה" למטה. סשן נפרד.
+
+### 📊 רצף הקומיטים בסשן הזה
+
+| קומיט | תיאור |
+|---|---|
+| `cf7ae2d` | feat: kids annual belt test — UI + promotion readiness (Claude Code, 9 קבצים, 2004 שורות) |
+| `225530e` / `14abf64` | feat: add 1x_week subscription option (admin approval only) — לא קשור למבחני ילדים |
+| `ecf5eaf` | fix(TodayClasses): stop horizontal flicker on date slider |
+
+### 🏗️ מה Claude Code בנה בקומיט cf7ae2d
+
+| קובץ | תוספות | מה |
+|---|---|---|
+| `PromotionEvents.jsx` | +595 | כפתור "צור מבחן ילדים יוני" + `KidsAnnualTestCreator` modal + סינון מתאמנים לפי סניף + קיבוץ לקבוצות |
+| `ReportsManager.jsx` | +700 | 4 SectionCards: "מוכנים לקידום ילדים" (לפי גיל IBJJF + 6 חודשים), "מבחן יוני", "סיכון נשירה", "מעבר לבוגרים". סיכום להזמנת חגורות בתחתית. |
+| `AnnouncementsManager.jsx` | +103 | 3 קיצורי push למבחן ילדים (חודש לפני / שבוע לפני / יום אחרי) |
+| `AthleteManagement.jsx` | +27 | שדה `birth_date` + גיל מחושב |
+| `ImportAthletes.jsx` | +89 | תמיכה ב-`birth_date`, `belt`, `belt_category`, `belt_received_at` בייבוא |
+| `belts.js` | +111 | helpers + **בונוס:** `KIDS_BELT_MIN_AGE` + `KIDS_MIN_MONTHS_AT_BELT` (חוקים על גיל מינימום וזמן מינימלי בחגורה) |
+| `migration-kids-annual-test.sql` | +141 | (Cowork) טבלת syllabus + birth_date + הרחבת promotion_events/candidates |
+| `seed-belt-test-syllabus.sql` | +193 | (Cowork) 4 משפחות חגורה |
+| `migration-syllabus-level-notes.sql` | +70 | (Cowork) entry/mid/top + תיקון "tap"/"X" |
+
+### 🧠 מה האפליקציה יודעת היום (מצב נוכחי)
+
+1. **DB:** טבלה חדשה `belt_test_syllabus` (4 משפחות gray/yellow/orange/green עם content+level_notes). שדה `members.birth_date`. הרחבת `promotion_events` עם `event_type` ו-`class_id` ו-`attendance_threshold`. הרחבת `promotion_candidates` עם `attendance_pct`, `attendance_recommendation`, `target_to_adult`. VIEW `kids_active`.
+2. **PromotionEvents:** כפתור "🧒 צור מבחן ילדים יוני" → KidsAnnualTestCreator → בחירת classes → יצירת event_type='kids_annual_test' עם candidates אוטומטיים.
+3. **ReportsManager:** 4 SectionCards חדשים (מוכנים לקידום ילדים, מבחן יוני, סיכון נשירה, מעבר לבוגרים) + סיכום הזמנת חגורות.
+4. **AthleteManagement:** birth_date אופציונלי + גיל מחושב.
+5. **ImportAthletes:** תמיכה מלאה ב-birth_date+belt בייבוא.
+6. **AnnouncementsManager:** 3 push מהירים למבחן ילדים.
+7. **belts.js helpers:** `getBeltFamily`, `getBeltLevelPosition`, `getSyllabusKeyForTarget` + `KIDS_BELT_MIN_AGE` + `KIDS_MIN_MONTHS_AT_BELT`.
+
+### 📚 לקח מצטבר חדש
+
+**Cowork ↔ Claude Code לא משתפים זיכרון אוטומטית.** MEMORY.md הוא "פרוטוקול הסנכרון" היחיד ביניהם. **חובה** לעדכן MEMORY.md בסיום כל סשן — אם CC עבד ולא עדכן, ה-Cowork הבא יחשוב שהמצב לא התקדם. בסשנים הבאים, להזכיר ל-CC במפורש לעדכן MEMORY.md לפני שהוא דוחף.
+
+### 📌 הקונטקסט (מהפרומפט של דודי + שאלות הבהרה)
+
+מבחני דרגות שנתיים לילדים בחודש יוני (לפני חופש גדול שמשפחות טסות). אחוז נשירה גבוה אצל ילדים → המבחן השנתי שכולם עוברים הוא כלי החזרה. **כל ילד עובר**, לא רק "המוכנים". 13 רמות חגורות ילדים.
+
+### ✅ תשובות דודי לשאלות הבהרה
+
+| שאלה | תשובה |
+|---|---|
+| `birth_date`? | **A** — Migration nullable, UI אופציונלי, ממלא בהדרגה |
+| סף נוכחות לקידום? | **המלצה בלבד** — 60% threshold, מסמן 🟡 לבדיקה, לא חוסם |
+| מבנה אירוע מבחן? | **אירוע נפרד לכל `classes` של ילדים שמתוכנן ביוני** (לפי לוח השעות) |
+| תוכן מבחן? | **PDF הועלה** — סילבוס לפי משפחת חגורה (gray/yellow/orange/green) |
+| הבדל בין דרגות באותה משפחה? | **C** — סילבוס משפחתי + שדה `level_notes` (entry/mid/top) |
+
+### 🗄️ DB Migration — 3 קבצים נכתבו ורצו ב-Supabase
+
+1. **`src/lib/migration-kids-annual-test.sql`** — בלוק #1:
+   - טבלה חדשה `belt_test_syllabus` (id, belt_family, age_range_label, display_order, content jsonb, level_notes jsonb, ...) + RLS (כל מאומת קורא, מאמן מאושר כותב).
+   - `members.birth_date date NULL` + index.
+   - הרחבת `promotion_events`: `event_type` (`'regular'`/`'kids_annual_test'`), `class_id` (FK→classes), `attendance_threshold` (numeric 0-1).
+   - הרחבת `promotion_candidates`: `attendance_pct`, `attendance_recommendation` (`'promote'`/`'review'`/`'not_evaluated'`), `target_to_adult` (boolean), `expected_sessions`, `attended_sessions`.
+   - VIEW `kids_active` — נוחות לשליפת ילדים פעילים עם age_years מחושב.
+
+2. **`src/lib/seed-belt-test-syllabus.sql`** — בלוק #2: 4 שורות סילבוס עם תוכן ה-PDF (sections: תרגול תנועתי / פוזיציות / הטלות / הכנעות / מעברי גארד / סוויפים / בריחים-וחניקות).
+
+3. **`src/lib/migration-syllabus-level-notes.sql`** — בלוק #3: שדה `level_notes` (jsonb עם entry/mid/top) + UPDATE עם הערות ברירת מחדל ל-4 המשפחות (3 הערות לכל משפחה = איכות עולה: בסיסי → בינוני → גבוה).
+
+4. **בלוק #4 (תיקון inline ב-Supabase, לא קובץ נפרד):**
+   - **צהובה:** `level_notes.entry`: "עוצר ב-tap" → "עוצר בסימן כניעה" (דודי ביקש מילה ברורה בעברית).
+   - **ירוקה:** כל מופע של `X` בעברית הוחלף ל`איקס`. ב-`content`: "סינגל X" → "סינגל איקס (Single X)", "מסינגל X" → "מסינגל איקס". ב-`level_notes.entry`: "סינגל X" → "סינגל איקס". (דודי ראה ב-Supabase תצוגה כאילו "דלהיבא X" זה צירוף אחד; התיקון מוודא שלא יהיה בלבול.)
+   - הקבצים `seed-belt-test-syllabus.sql` ו-`migration-syllabus-level-notes.sql` עודכנו בריפו בהתאם.
+
+### 🔧 belts.js — helpers חדשים
+
+נוספו 5 פונקציות בסוף `src/lib/belts.js`:
+- `getBeltFamily(beltValue)` — `'kids_gray_white'` → `'gray'`
+- `getBeltLevelPosition(beltValue)` — `'kids_gray_white'` → `'entry'`, `'kids_gray'` → `'mid'`, `'kids_gray_black'` → `'top'`
+- `getBeltFamilyLabel(family)` — `'gray'` → `'אפורה'`
+- `getBeltFamilyColor(family)` — `'gray'` → `'#6b7280'`
+- `getSyllabusKeyForTarget(targetBelt)` — מחזיר `{family, level}` לחיפוש ב-syllabus
+- `getLevelLabel(level)` — `'entry'` → `'דרגת כניסה'`
+
+### ⏭️ נשאר לעשות (UI — סשן הבא)
+
+| # | קומפוננטה | מה לבנות |
+|---|---|---|
+| 3 | `PromotionEvents.jsx` | כפתור "🧒 צור מבחן ילדים יוני" → modal עם רשימת `classes` של ילדים ביוני 2026 → checkbox לכל אחד → יצירת אירוע `event_type='kids_annual_test'` עם `class_id` + candidates אוטומטיים מ-registrations + חישוב `attendance_pct` + `attendance_recommendation` (לפי `attendance_threshold=0.6`) |
+| 4 | `ReportsManager.jsx` | טאב חדש "🥋 מבחן יוני" — דוח candidates של אירועי kids_annual_test, מקובץ לפי class → חגורה, עם % נוכחות + סטטוס המלצה + סילבוס המתאים מ-`belt_test_syllabus` (תצוגת `level_notes` לדרגה הספציפית) + כפתורי "אשר/פס נוסף/לא מקודם" |
+| 5 | `ReportsManager.jsx` | טאב "⚠️ סיכון נשירה לילדים" — kids_active שלא היה checkin שלהם 3+ שבועות, מקובץ לפי שבועות-מאז-checkin, עם כפתור "📱 שלח push להורים" |
+| 6 | `ReportsManager.jsx` | טאב "🎓 מעבר לבוגרים השנה" — ילדים שיגיעו לגיל 16 בין 1.6.YYYY ל-31.5.YYYY+1 (משתמש ב-VIEW `kids_active.age_years`) + כפתור "סמן כעובר לבוגרים במבחן יוני" שמשנה `candidate.target_to_adult=true, target_belt='white'` |
+| 7 | `AthleteManagement.jsx` | שדה `birth_date` בעריכת מתאמן (modal) + הצגת גיל מחושב |
+| 8 | `AnnouncementsManager.jsx` | 3 קיצורים מהירים: "📅 חודש לפני המבחן" / "🥋 שבוע לפני (תוכן הסילבוס)" / "🎉 יום אחרי המבחן" — טמפלייטים שפונים רק להורי kids_active. הסילבוס משולב מ-belt_test_syllabus. |
+| 9 | בדיקה+דחיפה | `npm run build` (ב-`/Users/dudibenzaken/teampact-app`), אישור דודי לוקאלית, push origin main |
+
+### 💡 הערות חשובות לסשן הבא
+
+1. **lazy execution קיים ב-TrainerDashboard** — צריך להרחיב אותו לטיפול ב-`event_type='kids_annual_test'` (אם הילד יקודם → גם UPDATE ל-`belt_category='adult'` ו-`belt='white'` כש-`target_to_adult=true`).
+2. **חישוב attendance_pct**: לאתר את `belt_received_at` של הילד, לספור registrations.created_at >= belt_received_at AND class scheduled_at <= today, לספור checkins של אותו ילד מבין הרישומים האלה. attendance_pct = checkins / registrations.
+3. **כש-target_to_adult=true** ב-candidate, ה-UI של דוח המבחן יציג "🎓 עובר לבוגרים" במקום החגורה הבאה הרגילה.
+4. **PROMOTION_THRESHOLDS לילדים**: years=0.7, units=60 — קיים ב-ReportsManager.jsx, **לא לשנות**, רק להוסיף לידו את חישוב ה-attendance.
+5. **kids_white** — אין סילבוס לחגורת ההתחלה. הקידום הראשון (`kids_white → kids_gray_white`) משתמש בסילבוס אפורה + level=entry.
+6. **PDF המקור** ב-uploads: `סילבוס למבחני חגורות ילדים -9a966041.pdf` (כדאי לזכור לסשן הבא).
+
+### 🆕 בקשה פתוחה — תמיכת NoGi + בקשת אישור דרגה (סשן הבא)
+
+**אישור מלא דודי 07.05.2026 — הארכיטקטורה הסופית:**
+
+#### 🎯 העיקרון המרכזי: דרגה אחת + יחידות משותפות
+
+**Gi ו-NoGi הם אותה הדרגה** — לא 2 דירוגים נפרדים! אם מתאמן עושה **2 שיעורי Gi + 2 שיעורי NoGi = 4 יחידות אימון** לאותו דירוג. זה מקדם אותו בחגורה.
+
+**מסקנות ארכיטקטוניות (חשוב!):**
+- ❌ **לא** צריך שדות מקבילים `nogi_belt`, `nogi_belt_received_at`, `nogi_belt_stripes`, `nogi_start_date`.
+- ❌ **לא** צריך `PROMOTION_THRESHOLDS_NOGI` נפרד.
+- ❌ **לא** צריך `discipline` ב-`belt_history` או `promotion_events`.
+- ✅ צריך רק שדה `trains_nogi` (boolean, לתיוג: "המתאמן הזה גם עושה NoGi").
+- ✅ **הסרת הפילטור** `trains_gi !== false` בכל מקום בקוד — NoGi-בלבד יקבל belt וייספרו לו יחידות מ-checkins של שיעורי NoGi בדיוק כמו Gi.
+- ✅ classes.trains_gi מציין רק את סוג השיעור — לא משפיע על חישוב היחידות (כל שיעור = יחידה).
+
+#### 🆕 פיצ'ר חדש נוסף: בקשת אישור דרגה מהמתאמן
+
+מתאמן חדש (במיוחד NoGi-בלבד או שהגיע מאקדמיה אחרת) יוכל לרשום בפרופיל שלו:
+- "אני מתאמן BJJ מאז [תאריך]" → `bjj_start_date`
+- "החגורה הנוכחית שלי היא [white/blue/purple/...]" → `belt`
+- (אופציונלי: כמה פסים, איפה התאמן קודם)
+
+**Flow:**
+1. מתאמן ממלא בפרופיל שלו את הנתונים → סטטוס `pending_approval`.
+2. **המנהל (דודי) מקבל התראה** (push + announcement + badge בדשבורד).
+3. דודי מאשר/דוחה.
+4. אם מאשר → הנתונים נכתבים ל-`members.belt`, `members.belt_received_at`, `members.bjj_start_date` + INSERT ל-`belt_history`.
+5. אם דוחה → המתאמן מקבל הודעה.
+
+**קיים? לבדוק:** ב-Supabase ראיתי tab "Extend Profile Change Requests Tab" — אולי יש כבר מערכת בקשות פרופיל. CC יבדוק אם להרחיב את הקיים או לבנות חדשה.
+
+#### 🗄️ Migration נדרש (פשוט מאוד)
+
+```sql
+-- 1. שדה trains_nogi (לתיוג בלבד)
+ALTER TABLE members ADD COLUMN IF NOT EXISTS trains_nogi boolean DEFAULT false;
+CREATE INDEX IF NOT EXISTS idx_members_trains_nogi ON members(trains_nogi) WHERE trains_nogi = true;
+
+-- 2. בקשות אישור דרגה (אם לא קיים מנגנון דומה כבר)
+CREATE TABLE IF NOT EXISTS belt_approval_requests (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id       uuid NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  requested_belt           text NOT NULL,
+  requested_belt_stripes   int  DEFAULT 0,
+  requested_belt_received_at date,
+  requested_bjj_start_date date,
+  trains_gi       boolean DEFAULT true,
+  trains_nogi     boolean DEFAULT false,
+  prior_academy   text,         -- אופציונלי
+  notes           text,
+  status          text NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending','approved','rejected')),
+  reviewed_by     uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  reviewed_at     timestamptz,
+  rejection_reason text,
+  created_at      timestamptz DEFAULT now()
+);
+-- + RLS: athlete רואה+יוצר רק את שלו, trainer מאושר רואה+מעדכן הכל
+```
+
+#### 📝 קומפוננטות UI שצריך לעדכן/לבנות
+
+| # | קובץ | מה |
+|---|---|---|
+| 1 | `AthleteManagement.jsx` | להוסיף checkbox `trains_nogi` (ליד `trains_gi` הקיים) |
+| 2 | **כל המסננים** ב-`PromotionEvents.jsx` ו-`ReportsManager.jsx` עם `trains_gi !== false` | לשנות ל-`trains_gi !== false \|\| trains_nogi !== false` (או פשוט להסיר הגבלה ולתת חגורה לכל מתאמן) |
+| 3 | `AthleteDashboard.jsx` או `MyProfile.jsx` | טופס "בקש דרגה" → INSERT ל-belt_approval_requests |
+| 4 | חדש: `BeltApprovalManager.jsx` (מנהל) | רשימת בקשות pending + כפתורי אשר/דחה. ON APPROVE: UPDATE members + INSERT belt_history. |
+| 5 | `TrainerDashboard.jsx` | badge "X בקשות חגורה ממתינות" |
+| 6 | `AnnouncementsManager.jsx` או notification system | התראה אוטומטית למנהל בכל בקשה חדשה |
+| 7 | `ImportAthletes.jsx` | להוסיף עמודה אופציונלית `trains_nogi` |
+
+### 🥋 פרומפט מלא לסשן הבא ב-Claude Code
+
+```
+שלום, ממשיכים ב-TeamPact App. הסשן: תמיכת NoGi + בקשת אישור דרגה.
+
+קודם תקרא את MEMORY.md בתיקיית הפרויקט (/Users/dudibenzaken/teampact-app/MEMORY.md).
+תקרא במיוחד את הסקציה "🆕 בקשה פתוחה — תמיכת NoGi + בקשת אישור דרגה" שמכילה את כל
+הארכיטקטורה המאושרת, הצעת ה-Migration, ורשימת הקומפוננטות.
+
+הקומיט האחרון בפרודקשן הוא cf7ae2d (מבחני ילדים יוני).
+
+# הקשר עסקי
+
+יש לי 3 סוגי מתאמנים באקדמיה:
+1. רק Gi (כיום נתמך)
+2. רק NoGi (כיום נמצאים במערכת אבל בלי דירוג חגורות — בעיה!)
+3. שניהם (כיום מקבלים דירוג רק על Gi)
+
+**העיקרון המרכזי: Gi ו-NoGi הם אותה הדרגה.**
+מתאמן שעושה 2 שיעורי Gi + 2 שיעורי NoGi בשבוע = 4 יחידות אימון לאותה דרגה. זה מקדם אותו בחגורה.
+לא 2 דירוגים נפרדים, רק דירוג אחד עם יחידות משותפות.
+
+# מה לבנות
+
+## חלק א' — תמיכת NoGi (פשוט)
+
+1. SQL Migration: הוספת `members.trains_nogi boolean DEFAULT false` + index.
+
+2. AthleteManagement.jsx: להוסיף checkbox "מתאמן NoGi" ליד ה-checkbox הקיים "מתאמן Gi".
+   - **חשוב**: שניהם יכולים להיות true בו-זמנית (גם וגם).
+   - אם trains_nogi=true ו-trains_gi=false — המתאמן עדיין צריך להחזיק belt+belt_received_at+bjj_start_date.
+     היום הקוד מנקה את השדות האלה אם trains_gi=false (ראה שורות 156-160 ב-AthleteManagement.jsx). תתקן את הלוגיקה
+     ל-"אם trains_gi=true OR trains_nogi=true" — שמור את שדות החגורה.
+
+3. הסרת הפילטור `trains_gi !== false` בכל הקוד:
+   - ReportsManager.jsx — דוח קידום: לכלול גם NoGi-בלבד.
+   - PromotionEvents.jsx — בחירת candidates: לכלול גם NoGi-בלבד.
+   - תחפש בכל הקוד "trains_gi" ותקן את כל המסננים.
+   - קריטריון חדש: מתאמן נכלל אם `(trains_gi=true OR trains_nogi=true) AND status='active' AND deleted_at IS NULL`.
+
+4. ImportAthletes.jsx: להוסיף עמודה אופציונלית "trains_nogi" (כמו שיש כבר ל-trains_gi).
+
+5. MyProgressSection.jsx (athlete dashboard): אם trains_nogi=true, להציג בכרטיס "סוג אימון: גי + נו-גי" / "נו-גי בלבד" — רק להבהרה ויזואלית. הדירוג עצמו אחד.
+
+## חלק ב' — בקשת אישור דרגה (חדש)
+
+**לפני שמתחילים — תבדוק:** האם יש כבר מנגנון "Profile Change Requests" בDB? ראיתי בSupabase tab בשם "Extend Profile Change Requests Tab". אם קיים — תרחיב את הקיים. אם לא — תיצור חדש לפי הסכמה ב-MEMORY.md.
+
+6. SQL Migration: טבלת belt_approval_requests (סכמה מלאה ב-MEMORY.md) + RLS:
+   - athlete יכול ל-INSERT+SELECT רק את שלו (לפי auth.jwt()->>'email').
+   - trainer מאושר יכול ל-SELECT+UPDATE הכל.
+
+7. UI מתאמן: בפרופיל המתאמן (AthleteDashboard.jsx או דומה), להוסיף סקציה "בקש דרגה":
+   - שדות: requested_belt (dropdown מ-ADULT_BELTS+KIDS_BELTS), requested_belt_stripes (0-4),
+     requested_belt_received_at (date), requested_bjj_start_date (date), trains_gi (checkbox),
+     trains_nogi (checkbox), prior_academy (text), notes (text).
+   - כפתור "שלח בקשה" → INSERT ל-belt_approval_requests עם status='pending'.
+   - הצגת בקשות קודמות עם סטטוס.
+
+8. UI מנהל: קומפוננטה חדשה BeltApprovalManager.jsx (או הרחבה של AthleteManagement):
+   - רשימת בקשות pending ממוינת לפי created_at.
+   - כל בקשה: שם המתאמן, פרטי הבקשה, כפתורי "אשר"/"דחה".
+   - ON APPROVE: UPDATE members.belt + belt_received_at + bjj_start_date + trains_gi + trains_nogi + INSERT ל-belt_history (source='manual').
+     UPDATE belt_approval_requests SET status='approved', reviewed_by=current_trainer, reviewed_at=now().
+   - ON REJECT: UPDATE belt_approval_requests SET status='rejected', rejection_reason=<text from prompt>.
+
+9. התראה למנהל: בכל INSERT לbelt_approval_requests עם status='pending' — push notification + announcement type='belt_request'.
+   ב-TrainerDashboard.jsx — badge "X בקשות חגורה ממתינות" בנאבבר.
+
+# פרוטוקול
+
+תיצור TodoList עם משימה לכל סעיף 1-9 + 10 (build) + 11 (push לפרודקשן).
+תכבד את הפרוטוקול ב-CLAUDE.md:
+- לא לדחוף לפני אישור לוקאלי שלי.
+- SQL כקופי-פייסט מוכן בתשובה (לא רק נתיב לקובץ).
+- לציין במפורש באיזו תיקייה להריץ כל פקודה (תמיד /Users/dudibenzaken/teampact-app).
+- **חובה לעדכן MEMORY.md בסוף הסשן** עם סטטוס "COMPLETED" + כל הקומיטים + כל הקבצים שנגעו +
+  לקחים. אל תסיים סשן בלי לעדכן MEMORY.md (כמו שקרה בסשן הקודם של מבחני ילדים).
+```
+
+---
+
+## ✅ Session 07.05.2026 — ריצוד אופקי בטאב לו"ז + שם שיעור בחולון-בג'י
+
+**סטטוס:** הכל בפרודקשן. דודי אישר "עובד" אחרי בדיקה לוקאלית, build+push.
+
+### חלק 1 — ריצוד אופקי בכניסה לטאב לו"ז (קוד)
+
+- **תופעה:** מנהל נכנס לטאב "לו"ז" → המסך זז ימין-שמאל לשנייה ואז מתייצב. קרה במחשב ובדסקטופ. דווח כ"התחיל היום" — היה בקוד תמיד, הפך מורגש.
+- **שורש:** `useEffect` שמרכז את התאריך הנבחר בסליידר (`TodayClasses.jsx` שורה 134) רץ `scrollIntoView({ behavior:'smooth' })` **20× × 100ms**. כל אנימציה דרסה את הקודמת ⇒ ריצוד.
+- **תיקון:** החלפה ל-`scrollTo({ behavior:'auto' })` יחיד ומיידי, עם early-exit אם delta<2px. retry עדיין קיים (עד 10×) למקרה ש-fetchDayClasses דורס את הגלילה — אבל בלי אנימציות.
+- **קובץ:** `src/components/trainer/TodayClasses.jsx` שורות 134-167.
+- **commit message:** `fix(TodayClasses): stop horizontal flicker on date slider — replace 20× smooth scrollIntoView retry with single instant scrollTo + early-exit when already at target`
+
+### חלק 2 — שם שיעור יום שלישי 18:00 בחולון-בג'י (נתונים בלבד)
+
+- **שיעור:** יום שלישי 18:00, סניף "חולון - בג'י" (id: `274936fb-2268-4931-ae50-264273bcec60`)
+- **שינוי:** `ג'יוג'יטסו גי` → `ג'יוג'יטסו גי נוער`
+- **SQL:** `UPDATE classes SET name = 'ג''יוג''יטסו גי נוער' WHERE id = '274936fb-2268-4931-ae50-264273bcec60';`
+- **קוד:** לא נגענו.
+
+### 🧠 לקחים
+
+1. **"בלוז" של דודי = "חולון - בג'י" ב-DB.** לזכור למיפוי בקשות עתידיות.
+2. **טבלת `classes`** מחזיקה רק `name` (לא `title`) — הקוד בודק את שניהם defensively, אבל ה-DB יחיד.
+3. **סכנת `scrollIntoView({behavior:'smooth'})` בלולאה** — כל קריאה דורסת את האנימציה הקודמת. אם צריך retry, `behavior:'auto'` + early-exit על delta קטן.
+4. **`day_of_week`** ב-DB מתחיל מ-0 (ראשון) — תואם ל-`Date.getDay()` ב-JS. שלישי = 2.
+
+---
+
+## ✅ My last pending task — 07.05.2026 — הוספת מנוי "1× שבוע (באישור מנהל)" — הסתיים
+
+**סטטוס:** הסתיים. קומיט `14abf64` בפרודקשן. SQL רץ בהצלחה ב-Supabase. דודי בדק לוקאלית ואישר.
+
+**סדר ב-dropdown של טופס ההצטרפות:** 1× שבוע (באישור מנהל בלבד) → 2× שבוע → 4× שבוע → ללא הגבלה.
 
 ### מה השתנה (10 קבצים)
 | קובץ | שינוי |

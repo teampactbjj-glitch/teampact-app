@@ -10,6 +10,7 @@ import ProductDetail from './ProductDetail'
 import MyProgressSection from './MyProgressSection'
 import { useToast, useConfirm } from '../a11y'
 import logoUrl from '../../assets/logo.png'
+import { ADULT_BELTS, KIDS_BELTS, getMaxStripes, getBeltLabel } from '../../lib/belts'
 
 const SUBSCRIPTION_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const SUBSCRIPTION_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -800,6 +801,16 @@ function ProfileTab({ profile, member }) {
     Array.isArray(member?.branch_ids) ? member.branch_ids : (member?.branch_id ? [member.branch_id] : [])
   )
   const [branchSessions, setBranchSessions] = useState({}) // {branchId: count}
+  // === בקשת אישור דרגה ===
+  const [beltCategory, setBeltCategory] = useState(member?.belt_category || 'adult')
+  const [beltVal, setBeltVal] = useState(member?.belt || '')
+  const [beltStripes, setBeltStripes] = useState(member?.belt_stripes || 0)
+  const [beltReceivedAt, setBeltReceivedAt] = useState(member?.belt_received_at || '')
+  const [bjjStartDate, setBjjStartDate] = useState(member?.bjj_start_date || '')
+  const [reqTrainsGi, setReqTrainsGi] = useState(member?.trains_gi ?? true)
+  const [reqTrainsNogi, setReqTrainsNogi] = useState(member?.trains_nogi ?? false)
+  const [priorAcademy, setPriorAcademy] = useState('')
+  const [beltNote, setBeltNote] = useState('')
   // המאמנים של המתאמן הזה — נגזר מ-class_registrations + checkins ב-60 ימים אחרונים.
   // [{ id, name, phone }] — רק מאמנים שיש להם טלפון מוגדר.
   const [myCoaches, setMyCoaches] = useState([])
@@ -1000,6 +1011,42 @@ function ProfileTab({ profile, member }) {
 
   const hasPendingEmail = pendingRequests.some(r => r.change_type === 'email')
   const hasPendingSub = pendingRequests.some(r => r.change_type === 'subscription')
+  const hasPendingBelt = pendingRequests.some(r => r.change_type === 'belt')
+
+  async function submitBeltChange() {
+    if (!beltVal) { toast.error('בחר חגורה'); return }
+    if (!reqTrainsGi && !reqTrainsNogi) { toast.error('סמן לפחות סוג אימון אחד (Gi או NoGi)'); return }
+    setSaving(true)
+    const { error } = await supabase.from('profile_change_requests').insert({
+      athlete_id: profile.id,
+      athlete_name: athleteName,
+      change_type: 'belt',
+      current_value: member?.belt || '—',
+      requested_value: beltVal,
+      requested_belt: beltVal,
+      requested_belt_stripes: Number(beltStripes) || 0,
+      requested_belt_received_at: beltReceivedAt || null,
+      requested_bjj_start_date: bjjStartDate || null,
+      requested_trains_gi: !!reqTrainsGi,
+      requested_trains_nogi: !!reqTrainsNogi,
+      prior_academy: priorAcademy || null,
+      note: beltNote || null,
+    })
+    setSaving(false)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    // התראה למנהל (push) — שיראה את הבקשה גם כשהאפליקציה סגורה
+    allTrainerUserIds().then(ids => notifyPush({
+      userIds: ids,
+      title: 'בקשת אישור דרגה חדשה',
+      body: `${athleteName} מבקש דרגה: ${getBeltLabel(beltVal)}${beltStripes ? ` · ${beltStripes} פסים` : ''}`,
+      url: '/#requests',
+      tag: `belt-request:${profile.id}`,
+    })).catch(() => {})
+    toast.success('הבקשה נשלחה למנהל')
+    setBeltNote('')
+    setPriorAcademy('')
+    loadPending()
+  }
 
   return (
     <div className="space-y-4">
@@ -1077,14 +1124,23 @@ function ProfileTab({ profile, member }) {
       {pendingRequests.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
           <h3 className="font-bold text-amber-900 text-sm">⏳ בקשות ממתינות לאישור מנהל</h3>
-          {pendingRequests.map(r => (
-            <div key={r.id} className="text-xs text-amber-800">
-              {r.change_type === 'email' ? '📧 שינוי מייל ל-' : '🎫 שינוי מנוי ל-'}
-              <span className="font-semibold">
-                {r.change_type === 'subscription' ? (SUBSCRIPTION_LABELS[r.requested_value] || r.requested_value) : r.requested_value}
-              </span>
-            </div>
-          ))}
+          {pendingRequests.map(r => {
+            const prefix = r.change_type === 'email' ? '📧 שינוי מייל ל-'
+              : r.change_type === 'subscription' ? '🎫 שינוי מנוי ל-'
+              : r.change_type === 'belt' ? '🥋 בקשת דרגה: '
+              : '📝 שינוי: '
+            const value = r.change_type === 'subscription'
+              ? (SUBSCRIPTION_LABELS[r.requested_value] || r.requested_value)
+              : r.change_type === 'belt'
+                ? `${getBeltLabel(r.requested_belt || r.requested_value)}${r.requested_belt_stripes ? ` · ${r.requested_belt_stripes} פסים` : ''}`
+                : r.requested_value
+            return (
+              <div key={r.id} className="text-xs text-amber-800">
+                {prefix}
+                <span className="font-semibold">{value}</span>
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -1181,6 +1237,109 @@ function ProfileTab({ profile, member }) {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none" />
             <button onClick={submitSubChange} disabled={saving}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+              {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* === בקשת אישור דרגה === */}
+      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
+        <h3 className="font-bold text-gray-800 text-sm">🥋 בקשת אישור דרגה</h3>
+        <p className="text-[11px] text-gray-500 -mt-2">
+          {member?.belt ? 'אם הדרגה הנוכחית לא מעודכנת — שלח בקשה לתיקון.' : 'הזן את הדרגה הנוכחית שלך לאישור המנהל.'}
+        </p>
+        {hasPendingBelt ? (
+          <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">⏳ יש בקשת דרגה ממתינה — לא ניתן לשלוח בקשה נוספת</p>
+        ) : (
+          <>
+            {/* קטגוריה */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">קטגוריה</label>
+              <div className="flex gap-2">
+                <button type="button"
+                  onClick={() => { setBeltCategory('adult'); setBeltVal('') }}
+                  className={`flex-1 px-3 py-1.5 rounded-lg text-sm border transition ${
+                    beltCategory === 'adult' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-300'
+                  }`}>מבוגרים (16+)</button>
+                <button type="button"
+                  onClick={() => { setBeltCategory('kids'); setBeltVal('') }}
+                  className={`flex-1 px-3 py-1.5 rounded-lg text-sm border transition ${
+                    beltCategory === 'kids' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-300'
+                  }`}>ילדים (4-15)</button>
+              </div>
+            </div>
+            {/* חגורה */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">חגורה נוכחית *</label>
+              <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                value={beltVal}
+                onChange={e => {
+                  const v = e.target.value
+                  setBeltVal(v)
+                  setBeltStripes(s => Math.min(s || 0, getMaxStripes(v)))
+                }}>
+                <option value="">— בחר חגורה —</option>
+                {(beltCategory === 'kids' ? KIDS_BELTS : ADULT_BELTS).map(b => (
+                  <option key={b.value} value={b.value}>{b.label}</option>
+                ))}
+              </select>
+            </div>
+            {/* פסים */}
+            {beltVal && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">פסים (0-{getMaxStripes(beltVal)})</label>
+                <div className="flex gap-2">
+                  {Array.from({ length: getMaxStripes(beltVal) + 1 }, (_, i) => (
+                    <button key={i} type="button"
+                      onClick={() => setBeltStripes(i)}
+                      className={`flex-1 py-1.5 rounded-lg text-sm border transition ${
+                        beltStripes === i ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-300'
+                      }`}>{i}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* תאריך קבלת חגורה */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">תאריך קבלת חגורה</label>
+              <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={beltReceivedAt || ''} onChange={e => setBeltReceivedAt(e.target.value)} />
+            </div>
+            {/* תאריך התחלת BJJ */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">תאריך התחלת BJJ (חגורה לבנה)</label>
+              <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={bjjStartDate || ''} onChange={e => setBjjStartDate(e.target.value)} />
+            </div>
+            {/* Gi / NoGi */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">סוג אימון *</label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex items-center gap-2 text-sm cursor-pointer bg-white border rounded-lg px-3 py-2">
+                  <input type="checkbox" checked={!!reqTrainsGi}
+                    onChange={e => setReqTrainsGi(e.target.checked)}
+                    className="w-4 h-4 accent-amber-600" />
+                  🥋 גי
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer bg-white border rounded-lg px-3 py-2">
+                  <input type="checkbox" checked={!!reqTrainsNogi}
+                    onChange={e => setReqTrainsNogi(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600" />
+                  🤼 נו-גי
+                </label>
+              </div>
+            </div>
+            {/* אקדמיה קודמת */}
+            <input type="text" value={priorAcademy} onChange={e => setPriorAcademy(e.target.value)}
+              placeholder="אקדמיה קודמת (אופציונלי)"
+              className="w-full border rounded-lg px-3 py-2 text-sm" />
+            {/* הערה */}
+            <textarea value={beltNote} onChange={e => setBeltNote(e.target.value)}
+              placeholder="הערה למנהל (אופציונלי)" rows="2"
+              className="w-full border rounded-lg px-3 py-2 text-sm resize-none" />
+            <button onClick={submitBeltChange} disabled={saving}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
               {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
             </button>
           </>

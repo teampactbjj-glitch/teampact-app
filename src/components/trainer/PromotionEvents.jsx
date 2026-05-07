@@ -139,7 +139,7 @@ export default function PromotionEvents({ profile, isAdmin, onClose, initialCand
           .order('event_date', { ascending: false }),
         supabase.from('promotion_candidates').select('*'),
         supabase.from('members')
-          .select('id, full_name, belt, belt_stripes, belt_category, belt_received_at, branch_id, branch_ids, trains_gi, status, deleted_at')
+          .select('id, full_name, belt, belt_stripes, belt_category, belt_received_at, branch_id, branch_ids, trains_gi, trains_nogi, status, deleted_at')
           .neq('status', 'pending').neq('status', 'pending_deletion').is('deleted_at', null)
           .order('full_name'),
         supabase.from('branches').select('id, name').eq('hidden', false).order('name'),
@@ -441,7 +441,8 @@ function EventEditDialog({ ev, existingCandidates, presetMemberIds, members, bra
         supabase.from('class_registrations')
           .select('class_id, athlete_id').gte('week_start', since).range(0, 99999),
       ])
-      const classMap = new Map((clsRes.data || []).filter(c => c.trains_gi !== false).map(c => [c.id, c]))
+      // Gi+NoGi נחשבים אותו דירוג — כל שיעור = יחידה אחת, ללא הבדל
+      const classMap = new Map((clsRes.data || []).map(c => [c.id, c]))
       const memberToClasses = new Map()
       for (const r of (regRes.data || [])) {
         if (!memberToClasses.has(r.athlete_id)) memberToClasses.set(r.athlete_id, new Set())
@@ -461,7 +462,7 @@ function EventEditDialog({ ev, existingCandidates, presetMemberIds, members, bra
   const availableMembers = useMemo(() => {
     const q = addSearch.trim().toLowerCase()
     return members
-      .filter(m => m.trains_gi !== false)
+      .filter(m => m.trains_gi !== false || m.trains_nogi === true)
       .filter(m => !usedMemberIds.has(m.id))
       .filter(m => {
         if (branchIds.length === 0) return true

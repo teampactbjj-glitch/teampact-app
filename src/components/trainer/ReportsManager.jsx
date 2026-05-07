@@ -278,7 +278,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes, bhRes, kidsEvRes, kidsCandRes, sylRes] = await Promise.all([
         supabase
           .from('members')
-          .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at, belt, belt_received_at, belt_stripes, belt_category, trains_gi, bjj_start_date, birth_date')
+          .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at, belt, belt_received_at, belt_stripes, belt_category, trains_gi, trains_nogi, bjj_start_date, birth_date')
           .range(0, ROW_LIMIT - 1),
         supabase.from('coaches').select('id, name, branch_id').range(0, ROW_LIMIT - 1),
         supabase.from('classes').select('id, name, class_type, coach_id, coach_name, branch_id, day_of_week, start_time, duration_minutes').range(0, ROW_LIMIT - 1),
@@ -1006,7 +1006,10 @@ export default function ReportsManager({ isAdmin, profile }) {
     // **חשוב:** מציגים את כולם, גם בלי threshold (כמו אדומה/red) — recommendation='no_threshold'
     const rows = []
     for (const m of members) {
-      if (m.trains_gi === false) continue
+      // נכלל מתאמן Gi או NoGi (אותה הדרגה — Gi/NoGi משותפים).
+      // אם שניהם false/null → לא מתאמן BJJ → לא נכלל בדוח.
+      const trainsBjj = m.trains_gi !== false || m.trains_nogi === true
+      if (!trainsBjj) continue
       if (!m.belt) continue
       if (m.deleted_at) continue
       if (m.status === 'pending' || m.status === 'pending_deletion') continue

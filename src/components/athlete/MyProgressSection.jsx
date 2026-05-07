@@ -516,9 +516,13 @@ export default function MyProgressSection({ profile, member }) {
     hoursByDiscipline[e.discipline] = (hoursByDiscipline[e.discipline] || 0) + e.durationMin
   }
 
-  // ===== כרטיס חגורה — רק אם trains_gi=true ויש חגורה =====
+  // ===== כרטיס חגורה — מציג אם המתאמן עושה Gi או NoGi (אותה דרגה) ויש חגורה =====
   const beltMeta = member?.belt ? getBeltMeta(member.belt) : null
-  const showBeltCard = !!member?.trains_gi && !!beltMeta
+  const trainsBjj = !!member?.trains_gi || !!member?.trains_nogi
+  const showBeltCard = trainsBjj && !!beltMeta
+  const trainingTypeLabel = (member?.trains_gi && member?.trains_nogi)
+    ? 'גי + נו-גי'
+    : member?.trains_nogi ? 'נו-גי בלבד' : (member?.trains_gi ? 'גי' : null)
   const beltReceivedMs = member?.belt_received_at ? new Date(member.belt_received_at).getTime() : null
   const bjjUnitsSinceBelt = (beltReceivedMs && events.length)
     ? events.filter(e => e.discipline === 'BJJ' && e.timeMs >= beltReceivedMs).length
@@ -633,6 +637,11 @@ export default function MyProgressSection({ profile, member }) {
                   <div className="text-xl font-extrabold leading-tight">
                     {getBeltLabel(member.belt)}
                   </div>
+                  {trainingTypeLabel && (
+                    <div className="text-[10px] opacity-90 font-semibold mt-0.5">
+                      סוג אימון: {trainingTypeLabel}
+                    </div>
+                  )}
                 </div>
               </div>
               {member.belt_stripes > 0 && (

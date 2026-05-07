@@ -29,6 +29,7 @@ const EMPTY_FORM = {
   birth_date: '',
   // Belt fields
   trains_gi: true,
+  trains_nogi: false,
   belt_category: 'adult',
   belt: '',
   belt_received_at: '',
@@ -151,13 +152,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       active: form.active,
       branch_ids: form.branch_ids,
       branch_id: form.branch_ids[0] || null,
-      // Belt fields
+      // Belt fields — שדות חגורה נשמרים אם trains_gi=true OR trains_nogi=true
+      // (NoGi-בלבד גם מקבל דרגה — Gi/NoGi הם אותה הדרגה)
       trains_gi: !!form.trains_gi,
-      belt_category: form.trains_gi ? (form.belt_category || 'adult') : null,
-      belt: form.trains_gi && form.belt ? form.belt : null,
-      belt_received_at: form.trains_gi && form.belt_received_at ? form.belt_received_at : null,
-      belt_stripes: form.trains_gi && form.belt ? Number(form.belt_stripes || 0) : 0,
-      bjj_start_date: form.trains_gi && form.bjj_start_date ? form.bjj_start_date : null,
+      trains_nogi: !!form.trains_nogi,
+      belt_category: (form.trains_gi || form.trains_nogi) ? (form.belt_category || 'adult') : null,
+      belt: (form.trains_gi || form.trains_nogi) && form.belt ? form.belt : null,
+      belt_received_at: (form.trains_gi || form.trains_nogi) && form.belt_received_at ? form.belt_received_at : null,
+      belt_stripes: (form.trains_gi || form.trains_nogi) && form.belt ? Number(form.belt_stripes || 0) : 0,
+      bjj_start_date: (form.trains_gi || form.trains_nogi) && form.bjj_start_date ? form.bjj_start_date : null,
       birth_date: form.birth_date || null,
     }
     let error
@@ -370,6 +373,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       branch_ids: branchIds,
       // Belt fields
       trains_gi: athlete.trains_gi ?? true,
+      trains_nogi: athlete.trains_nogi ?? false,
       belt_category: athlete.belt_category || (athlete.belt?.startsWith?.('kids_') ? 'kids' : 'adult'),
       belt: athlete.belt || '',
       belt_received_at: athlete.belt_received_at || '',
@@ -520,23 +524,47 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
             מתאמן פעיל
           </label>
 
-          {/* === BJJ / Gi belt section === */}
+          {/* === BJJ Gi / NoGi belt section === */}
           <div className="border rounded-lg p-3 space-y-3 bg-amber-50/30">
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
-              <input type="checkbox" checked={!!form.trains_gi}
-                onChange={e => setForm(p => ({
-                  ...p,
-                  trains_gi: e.target.checked,
-                  // אם מבטלים גי — מנקים שדות חגורה
-                  belt: e.target.checked ? p.belt : '',
-                  belt_received_at: e.target.checked ? p.belt_received_at : '',
-                  belt_stripes: e.target.checked ? p.belt_stripes : 0,
-                  bjj_start_date: e.target.checked ? p.bjj_start_date : '',
-                }))} className="w-4 h-4 accent-amber-600" />
-              🥋 מתאמן ב-Gi (BJJ עם חליפה)
-            </label>
+            <p className="text-xs font-medium text-gray-600">סוג אימון BJJ (ניתן לבחור שניהם)</p>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer bg-white border rounded-lg px-3 py-2">
+                <input type="checkbox" checked={!!form.trains_gi}
+                  onChange={e => setForm(p => {
+                    const trainsGi = e.target.checked
+                    const stillTrains = trainsGi || p.trains_nogi
+                    return {
+                      ...p,
+                      trains_gi: trainsGi,
+                      // אם ביטל את שניהם → מנקים שדות חגורה
+                      belt: stillTrains ? p.belt : '',
+                      belt_received_at: stillTrains ? p.belt_received_at : '',
+                      belt_stripes: stillTrains ? p.belt_stripes : 0,
+                      bjj_start_date: stillTrains ? p.bjj_start_date : '',
+                    }
+                  })} className="w-4 h-4 accent-amber-600" />
+                🥋 מתאמן Gi
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer bg-white border rounded-lg px-3 py-2">
+                <input type="checkbox" checked={!!form.trains_nogi}
+                  onChange={e => setForm(p => {
+                    const trainsNogi = e.target.checked
+                    const stillTrains = p.trains_gi || trainsNogi
+                    return {
+                      ...p,
+                      trains_nogi: trainsNogi,
+                      belt: stillTrains ? p.belt : '',
+                      belt_received_at: stillTrains ? p.belt_received_at : '',
+                      belt_stripes: stillTrains ? p.belt_stripes : 0,
+                      bjj_start_date: stillTrains ? p.bjj_start_date : '',
+                    }
+                  })} className="w-4 h-4 accent-blue-600" />
+                🤼 מתאמן NoGi
+              </label>
+            </div>
+            <p className="text-[11px] text-gray-500 -mt-1">Gi ו-NoGi נחשבים אותה דרגה — מתאמן יכול לעשות את שניהם.</p>
 
-            {form.trains_gi && (
+            {(form.trains_gi || form.trains_nogi) && (
               <>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">קטגוריה</label>

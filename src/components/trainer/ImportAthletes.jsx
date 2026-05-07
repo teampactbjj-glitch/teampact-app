@@ -53,6 +53,18 @@ const HEADER_MAP = {
   'חגורה': 'belt', 'belt': 'belt', 'חגורה נוכחית': 'belt',
   'תאריך חגורה': 'belt_received_at', 'תאריך קבלת חגורה': 'belt_received_at', 'belt date': 'belt_received_at',
   'קטגוריה': 'belt_category', 'category': 'belt_category', 'ילד/בוגר': 'belt_category',
+  'gi': 'trains_gi', 'trains_gi': 'trains_gi', 'מתאמן גי': 'trains_gi', 'גי': 'trains_gi',
+  'nogi': 'trains_nogi', 'no-gi': 'trains_nogi', 'no_gi': 'trains_nogi',
+  'trains_nogi': 'trains_nogi', 'מתאמן נו-גי': 'trains_nogi', 'נו-גי': 'trains_nogi', 'נוגי': 'trains_nogi',
+}
+
+function parseBoolCell(v) {
+  if (v === true || v === false) return v
+  const s = String(v ?? '').trim().toLowerCase()
+  if (!s) return null
+  if (['true', '1', 'כן', 'yes', 'y', 'v', '✓'].includes(s)) return true
+  if (['false', '0', 'לא', 'no', 'n', 'x'].includes(s)) return false
+  return null
 }
 
 function normalizeHeader(h) {
@@ -151,6 +163,16 @@ function parseFile(file) {
                 obj.belt_received_at = null
               }
             }
+          }
+
+          // trains_gi / trains_nogi מהקובץ (אופציונלי)
+          if ('trains_gi' in obj) {
+            const v = parseBoolCell(obj.trains_gi)
+            obj.trains_gi = v === null ? undefined : v
+          }
+          if ('trains_nogi' in obj) {
+            const v = parseBoolCell(obj.trains_nogi)
+            obj.trains_nogi = v === null ? undefined : v
           }
 
           return obj
@@ -260,7 +282,8 @@ export default function ImportAthletes({ onImported, isAdmin = false }) {
       belt_category: r.belt_category || 'kids',
       belt_received_at: r.belt_received_at || null,
       belt_stripes: 0,
-      trains_gi: true,
+      trains_gi: r.trains_gi === undefined ? true : !!r.trains_gi,
+      trains_nogi: !!r.trains_nogi,
     }))
 
     const { error } = await supabase.from('members').insert(payload)

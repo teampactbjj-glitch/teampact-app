@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../a11y'
+import { getBeltLabel } from '../../lib/belts'
 
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
@@ -30,7 +31,7 @@ export default function ProfileChangeRequests({ onChange }) {
     let mMap = {}
     if (athleteIds.length > 0) {
       const { data: members } = await supabase.from('members')
-        .select('id, full_name, branch_ids, branch_id, subscription_type')
+        .select('id, full_name, branch_ids, branch_id, subscription_type, belt, belt_stripes, belt_received_at, bjj_start_date, trains_gi, trains_nogi, belt_category')
         .in('id', athleteIds)
       ;(members || []).forEach(m => { mMap[m.id] = m })
     }
@@ -52,6 +53,34 @@ export default function ProfileChangeRequests({ onChange }) {
       }
       const { error } = await supabase.from('members').update(update).eq('id', req.athlete_id)
       memberError = error
+    } else if (req.change_type === 'belt') {
+      // אישור דרגה: עדכון members + INSERT ל-belt_history (source='manual')
+      const beltVal = req.requested_belt || req.requested_value
+      const stripes = Number(req.requested_belt_stripes) || 0
+      const cat = beltVal && beltVal.startsWith('kids_') ? 'kids' : 'adult'
+      const update = {
+        belt: beltVal,
+        belt_stripes: stripes,
+        belt_category: cat,
+        belt_received_at: req.requested_belt_received_at || null,
+        bjj_start_date: req.requested_bjj_start_date || null,
+      }
+      if (req.requested_trains_gi != null) update.trains_gi = !!req.requested_trains_gi
+      if (req.requested_trains_nogi != null) update.trains_nogi = !!req.requested_trains_nogi
+      const { error: memErr } = await supabase.from('members').update(update).eq('id', req.athlete_id)
+      memberError = memErr
+      if (!memErr && req.requested_belt_received_at) {
+        // INSERT ל-belt_history. UNIQUE(member_id, belt, belt_stripes) → ignoreDuplicates
+        const { error: histErr } = await supabase.from('belt_history').upsert({
+          member_id: req.athlete_id,
+          belt: beltVal,
+          belt_stripes: stripes,
+          received_at: req.requested_belt_received_at,
+          source: 'manual',
+          notes: 'אושר מתוך בקשת אישור דרגה',
+        }, { onConflict: 'member_id,belt,belt_stripes', ignoreDuplicates: true })
+        if (histErr) console.warn('belt_history upsert (non-fatal):', histErr.message)
+      }
     }
     if (memberError) {
       console.error('approve member update error:', memberError)
@@ -105,22 +134,52 @@ export default function ProfileChangeRequests({ onChange }) {
           : (m?.branch_id ? [m.branch_id] : [])
         const currentBranchNames = currentBranchIds.map(id => branchesMap[id] || '—').join(', ') || '—'
         const sessions = req.requested_branch_sessions // jsonb {branchId: count}
+        const isBelt = req.change_type === 'belt'
+        const beltVal = req.requested_belt || req.requested_value
+        const trainTypeLabel = isBelt ? (
+          (req.requested_trains_gi && req.requested_trains_nogi) ? 'גי + נו-גי'
+          : req.requested_trains_nogi ? 'נו-גי בלבד'
+          : req.requested_trains_gi ? 'גי בלבד'
+          : '—'
+        ) : null
         return (
         <div key={req.id} className="bg-white rounded-xl border shadow-sm p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1">
               <p className="font-semibold text-gray-800">{displayName}</p>
               <p className="text-sm text-gray-600 mt-1">
-                {req.change_type === 'email' ? '📧 שינוי מייל' : '🎫 שינוי מנוי'}
+                {req.change_type === 'email' && '📧 שינוי מייל'}
+                {req.change_type === 'subscription' && '🎫 שינוי מנוי'}
+                {req.change_type === 'belt' && '🥋 בקשת אישור דרגה'}
               </p>
-              <div className="text-xs text-gray-500 mt-2 space-y-1">
-                <p>מ: <span className="line-through">
-                  {req.change_type === 'subscription' ? (SUB_LABELS[req.current_value] || req.current_value) : req.current_value}
-                </span></p>
-                <p>ל: <span className="font-semibold text-emerald-700">
-                  {req.change_type === 'subscription' ? (SUB_LABELS[req.requested_value] || req.requested_value) : req.requested_value}
-                </span></p>
-              </div>
+              {!isBelt && (
+                <div className="text-xs text-gray-500 mt-2 space-y-1">
+                  <p>מ: <span className="line-through">
+                    {req.change_type === 'subscription' ? (SUB_LABELS[req.current_value] || req.current_value) : req.current_value}
+                  </span></p>
+                  <p>ל: <span className="font-semibold text-emerald-700">
+                    {req.change_type === 'subscription' ? (SUB_LABELS[req.requested_value] || req.requested_value) : req.requested_value}
+                  </span></p>
+                </div>
+              )}
+              {isBelt && (
+                <div className="mt-2 text-xs bg-amber-50 border border-amber-200 rounded p-2 space-y-1">
+                  <p>חגורה נוכחית: <span className="line-through text-gray-500">{m?.belt ? getBeltLabel(m.belt) : '—'}</span></p>
+                  <p>חגורה מבוקשת: <span className="font-bold text-amber-800">{getBeltLabel(beltVal)}</span>
+                    {req.requested_belt_stripes > 0 && <span className="text-amber-700"> · {req.requested_belt_stripes} פסים</span>}
+                  </p>
+                  <p>סוג אימון: <span className="font-semibold">{trainTypeLabel}</span></p>
+                  {req.requested_belt_received_at && (
+                    <p>תאריך קבלת החגורה: <span className="font-semibold">{req.requested_belt_received_at}</span></p>
+                  )}
+                  {req.requested_bjj_start_date && (
+                    <p>התחלת BJJ: <span className="font-semibold">{req.requested_bjj_start_date}</span></p>
+                  )}
+                  {req.prior_academy && (
+                    <p>אקדמיה קודמת: <span className="font-semibold">{req.prior_academy}</span></p>
+                  )}
+                </div>
+              )}
               {req.change_type === 'subscription' && (
                 <div className="mt-2 text-xs bg-gray-50 rounded p-2 space-y-1">
                   <p>📍 סניפים נוכחיים: <span className="font-semibold text-gray-700">{currentBranchNames}</span></p>

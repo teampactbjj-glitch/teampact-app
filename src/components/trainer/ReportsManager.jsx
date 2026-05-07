@@ -4,7 +4,10 @@ import { notifyPush } from '../../lib/notifyPush'
 import { useToast, useConfirm } from '../a11y'
 import PromotionEvents from './PromotionEvents'
 import BeltHistoryEditor from './BeltHistoryEditor'
-import { getBeltMeta, getBeltLabel, ADULT_BELTS, KIDS_BELTS } from '../../lib/belts'
+import { getBeltMeta, getBeltLabel, ADULT_BELTS, KIDS_BELTS,
+  getBeltFamily, getBeltLevelPosition, getBeltFamilyLabel, getBeltFamilyColor,
+  getSyllabusKeyForTarget, getLevelLabel,
+  KIDS_BELT_MIN_AGE, KIDS_MIN_MONTHS_AT_BELT } from '../../lib/belts'
 
 // ===== Helpers =====
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -231,6 +234,15 @@ export default function ReportsManager({ isAdmin, profile }) {
   const [registrations, setRegistrations] = useState([]) // class_registrations — מי רשום לאיזו קבוצה
   const [beltHistory, setBeltHistory] = useState([])     // belt_history — תאריכי קבלת חגורה היסטוריים (שלב 3)
 
+  // ===== מבחן ילדים יוני =====
+  const [kidsEvents, setKidsEvents]         = useState([])   // promotion_events של event_type='kids_annual_test' (planned)
+  const [kidsCandidates, setKidsCandidates] = useState([])   // candidates של אירועים אלה
+  const [syllabus, setSyllabus]             = useState([])   // belt_test_syllabus (4 שורות)
+  const [kidsActionBusy, setKidsActionBusy] = useState(() => new Set()) // candidate_id-ים בעיבוד
+  const [kidsRiskPushSent, setKidsRiskPushSent] = useState(() => new Set()) // member_id-ים שנשלח להם push
+  const [kidsRiskPushBusy, setKidsRiskPushBusy] = useState(() => new Set())
+  const [adultMarkBusy, setAdultMarkBusy]   = useState(() => new Set())
+
   // ===== Push notification state (לסקציית "מתאמנים שלא הגיעו") =====
   // pushSending: Set של memberIds ששליחת ה-Push אליהם כרגע בתהליך
   // pushSent: Set של memberIds שכבר נשלח אליהם push בסשן הנוכחי (כדי למנוע ספאם)
@@ -263,10 +275,10 @@ export default function ReportsManager({ isAdmin, profile }) {
       const ROW_LIMIT = 100000
       const sinceMaxISO = new Date(Date.now() - 180 * DAY_MS).toISOString()
 
-      const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes, bhRes] = await Promise.all([
+      const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes, bhRes, kidsEvRes, kidsCandRes, sylRes] = await Promise.all([
         supabase
           .from('members')
-          .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at, belt, belt_received_at, belt_stripes, belt_category, trains_gi, bjj_start_date')
+          .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at, belt, belt_received_at, belt_stripes, belt_category, trains_gi, bjj_start_date, birth_date')
           .range(0, ROW_LIMIT - 1),
         supabase.from('coaches').select('id, name, branch_id').range(0, ROW_LIMIT - 1),
         supabase.from('classes').select('id, name, class_type, coach_id, coach_name, branch_id, day_of_week, start_time, duration_minutes').range(0, ROW_LIMIT - 1),
@@ -297,6 +309,24 @@ export default function ReportsManager({ isAdmin, profile }) {
           .from('belt_history')
           .select('member_id, belt, belt_stripes, received_at, source, event_id')
           .range(0, ROW_LIMIT - 1),
+        // promotion_events של מבחן ילדים יוני (planned + לא נמחקו)
+        supabase
+          .from('promotion_events')
+          .select('id, name, event_date, event_type, class_id, attendance_threshold, branch_ids, status, deleted_at, notes')
+          .eq('event_type', 'kids_annual_test')
+          .is('deleted_at', null)
+          .order('event_date', { ascending: true })
+          .range(0, ROW_LIMIT - 1),
+        // candidates של אירועי kids — נסנן בצד הקליינט לפי event_id
+        supabase
+          .from('promotion_candidates')
+          .select('id, event_id, member_id, current_belt, current_stripes, target_belt, target_stripes, status, attendance_pct, attendance_recommendation, target_to_adult, expected_sessions, attended_sessions')
+          .range(0, ROW_LIMIT - 1),
+        // סילבוס מבחן חגורות
+        supabase
+          .from('belt_test_syllabus')
+          .select('belt_family, age_range_label, content, level_notes, display_order')
+          .order('display_order', { ascending: true }),
       ])
       if (mRes.error)   throw mRes.error
       if (cRes.error)   throw cRes.error
@@ -320,6 +350,18 @@ export default function ReportsManager({ isAdmin, profile }) {
       setTrialVisits(tvRes.data || [])
       setRegistrations(regRes.data || [])
       setBeltHistory(bhRes.data || [])
+      // אם הטבלאות עדיין לא הוקמו (Migration לא רץ) — לא לשבור את הדוחות.
+      if (kidsEvRes.error && !/relation .*promotion_events/i.test(kidsEvRes.error.message || '')) {
+        console.error('kids events fetch error:', kidsEvRes.error)
+      }
+      if (sylRes.error && !/relation .*belt_test_syllabus/i.test(sylRes.error.message || '')) {
+        console.error('syllabus fetch error:', sylRes.error)
+      }
+      setKidsEvents((kidsEvRes.data || []).filter(e => e.event_type === 'kids_annual_test'))
+      // candidates של אירועי kids בלבד (נסנן בקליינט לפי event_id-ים שב-kidsEvRes)
+      const kidsEvIds = new Set((kidsEvRes.data || []).map(e => e.id))
+      setKidsCandidates((kidsCandRes.data || []).filter(c => kidsEvIds.has(c.event_id)))
+      setSyllabus(sylRes.data || [])
 
       // לוג אבחון: מאפשר לוודא בקונסול של הדפדפן (Safari → Develop → Show Web Inspector)
       // שכל הצ'ק-אינים נטענו ולא נחתכו.
@@ -1130,6 +1172,313 @@ export default function ReportsManager({ isAdmin, profile }) {
     return false
   }, [isAdmin, profile?.full_name, coaches, classes])
 
+  // ============================================================
+  // ===== מבחן ילדים יוני — pivots =====
+  // ============================================================
+  const syllabusByFamily = useMemo(() => {
+    const m = new Map()
+    for (const s of syllabus) m.set(s.belt_family, s)
+    return m
+  }, [syllabus])
+
+  const kidsCandsByEvent = useMemo(() => {
+    const m = new Map()
+    for (const c of kidsCandidates) {
+      if (!m.has(c.event_id)) m.set(c.event_id, [])
+      m.get(c.event_id).push(c)
+    }
+    return m
+  }, [kidsCandidates])
+
+  const memberByIdMap = useMemo(() => {
+    const m = new Map()
+    for (const x of members) m.set(x.id, x)
+    return m
+  }, [members])
+
+  // אירועי kids גלויים: מנהל = הכל, מאמן = אירועים של class שיש לו לפחות אחד מ-myAthleteIds
+  const visibleKidsEvents = useMemo(() => {
+    if (isAdmin) return kidsEvents
+    if (!myAthleteIds) return []
+    // אירועים של מאמן: כאלה שלפחות אחד מהמועמדים שייך אליו
+    return kidsEvents.filter(e => {
+      const cands = kidsCandsByEvent.get(e.id) || []
+      return cands.some(c => myAthleteIds.has(c.member_id))
+    })
+  }, [isAdmin, kidsEvents, kidsCandsByEvent, myAthleteIds])
+
+  // ===== קבוצת ילדים בסיכון נשירה =====
+  // kids שלא היה checkin שלהם 3+ שבועות. מקובצים לפי "כמה זמן עבר".
+  const kidsAtRisk = useMemo(() => {
+    const now = Date.now()
+    const lastByMember = new Map()
+    // משתמשים בכל ה-checkins (לא ב-filteredCheckins) כדי לקבל את המקסימום האמיתי
+    for (const c of checkins) {
+      if (!c.checked_in_at) continue
+      const t = new Date(c.checked_in_at).getTime()
+      if (!Number.isFinite(t) || t > now) continue
+      const prev = lastByMember.get(c.athlete_id) || 0
+      if (t > prev) lastByMember.set(c.athlete_id, t)
+    }
+    const cutoff21 = now - 21 * DAY_MS
+    const list = []
+    for (const m of activeMembers) {
+      if (m.belt_category !== 'kids') continue
+      if (!isAdmin && myAthleteIds && !myAthleteIds.has(m.id)) continue
+      const last = lastByMember.get(m.id) || null
+      if (last && last > cutoff21) continue
+      const days = last ? Math.floor((now - last) / DAY_MS) : null
+      list.push({
+        id: m.id,
+        name: m.full_name || '—',
+        phone: m.phone || null,
+        email: m.email || null,
+        belt: m.belt,
+        beltLabel: m.belt ? getBeltLabel(m.belt) : '—',
+        lastAttendance: last,
+        daysSince: days,
+      })
+    }
+    list.sort((a, b) => (b.daysSince ?? 99999) - (a.daysSince ?? 99999))
+    return list
+  }, [checkins, activeMembers, isAdmin, myAthleteIds])
+
+  // קיבוץ kids-at-risk לפי טווח שבועות
+  const kidsAtRiskByBucket = useMemo(() => {
+    const buckets = { '3-4w': [], '5-8w': [], '9-12w': [], '12w+': [] }
+    for (const k of kidsAtRisk) {
+      const d = k.daysSince ?? 99999
+      if (d >= 84) buckets['12w+'].push(k)         // 12 שבועות+
+      else if (d >= 63) buckets['9-12w'].push(k)   // 9-12 שבועות
+      else if (d >= 35) buckets['5-8w'].push(k)    // 5-8 שבועות
+      else buckets['3-4w'].push(k)                 // 3-4 שבועות
+    }
+    return buckets
+  }, [kidsAtRisk])
+
+  // ===== ילדים שיעברו לבוגרים השנה =====
+  // מי שיגיע ל-16 בין הdate של אירוע kids הקרוב (או 1.6.YYYY) ל-12 חודש אחריו.
+  const movingToAdult = useMemo(() => {
+    // משתמשים בתאריך של אירוע kids הקרוב, או fallback ל-1.6 של השנה הנוכחית
+    const today = new Date()
+    const todayY = today.getFullYear()
+    const sortedKidsEvents = [...visibleKidsEvents].sort((a, b) =>
+      String(a.event_date).localeCompare(String(b.event_date))
+    )
+    const upcoming = sortedKidsEvents.find(e => e.event_date >= today.toISOString().slice(0, 10))
+    const refDateStr = upcoming ? upcoming.event_date : `${todayY}-06-01`
+    const ref = new Date(refDateStr)
+    const yearLater = new Date(ref.getFullYear() + 1, ref.getMonth(), ref.getDate())
+
+    const list = []
+    for (const m of activeMembers) {
+      if (m.belt_category !== 'kids') continue
+      if (!m.birth_date) continue
+      if (!isAdmin && myAthleteIds && !myAthleteIds.has(m.id)) continue
+      const bd = new Date(m.birth_date)
+      if (isNaN(bd.getTime())) continue
+      const b16 = new Date(bd.getFullYear() + 16, bd.getMonth(), bd.getDate())
+      if (b16 < ref || b16 >= yearLater) continue
+      // האם כבר מסומן ב-candidate הקרוב?
+      let alreadyMarked = false
+      let upcomingCandId = null
+      if (upcoming) {
+        const cands = kidsCandsByEvent.get(upcoming.id) || []
+        const cand = cands.find(c => c.member_id === m.id)
+        if (cand) {
+          alreadyMarked = !!cand.target_to_adult
+          upcomingCandId = cand.id
+        }
+      }
+      list.push({
+        id: m.id,
+        name: m.full_name || '—',
+        belt: m.belt,
+        beltLabel: m.belt ? getBeltLabel(m.belt) : '—',
+        birth_date: m.birth_date,
+        ageAt16: b16.toISOString().slice(0, 10),
+        alreadyMarked,
+        upcomingEventId: upcoming?.id || null,
+        upcomingCandId,
+      })
+    }
+    list.sort((a, b) => String(a.ageAt16).localeCompare(String(b.ageAt16)))
+    return list
+  }, [activeMembers, visibleKidsEvents, kidsCandsByEvent, isAdmin, myAthleteIds])
+
+  // ===== ילדים מוכנים לקידום (לפי גיל + זמן בחגורה) =====
+  const kidsReadyForPromotion = useMemo(() => {
+    const today = new Date()
+    const results = []
+    for (const m of activeMembers) {
+      if (m.belt_category !== 'kids') continue
+      if (!isAdmin && myAthleteIds && !myAthleteIds.has(m.id)) continue
+      const kidIdx = KIDS_BELTS.findIndex(b => b.value === m.belt)
+      const nextBelt = kidIdx >= 0 ? KIDS_BELTS[kidIdx + 1] : null
+      // לבן ילדים ללא birth_date — לא ניתן לחשב
+      if (!nextBelt) continue
+      // גיל
+      let age = null
+      if (m.birth_date) {
+        const bd = new Date(m.birth_date)
+        if (!isNaN(bd.getTime())) {
+          age = today.getFullYear() - bd.getFullYear()
+          const mo = today.getMonth() - bd.getMonth()
+          if (mo < 0 || (mo === 0 && today.getDate() < bd.getDate())) age--
+        }
+      }
+      const minAge = KIDS_BELT_MIN_AGE[nextBelt.value] ?? null
+      const ageOk = age != null && minAge != null ? age >= minAge : null
+      // זמן בחגורה
+      let monthsAtBelt = null
+      if (m.belt_received_at) {
+        const br = new Date(m.belt_received_at)
+        if (!isNaN(br.getTime())) {
+          monthsAtBelt = (today.getTime() - br.getTime()) / (1000 * 60 * 60 * 24 * 30.5)
+        }
+      }
+      const timeOk = monthsAtBelt != null ? monthsAtBelt >= KIDS_MIN_MONTHS_AT_BELT : null
+      // ready: גיל OK + זמן OK; almostReady: גיל OK + זמן לא מספיק
+      const ready = ageOk === true && timeOk === true
+      const almostReady = ageOk === true && timeOk === false
+      results.push({ m, age, nextBelt, minAge, ageOk, monthsAtBelt, timeOk, ready, almostReady })
+    }
+    // מיון: מוכנים → כמעט מוכנים → שאר
+    results.sort((a, b) => {
+      const score = x => x.ready ? 0 : x.almostReady ? 1 : 2
+      return score(a) - score(b) || (a.nextBelt?.order ?? 99) - (b.nextBelt?.order ?? 99) || (a.m.full_name || '').localeCompare(b.m.full_name || '', 'he')
+    })
+    return results
+  }, [activeMembers, isAdmin, myAthleteIds])
+
+  // קיבוץ לפי חגורת יעד (לסיכום הזמנת חגורות)
+  const kidsReadyByTarget = useMemo(() => {
+    const m = new Map()
+    for (const r of kidsReadyForPromotion) {
+      if (!r.ready) continue
+      const key = r.nextBelt.value
+      if (!m.has(key)) m.set(key, [])
+      m.get(key).push(r)
+    }
+    return m
+  }, [kidsReadyForPromotion])
+
+  // ===== handlers לפעולות בדוח מבחן יוני =====
+  async function handleKidsCandidateAction(cand, action) {
+    // action: 'promote' | 'extra_stripe' | 'not_promoted'
+    if (kidsActionBusy.has(cand.id)) return
+    setKidsActionBusy(prev => new Set(prev).add(cand.id))
+    try {
+      let payload
+      if (action === 'promote') {
+        payload = { status: 'promoted' }
+      } else if (action === 'extra_stripe') {
+        // נשאר באותה חגורה, מקבל פס נוסף
+        payload = {
+          status: 'promoted',
+          target_belt: cand.current_belt,
+          target_stripes: Math.min((cand.current_stripes ?? 0) + 1, 4),
+        }
+      } else {
+        payload = { status: 'not_promoted' }
+      }
+      const { error } = await supabase.from('promotion_candidates').update(payload).eq('id', cand.id)
+      if (error) throw error
+      // רענון
+      fetchAll()
+    } catch (e) {
+      toast.error('שגיאה: ' + (e?.message || String(e)))
+    } finally {
+      setKidsActionBusy(prev => { const n = new Set(prev); n.delete(cand.id); return n })
+    }
+  }
+
+  async function handlePushKidsRiskParents(member) {
+    if (!member?.id) return
+    if (kidsRiskPushBusy.has(member.id)) return
+    setKidsRiskPushBusy(prev => new Set(prev).add(member.id))
+    try {
+      const days = member.daysSince
+      const daysTxt = days == null ? '' : ` (${days} ימים בלי אימון)`
+      await notifyPush({
+        userIds: [member.id],
+        title: '🥋 מתגעגעים אליכם!',
+        body: `${member.name}${daysTxt} — נשמח לראות אתכם בחזרה. המבחן השנתי קרוב!`,
+        url: '/',
+        tag: `kids-risk-${member.id}`,
+        icon: '/icon-192.png',
+      })
+      setKidsRiskPushSent(prev => new Set(prev).add(member.id))
+      toast.success(`Push נשלח ל-${member.name}`)
+    } catch (e) {
+      toast.error('שגיאה בשליחה: ' + (e?.message || String(e)))
+    } finally {
+      setKidsRiskPushBusy(prev => { const n = new Set(prev); n.delete(member.id); return n })
+    }
+  }
+
+  async function handlePushAllKidsRiskParents() {
+    if (kidsAtRisk.length === 0) return
+    let sent = 0, failed = 0
+    for (const k of kidsAtRisk) {
+      if (kidsRiskPushSent.has(k.id)) continue
+      try {
+        const days = k.daysSince
+        const daysTxt = days == null ? '' : ` (${days} ימים בלי אימון)`
+        await notifyPush({
+          userIds: [k.id],
+          title: '🥋 מתגעגעים אליכם!',
+          body: `${k.name}${daysTxt} — נשמח לראות אתכם בחזרה. המבחן השנתי קרוב!`,
+          url: '/',
+          tag: `kids-risk-${k.id}`,
+          icon: '/icon-192.png',
+        })
+        setKidsRiskPushSent(prev => new Set(prev).add(k.id))
+        sent++
+      } catch {
+        failed++
+      }
+    }
+    if (sent > 0) toast.success(`נשלחו ${sent} התראות${failed ? ` (${failed} נכשלו)` : ''}`)
+    else if (failed > 0) toast.error(`כל ${failed} ההתראות נכשלו`)
+  }
+
+  async function handleMarkAsAdultTransition(item) {
+    // item: שורה מ-movingToAdult — אם יש upcomingCandId, עדכן candidate; אחרת ייצר חדש
+    if (adultMarkBusy.has(item.id)) return
+    setAdultMarkBusy(prev => new Set(prev).add(item.id))
+    try {
+      if (item.upcomingCandId) {
+        const { error } = await supabase.from('promotion_candidates')
+          .update({ target_to_adult: true, target_belt: 'white' })
+          .eq('id', item.upcomingCandId)
+        if (error) throw error
+      } else if (item.upcomingEventId) {
+        const member = memberByIdMap.get(item.id)
+        const { error } = await supabase.from('promotion_candidates').insert({
+          event_id: item.upcomingEventId,
+          member_id: item.id,
+          current_belt: member?.belt || null,
+          current_stripes: member?.belt_stripes ?? 0,
+          target_belt: 'white',
+          target_stripes: 0,
+          target_to_adult: true,
+          status: 'planned',
+        })
+        if (error) throw error
+      } else {
+        toast.error('אין אירוע מבחן ילדים מתוכנן. צור קודם אירוע מבחן יוני.')
+        return
+      }
+      toast.success(`${item.name} סומן כעובר לבוגרים`)
+      fetchAll()
+    } catch (e) {
+      toast.error('שגיאה: ' + (e?.message || String(e)))
+    } finally {
+      setAdultMarkBusy(prev => { const n = new Set(prev); n.delete(item.id); return n })
+    }
+  }
+
   if (loading) {
     return <div className="text-center text-gray-500 py-8">טוען דוחות…</div>
   }
@@ -1697,6 +2046,351 @@ export default function ReportsManager({ isAdmin, profile }) {
           )
         })()}
       </SectionCard>
+
+      {/* ================================================================
+          🧒 מוכנים לקידום — ילדים
+      ================================================================ */}
+      {kidsReadyForPromotion.length > 0 && (
+        <SectionCard
+          title={`🧒 מוכנים לקידום — ילדים (${kidsReadyForPromotion.filter(r => r.ready).length} מוכנים)`}
+          icon="🧒"
+          footer={
+            kidsReadyByTarget.size > 0
+              ? '🛒 סיכום להזמנת חגורות: ' + [...kidsReadyByTarget.entries()]
+                  .map(([v, arr]) => `${getBeltLabel(v)} ×${arr.length}`)
+                  .join(' · ')
+              : 'לא נמצאו ילדים מוכנים לקידום כרגע'
+          }
+        >
+          <div className="space-y-1">
+            {kidsReadyForPromotion.map(({ m, age, nextBelt, minAge, ageOk, monthsAtBelt, timeOk, ready, almostReady }) => {
+              const nextMeta = getBeltMeta(nextBelt.value)
+              const months = monthsAtBelt != null ? Math.floor(monthsAtBelt) : null
+              return (
+                <div
+                  key={m.id}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs ${
+                    ready ? 'bg-emerald-50 border-emerald-200' :
+                    almostReady ? 'bg-amber-50 border-amber-200' :
+                    'bg-gray-50 border-gray-200 opacity-60'
+                  }`}
+                >
+                  {/* סטטוס */}
+                  <span className="text-base shrink-0">
+                    {ready ? '✅' : almostReady ? '⏳' : '❌'}
+                  </span>
+                  {/* שם */}
+                  <span className="font-bold flex-1 truncate">{m.full_name}</span>
+                  {/* גיל */}
+                  <span className={`shrink-0 ${ageOk ? 'text-emerald-700' : 'text-red-500'}`}>
+                    {age != null ? `גיל ${age}` : 'גיל ?'}
+                    {minAge != null && !ageOk && <span className="text-gray-400"> (צריך {minAge})</span>}
+                  </span>
+                  {/* זמן בחגורה */}
+                  <span className={`shrink-0 ${timeOk ? 'text-emerald-700' : timeOk === false ? 'text-amber-600' : 'text-gray-400'}`}>
+                    {months != null ? `${months} חודשים` : 'אין תאריך'}
+                  </span>
+                  {/* חגורה נוכחית → יעד */}
+                  <span className="shrink-0 flex items-center gap-1">
+                    <span className="text-gray-500">{getBeltLabel(m.belt)}</span>
+                    <span className="text-gray-400">→</span>
+                    <span
+                      className="font-bold px-2 py-0.5 rounded-full text-[10px]"
+                      style={{ background: nextMeta?.color || '#ddd', color: nextMeta?.text || '#000' }}
+                    >
+                      {nextBelt.label}
+                    </span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* ================================================================
+          🥋 מבחן יוני — דוח candidates של אירועי kids_annual_test
+      ================================================================ */}
+      {visibleKidsEvents.length > 0 && (
+        <SectionCard
+          title={`🥋 מבחן יוני — מועמדים לקידום (${visibleKidsEvents.length} אירועים)`}
+          icon="🥋"
+          footer="לכל ילד מוצג % נוכחות מאז קבלת החגורה הנוכחית. 🟢 מומלץ לקידום (≥60%) · 🟡 לבדיקה (<60%) · ⚪ אין נתונים. בלחיצה על שם החגורה — סילבוס המבחן (לפי משפחה) + הערות לדרגה הספציפית."
+        >
+          <div className="space-y-4">
+            {visibleKidsEvents.map(ev => {
+              const evCands = (kidsCandsByEvent.get(ev.id) || [])
+                .filter(c => isAdmin || !myAthleteIds || myAthleteIds.has(c.member_id))
+              if (evCands.length === 0) return null
+              // קבץ לפי target_belt (חגורת היעד)
+              const byTarget = new Map()
+              for (const c of evCands) {
+                const k = c.target_belt || '—'
+                if (!byTarget.has(k)) byTarget.set(k, [])
+                byTarget.get(k).push(c)
+              }
+              const cls = classById.get(ev.class_id)
+              return (
+                <div key={ev.id} className="border border-amber-200 rounded-xl p-3 bg-amber-50/40">
+                  <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                    <div>
+                      <div className="font-bold text-gray-900 text-sm">{ev.name}</div>
+                      <div className="text-[11px] text-gray-600">
+                        {ev.event_date} {cls ? `· ${cls.name}` : ''}
+                      </div>
+                    </div>
+                    <div className="text-[11px] bg-white border border-amber-300 text-amber-800 rounded-full px-2 py-0.5 font-bold">
+                      {evCands.length} מועמדים
+                    </div>
+                  </div>
+                  {Array.from(byTarget.entries()).map(([targetBelt, list]) => {
+                    const targetMeta = getBeltMeta(targetBelt)
+                    const isAdultTransition = list.some(c => c.target_to_adult)
+                    const sylKey = getSyllabusKeyForTarget(targetBelt)
+                    const sylRow = sylKey.family ? syllabusByFamily.get(sylKey.family) : null
+                    const levelNotes = sylRow?.level_notes && sylKey.level
+                      ? sylRow.level_notes[sylKey.level]
+                      : null
+                    return (
+                      <details key={targetBelt} className="mb-2 border border-gray-200 rounded-lg bg-white">
+                        <summary className="cursor-pointer p-2 flex items-center gap-2 text-sm">
+                          <span
+                            className="inline-block w-3 h-3 rounded-full border border-gray-300 shrink-0"
+                            style={{ background: targetMeta?.color || '#fff' }}
+                          />
+                          <span className="font-bold flex-1">
+                            {isAdultTransition ? '🎓 מעבר לבוגרים' : `יעד: ${getBeltLabel(targetBelt)}`}
+                          </span>
+                          <span className="text-[11px] bg-gray-100 text-gray-700 rounded-full px-2 py-0.5">
+                            {list.length}
+                          </span>
+                        </summary>
+                        <div className="border-t border-gray-200 p-2 space-y-2">
+                          {/* סילבוס לדרגה — רק אם יש */}
+                          {sylRow && !isAdultTransition && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-[11px]">
+                              <div className="font-bold text-blue-900 mb-1">
+                                📚 סילבוס {getBeltFamilyLabel(sylKey.family)} (גילאי {sylRow.age_range_label})
+                                {sylKey.level && <span className="text-blue-700"> · {getLevelLabel(sylKey.level)}</span>}
+                              </div>
+                              {Array.isArray(sylRow.content?.sections) && (
+                                <ul className="space-y-1">
+                                  {sylRow.content.sections.map((sec, idx) => (
+                                    <li key={idx}>
+                                      <b>{sec.title}:</b>{' '}
+                                      <span className="text-gray-700">
+                                        {Array.isArray(sec.items) ? sec.items.join(', ') : ''}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                              {Array.isArray(levelNotes) && levelNotes.length > 0 && (
+                                <div className="mt-1.5 pt-1.5 border-t border-blue-200">
+                                  <b>הערות לדרגה:</b>
+                                  <ul className="list-disc mr-4">
+                                    {levelNotes.map((n, i) => <li key={i}>{n}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {/* candidates */}
+                          <ul className="divide-y divide-gray-100">
+                            {list.map(c => {
+                              const mem = memberByIdMap.get(c.member_id)
+                              const pct = c.attendance_pct == null ? null : Math.round(c.attendance_pct * 100)
+                              const recIcon = c.attendance_recommendation === 'promote' ? '🟢'
+                                            : c.attendance_recommendation === 'review'  ? '🟡'
+                                            : '⚪'
+                              const busy = kidsActionBusy.has(c.id)
+                              const done = c.status && c.status !== 'planned'
+                              return (
+                                <li key={c.id} className="py-2 flex items-center gap-2 flex-wrap">
+                                  <span className="text-base shrink-0">{recIcon}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-sm text-gray-900 truncate">
+                                      {mem?.full_name || '—'}
+                                    </div>
+                                    <div className="text-[11px] text-gray-500">
+                                      נוכחות: {pct == null ? '—' : `${pct}%`}
+                                      {c.expected_sessions != null && ` (${c.attended_sessions}/${c.expected_sessions})`}
+                                      {' · '}
+                                      נוכחית: {c.current_belt ? getBeltLabel(c.current_belt) : '—'}
+                                      {c.current_stripes > 0 && ` · ${c.current_stripes} פסים`}
+                                    </div>
+                                  </div>
+                                  {done ? (
+                                    <span className={`text-[11px] font-bold px-2 py-1 rounded ${
+                                      c.status === 'promoted'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-gray-100 text-gray-700'
+                                    }`}>
+                                      {c.status === 'promoted' ? '✓ קודם' : '✗ לא קודם'}
+                                    </span>
+                                  ) : (
+                                    <div className="flex gap-1 flex-wrap">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleKidsCandidateAction(c, 'promote')}
+                                        disabled={busy}
+                                        className="text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-1 rounded disabled:opacity-50"
+                                      >✓ קדם</button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleKidsCandidateAction(c, 'extra_stripe')}
+                                        disabled={busy}
+                                        className="text-[11px] bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded disabled:opacity-50"
+                                        title="ישאר בחגורה הנוכחית, יקבל פס נוסף"
+                                      >+ פס</button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleKidsCandidateAction(c, 'not_promoted')}
+                                        disabled={busy}
+                                        className="text-[11px] bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-2 py-1 rounded disabled:opacity-50"
+                                      >✗ לא</button>
+                                    </div>
+                                  )}
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </div>
+                      </details>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* ================================================================
+          ⚠️ סיכון נשירה לילדים
+      ================================================================ */}
+      {(isAdmin || isBjjCoach) && (
+        <SectionCard
+          title={`⚠️ סיכון נשירה — ילדים שלא הגיעו 3+ שבועות (${kidsAtRisk.length})`}
+          icon="⚠️"
+          footer="ילדים מקבוצת kids שלא היה להם checkin 21 ימים+. כפתור 📲 שולח push להורים. שימושי לפני המבחן השנתי כדי לדאוג שכל הילדים יחזרו לאימון בזמן."
+        >
+          {kidsAtRisk.length === 0 ? (
+            <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3">✅ כל הילדים הפעילים הגיעו לאימון בשלושת השבועות האחרונים.</p>
+          ) : (
+            <>
+              <div className="mb-3 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="text-xs text-blue-900 flex-1">
+                  💡 שלח Push להורים של כל הילדים בסיכון (חינמי).
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePushAllKidsRiskParents}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg"
+                >
+                  📲 שלח לכולם ({kidsAtRisk.length})
+                </button>
+              </div>
+              {Object.entries({
+                '3-4w':  '3-4 שבועות בלי אימון',
+                '5-8w':  '5-8 שבועות בלי אימון',
+                '9-12w': '9-12 שבועות בלי אימון',
+                '12w+':  '⛔ מעל 3 חודשים בלי אימון',
+              }).map(([key, label]) => {
+                const list = kidsAtRiskByBucket[key] || []
+                if (list.length === 0) return null
+                return (
+                  <div key={key} className="mb-3">
+                    <h4 className="text-xs font-bold text-gray-700 mb-1">
+                      {label} ({list.length})
+                    </h4>
+                    <ul className="divide-y divide-gray-100 bg-white border border-gray-200 rounded-lg">
+                      {list.map(k => {
+                        const sending = kidsRiskPushBusy.has(k.id)
+                        const sent = kidsRiskPushSent.has(k.id)
+                        return (
+                          <li key={k.id} className="flex items-center gap-2 px-3 py-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-sm text-gray-900 truncate">{k.name}</div>
+                              <div className="text-[11px] text-gray-500">
+                                {k.beltLabel}
+                                {k.daysSince != null && ` · ${k.daysSince} ימים`}
+                                {k.daysSince == null && ' · לא נכח מעולם'}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handlePushKidsRiskParents(k)}
+                              disabled={sending || sent}
+                              className={`shrink-0 text-xs font-bold px-2.5 py-1.5 rounded ${
+                                sent
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : sending
+                                    ? 'bg-blue-300 text-white'
+                                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                              }`}
+                            >
+                              {sent ? '✓ נשלח' : sending ? '…' : '📲 Push'}
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )
+              })}
+            </>
+          )}
+        </SectionCard>
+      )}
+
+      {/* ================================================================
+          🎓 מעבר לבוגרים השנה
+      ================================================================ */}
+      {(isAdmin || isBjjCoach) && (
+        <SectionCard
+          title={`🎓 מעבר לבוגרים השנה (${movingToAdult.length})`}
+          icon="🎓"
+          footer="ילדים שיגיעו לגיל 16 בין מבחן יוני הקרוב ליוני הבא — מועמדים לעבור לקטגוריית בוגרים (target_belt=לבנה). דרוש birth_date מלא ב-AthleteManagement."
+        >
+          {movingToAdult.length === 0 ? (
+            <p className="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
+              אין ילדים שיגיעו ל-16 השנה הקרובה (או שאין להם birth_date מלא).
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {movingToAdult.map(item => {
+                const busy = adultMarkBusy.has(item.id)
+                return (
+                  <li key={item.id} className="flex items-center gap-2 py-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-sm text-gray-900 truncate">{item.name}</div>
+                      <div className="text-[11px] text-gray-500">
+                        חגורה: {item.beltLabel} · יום הולדת 16: {item.ageAt16}
+                      </div>
+                    </div>
+                    {item.alreadyMarked ? (
+                      <span className="shrink-0 text-[11px] font-bold px-2 py-1 rounded bg-emerald-100 text-emerald-800">
+                        ✓ סומן
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleMarkAsAdultTransition(item)}
+                        disabled={busy || !item.upcomingEventId}
+                        title={!item.upcomingEventId ? 'אין אירוע מבחן ילדים מתוכנן — צור קודם' : ''}
+                        className="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold px-3 py-1.5 rounded"
+                      >
+                        {busy ? '…' : '🎓 סמן כעובר לבוגרים'}
+                      </button>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </SectionCard>
+      )}
 
       {/* ================================================================
           📅 אירועי קידום

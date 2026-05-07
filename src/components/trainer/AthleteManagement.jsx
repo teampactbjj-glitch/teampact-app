@@ -26,6 +26,7 @@ const EMPTY_FORM = {
   group_ids: [],
   active: true,
   branch_ids: [],
+  birth_date: '',
   // Belt fields
   trains_gi: true,
   belt_category: 'adult',
@@ -33,6 +34,17 @@ const EMPTY_FORM = {
   belt_received_at: '',
   belt_stripes: 0,
   bjj_start_date: '',
+}
+
+function calcAge(birthDate) {
+  if (!birthDate) return null
+  const bd = new Date(birthDate)
+  if (isNaN(bd.getTime())) return null
+  const today = new Date()
+  let age = today.getFullYear() - bd.getFullYear()
+  const m = today.getMonth() - bd.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--
+  return age
 }
 
 export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null, stackedLayout = false, extraTop = null }) {
@@ -146,6 +158,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       belt_received_at: form.trains_gi && form.belt_received_at ? form.belt_received_at : null,
       belt_stripes: form.trains_gi && form.belt ? Number(form.belt_stripes || 0) : 0,
       bjj_start_date: form.trains_gi && form.bjj_start_date ? form.bjj_start_date : null,
+      birth_date: form.birth_date || null,
     }
     let error
     if (editing === 'new') {
@@ -362,6 +375,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       belt_received_at: athlete.belt_received_at || '',
       belt_stripes: athlete.belt_stripes ?? 0,
       bjj_start_date: athlete.bjj_start_date || '',
+      birth_date: athlete.birth_date || '',
     })
     setEditing(athlete.id)
   }
@@ -455,6 +469,19 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
             value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
           <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="טלפון"
             value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              תאריך לידה (אופציונלי)
+              {form.birth_date && calcAge(form.birth_date) != null && (
+                <span className="mr-2 text-blue-700 font-bold">· גיל: {calcAge(form.birth_date)}</span>
+              )}
+            </label>
+            <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+              value={form.birth_date || ''}
+              onChange={e => setForm(p => ({ ...p, birth_date: e.target.value }))} />
+            <p className="text-[11px] text-gray-400 mt-1">משמש למעבר אוטומטי לקטגוריית בוגרים בגיל 16.</p>
+          </div>
 
           <select className="w-full border rounded-lg px-3 py-2 text-sm"
             value={form.membership_type} onChange={e => handleMembershipChange(e.target.value)}>

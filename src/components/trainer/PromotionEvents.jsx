@@ -5,6 +5,30 @@ import {
   ADULT_BELTS, KIDS_BELTS, getBeltMeta, getBeltLabel, getMaxStripes,
 } from '../../lib/belts'
 
+// ===== עזרי תאריך לחישוב נוכחות =====
+const DAY_MS = 24 * 60 * 60 * 1000
+
+// תאריך שיעור בפועל לפי registration.week_start + class.day_of_week (YYYY-MM-DD).
+function regOccurrenceDateStr(weekStart, dayOfWeek) {
+  if (!weekStart || dayOfWeek == null) return null
+  const ws = new Date(weekStart + 'T00:00:00')
+  if (isNaN(ws.getTime())) return null
+  const offset = ((dayOfWeek - ws.getDay()) + 7) % 7
+  const d = new Date(ws.getTime() + offset * DAY_MS)
+  return d.toISOString().slice(0, 10)
+}
+
+// משך שיעור עד סיום (ms epoch). null אם חסר.
+function classEndMs(dateStr, startTime, durationMin) {
+  if (!dateStr || !startTime) return null
+  const [h, mi] = String(startTime).split(':').map(n => parseInt(n, 10))
+  if (!Number.isFinite(h) || !Number.isFinite(mi)) return null
+  const start = new Date(`${dateStr}T${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}:00`)
+  if (isNaN(start.getTime())) return null
+  const dur = Number.isFinite(+durationMin) ? +durationMin : 60
+  return start.getTime() + dur * 60 * 1000
+}
+
 // ============================================================
 // PromotionEvents — ניהול אירועי קידום (מאמן/מנהל)
 // ============================================================
@@ -86,6 +110,7 @@ export default function PromotionEvents({ profile, isAdmin, onClose, initialCand
   const [err, setErr]           = useState('')
   const [editingEvent, setEditingEvent] = useState(null) // null | { id?, name, event_date, branch_ids, notes }
   const [pendingNewEvent, setPendingNewEvent] = useState(null) // אם נכנסנו עם initialCandidateMemberIds
+  const [showKidsCreator, setShowKidsCreator] = useState(false) // מודאל יצירת מבחן ילדים יוני
 
   // ── טעינת נתונים ───────────────────────────────────────────
   useEffect(() => { load() }, [])
@@ -186,15 +211,25 @@ export default function PromotionEvents({ profile, isAdmin, onClose, initialCand
         </button>
       )}
 
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-black text-gray-900">🎓 אירועי קידום</h2>
-        <button
-          type="button"
-          onClick={() => setEditingEvent({ id: null, name: '', event_date: '', branch_ids: [], notes: '' })}
-          className="bg-blue-700 hover:bg-blue-800 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-1"
-        >
-          <span className="text-lg leading-none">+</span> אירוע חדש
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setShowKidsCreator(true)}
+            className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-3 py-2 rounded-lg text-xs flex items-center gap-1"
+            title="יצירת אירועי מבחן לכל קבוצות הילדים בו-זמנית"
+          >
+            🧒 צור מבחן ילדים יוני
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditingEvent({ id: null, name: '', event_date: '', branch_ids: [], notes: '' })}
+            className="bg-blue-700 hover:bg-blue-800 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-1"
+          >
+            <span className="text-lg leading-none">+</span> אירוע חדש
+          </button>
+        </div>
       </header>
 
       {/* אירועים היום — באנר בולט */}
@@ -262,6 +297,17 @@ export default function PromotionEvents({ profile, isAdmin, onClose, initialCand
             ))}
           </div>
         </section>
+      )}
+
+      {/* Dialog יצירת מבחן ילדים יוני */}
+      {showKidsCreator && (
+        <KidsAnnualTestCreator
+          branches={branches}
+          isAdmin={isAdmin}
+          trainerId={profile?.id}
+          onClose={() => setShowKidsCreator(false)}
+          onCreated={() => { setShowKidsCreator(false); load() }}
+        />
       )}
 
       {/* Dialog יצירה/עריכה */}
@@ -376,17 +422,78 @@ function EventEditDialog({ ev, existingCandidates, presetMemberIds, members, bra
   const [addSearch, setAddSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState('')
+  const [memberClassData, setMemberClassData] = useState(null)
+  const [loadingClasses, setLoadingClasses] = useState(false)
+
+  // טוען קבוצות כשפותחים פאנל הוספה
+  useEffect(() => {
+    if (showAddMember && memberClassData === null && !loadingClasses) {
+      fetchClassData()
+    }
+  }, [showAddMember])
+
+  async function fetchClassData() {
+    setLoadingClasses(true)
+    try {
+      const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      const [clsRes, regRes] = await Promise.all([
+        supabase.from('classes').select('id, name, branch_id, day_of_week, start_time, trains_gi'),
+        supabase.from('class_registrations')
+          .select('class_id, athlete_id').gte('week_start', since).range(0, 99999),
+      ])
+      const classMap = new Map((clsRes.data || []).filter(c => c.trains_gi !== false).map(c => [c.id, c]))
+      const memberToClasses = new Map()
+      for (const r of (regRes.data || [])) {
+        if (!memberToClasses.has(r.athlete_id)) memberToClasses.set(r.athlete_id, new Set())
+        memberToClasses.get(r.athlete_id).add(r.class_id)
+      }
+      setMemberClassData({ classMap, memberToClasses })
+    } catch (e) {
+      console.warn('fetchClassData:', e)
+      setMemberClassData({ classMap: new Map(), memberToClasses: new Map() })
+    } finally {
+      setLoadingClasses(false)
+    }
+  }
 
   // ── סינון מתאמנים זמינים להוספה ─────────────────────────────
   const usedMemberIds = useMemo(() => new Set(draftCands.map(c => c.member_id)), [draftCands])
   const availableMembers = useMemo(() => {
     const q = addSearch.trim().toLowerCase()
     return members
-      .filter(m => m.trains_gi !== false)             // רק BJJ
-      .filter(m => !usedMemberIds.has(m.id))          // לא כבר ברשימה
+      .filter(m => m.trains_gi !== false)
+      .filter(m => !usedMemberIds.has(m.id))
+      .filter(m => {
+        if (branchIds.length === 0) return true
+        const mb = m.branch_ids?.length ? m.branch_ids : (m.branch_id ? [m.branch_id] : [])
+        return branchIds.some(bid => mb.includes(bid))
+      })
       .filter(m => !q || m.full_name?.toLowerCase().includes(q))
-      .slice(0, 50)
-  }, [members, addSearch, usedMemberIds])
+  }, [members, addSearch, usedMemberIds, branchIds])
+
+  const DAY_HE = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת']
+
+  // קיבוץ לפי קבוצות (אחרי טעינת class data)
+  const groupedMembers = useMemo(() => {
+    if (!memberClassData) return null
+    const { classMap, memberToClasses } = memberClassData
+    const relevantClasses = [...classMap.values()]
+      .filter(c => branchIds.length === 0 || branchIds.includes(c.branch_id))
+      .sort((a, b) => (a.day_of_week ?? 9) - (b.day_of_week ?? 9) || (a.start_time || '').localeCompare(b.start_time || ''))
+    const groups = []
+    const assigned = new Set()
+    for (const cls of relevantClasses) {
+      const clsMembers = availableMembers.filter(m => memberToClasses.get(m.id)?.has(cls.id))
+      if (clsMembers.length === 0) continue
+      clsMembers.forEach(m => assigned.add(m.id))
+      const day = DAY_HE[cls.day_of_week] ?? ''
+      const time = cls.start_time ? cls.start_time.slice(0, 5) : ''
+      groups.push({ label: `${day} ${time}${cls.name ? ' · ' + cls.name : ''}`, members: clsMembers })
+    }
+    const rest = availableMembers.filter(m => !assigned.has(m.id))
+    if (rest.length) groups.push({ label: 'ללא קבוצה', members: rest })
+    return groups
+  }, [availableMembers, memberClassData, branchIds])
 
   function addMember(mem) {
     setDraftCands(arr => [...arr, {
@@ -685,27 +792,56 @@ function EventEditDialog({ ev, existingCandidates, presetMemberIds, members, bra
                   type="text"
                   value={addSearch}
                   onChange={e => setAddSearch(e.target.value)}
-                  placeholder="חפש מתאמן…"
+                  placeholder={branchIds.length > 0 ? 'חפש מתאמן מהסניף הנבחר…' : 'חפש מתאמן…'}
                   className="w-full border border-emerald-300 rounded p-1.5 text-sm"
                   autoFocus
                 />
-                <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
-                  {availableMembers.length === 0 && (
-                    <div className="text-xs text-gray-500 text-center py-2">לא נמצאו מתאמני BJJ זמינים.</div>
+                <div className="mt-2 max-h-64 overflow-y-auto">
+                  {loadingClasses && (
+                    <div className="text-xs text-gray-400 text-center py-2">טוען קבוצות…</div>
                   )}
-                  {availableMembers.map(m => {
+                  {!loadingClasses && availableMembers.length === 0 && (
+                    <div className="text-xs text-gray-500 text-center py-2">לא נמצאו מתאמני BJJ{branchIds.length > 0 ? ' בסניף זה' : ''}</div>
+                  )}
+                  {/* תצוגה מקובצת לפי קבוצה */}
+                  {!loadingClasses && groupedMembers && groupedMembers.map((grp, gi) => (
+                    <div key={gi} className="mb-2">
+                      <div className="text-[10px] font-black text-emerald-800 uppercase tracking-wide px-1 py-0.5 bg-emerald-100 rounded mb-1">
+                        {grp.label} ({grp.members.length})
+                      </div>
+                      <div className="space-y-1">
+                        {grp.members.map(m => {
+                          const meta = m.belt ? getBeltMeta(m.belt) : null
+                          return (
+                            <button
+                              type="button"
+                              key={m.id}
+                              onClick={() => addMember(m)}
+                              className="w-full text-right bg-white hover:bg-emerald-100 border border-gray-200 rounded p-2 text-xs flex items-center gap-2"
+                            >
+                              <span className="inline-block w-3 h-3 rounded-full border border-gray-300 shrink-0"
+                                style={{ background: meta?.color || '#fff' }} />
+                              <span className="font-bold flex-1">{m.full_name}</span>
+                              <span className="text-gray-400 text-[10px]">{m.belt_category === 'kids' ? '🧒' : ''}</span>
+                              <span className="text-gray-500">{m.belt ? getBeltLabel(m.belt) : '—'}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  {/* fallback — לפני שנטען groupedMembers */}
+                  {!loadingClasses && !groupedMembers && availableMembers.slice(0, 50).map(m => {
                     const meta = m.belt ? getBeltMeta(m.belt) : null
                     return (
                       <button
                         type="button"
                         key={m.id}
                         onClick={() => addMember(m)}
-                        className="w-full text-right bg-white hover:bg-emerald-100 border border-gray-200 rounded p-2 text-xs flex items-center gap-2"
+                        className="w-full text-right bg-white hover:bg-emerald-100 border border-gray-200 rounded p-2 text-xs flex items-center gap-2 mb-1"
                       >
-                        <span
-                          className="inline-block w-3 h-3 rounded-full border border-gray-300 shrink-0"
-                          style={{ background: meta?.color || '#fff' }}
-                        />
+                        <span className="inline-block w-3 h-3 rounded-full border border-gray-300 shrink-0"
+                          style={{ background: meta?.color || '#fff' }} />
                         <span className="font-bold flex-1">{m.full_name}</span>
                         <span className="text-gray-500">{m.belt ? getBeltLabel(m.belt) : '—'}</span>
                       </button>
@@ -841,4 +977,419 @@ function EventEditDialog({ ev, existingCandidates, presetMemberIds, members, bra
       </div>
     </div>
   )
+}
+
+// ============================================================
+// KidsAnnualTestCreator — יצירת אירועי מבחן ילדים יוני
+// ============================================================
+// בוחר תאריך מבחן יחיד + רשימת קבוצות-ילדים → ייצור promotion_event לכל
+// קבוצה (event_type='kids_annual_test', class_id, attendance_threshold=0.6),
+// + candidates אוטומטיים לכל ילד פעיל ברישום הקבוצה (target_belt = הבא ב-KIDS_BELTS,
+// או 'white' + target_to_adult=true אם הילד ימלא 16 בין יוני השנה ליוני הבא),
+// + חישוב attendance_pct מבוסס registrations מאז belt_received_at של הילד עד היום.
+// ============================================================
+function KidsAnnualTestCreator({ branches, isAdmin, trainerId, onClose, onCreated }) {
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [classes, setClasses] = useState([])
+  const [members, setMembers] = useState([])
+  const [registrations, setRegistrations] = useState([])
+  const [checkins, setCheckins] = useState([])
+  const [selectedClassIds, setSelectedClassIds] = useState(() => new Set())
+  // ברירת מחדל: שישי האחרון של יוני בשנה הנוכחית (אם אנחנו אחריו → השנה הבאה).
+  const [eventDate, setEventDate] = useState(() => defaultJuneTestDate())
+  const [progress, setProgress] = useState({ step: '', cur: 0, total: 0 })
+
+  useEffect(() => { loadData() }, [])
+
+  async function loadData() {
+    setLoading(true); setErr('')
+    try {
+      const sinceMaxISO = new Date(Date.now() - 180 * DAY_MS).toISOString()
+      const [clsRes, memRes, regRes, chkRes] = await Promise.all([
+        supabase.from('classes')
+          .select('id, name, class_type, branch_id, day_of_week, start_time, duration_minutes')
+          .range(0, 99999),
+        supabase.from('members')
+          .select('id, full_name, email, phone, belt, belt_stripes, belt_category, belt_received_at, birth_date, branch_id, branch_ids, status, deleted_at')
+          .eq('belt_category', 'kids')
+          .neq('status', 'pending').neq('status', 'pending_deletion')
+          .is('deleted_at', null)
+          .range(0, 99999),
+        supabase.from('class_registrations')
+          .select('class_id, athlete_id, week_start')
+          .gte('week_start', sinceMaxISO.slice(0, 10))
+          .range(0, 99999),
+        supabase.from('checkins')
+          .select('class_id, athlete_id, status, checked_in_at, checkin_date')
+          .eq('status', 'present')
+          .gte('checked_in_at', sinceMaxISO)
+          .range(0, 99999),
+      ])
+      if (clsRes.error) throw clsRes.error
+      if (memRes.error) throw memRes.error
+      if (regRes.error) console.error('reg fetch:', regRes.error)
+      if (chkRes.error) console.error('chk fetch:', chkRes.error)
+      setClasses(clsRes.data || [])
+      setMembers(memRes.data || [])
+      setRegistrations(regRes.data || [])
+      setCheckins(chkRes.data || [])
+    } catch (e) {
+      setErr(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // pivots
+  const memberById = useMemo(() => new Map(members.map(m => [m.id, m])), [members])
+  const classById  = useMemo(() => new Map(classes.map(c => [c.id, c])), [classes])
+  const branchById = useMemo(() => new Map(branches.map(b => [b.id, b])), [branches])
+
+  // לכל class — ילדים ייחודיים שרשומים (registrations ב-180 יום)
+  const kidsByClass = useMemo(() => {
+    const m = new Map()
+    for (const r of registrations) {
+      const mem = memberById.get(r.athlete_id)
+      if (!mem) continue
+      if (mem.belt_category !== 'kids') continue
+      if (!m.has(r.class_id)) m.set(r.class_id, new Set())
+      m.get(r.class_id).add(r.athlete_id)
+    }
+    return m
+  }, [registrations, memberById])
+
+  // קבוצות ילדים: כל class שיש לו לפחות 1 ילד פעיל רשום (180 יום)
+  const kidsClasses = useMemo(() => {
+    return classes
+      .filter(c => (kidsByClass.get(c.id)?.size || 0) > 0)
+      .map(c => ({
+        ...c,
+        kidsCount: kidsByClass.get(c.id)?.size || 0,
+        branchName: branchById.get(c.branch_id)?.name || '—',
+      }))
+      .sort((a, b) => (a.branchName || '').localeCompare(b.branchName || '', 'he') || (a.day_of_week ?? 9) - (b.day_of_week ?? 9))
+  }, [classes, kidsByClass, branchById])
+
+  function toggleClass(id) {
+    setSelectedClassIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    if (selectedClassIds.size === kidsClasses.length) setSelectedClassIds(new Set())
+    else setSelectedClassIds(new Set(kidsClasses.map(c => c.id)))
+  }
+
+  // ===== חישוב candidate לילד אחד בתוך קבוצה =====
+  // expected_sessions: registrations שלו לקבוצה הזו, מאז belt_received_at, של שיעורים שכבר התקיימו (endMs<=today).
+  // attended_sessions: checkins שלו לקבוצה הזו במהלך אותם תאריכים.
+  // attendance_pct = attended/expected. אם expected=0 → not_evaluated.
+  function buildCandidate(member, classObj, eventDateStr) {
+    const beltMs = member.belt_received_at ? new Date(member.belt_received_at).getTime() : 0
+    const todayMs = new Date(eventDateStr + 'T23:59:59').getTime()
+
+    // expected: registrations שלו ב-class הזה בטווח [beltMs..todayMs]
+    let expected = 0
+    const occurrenceDates = new Set() // דאחים שדתות לזיהוי checkins
+    for (const r of registrations) {
+      if (r.athlete_id !== member.id) continue
+      if (r.class_id !== classObj.id) continue
+      const occ = regOccurrenceDateStr(r.week_start, classObj.day_of_week)
+      if (!occ) continue
+      const endMs = classEndMs(occ, classObj.start_time, classObj.duration_minutes)
+      if (endMs == null) continue
+      if (endMs > todayMs) continue
+      if (beltMs && endMs < beltMs) continue
+      expected++
+      occurrenceDates.add(occ)
+    }
+
+    // attended: checkins של הילד ב-class באותם תאריכים
+    let attended = 0
+    for (const c of checkins) {
+      if (c.athlete_id !== member.id) continue
+      if (c.class_id !== classObj.id) continue
+      if (!c.checkin_date) continue
+      if (!occurrenceDates.has(c.checkin_date)) continue
+      attended++
+    }
+
+    let attendance_pct = null
+    let attendance_recommendation = 'not_evaluated'
+    if (expected > 0) {
+      attendance_pct = Math.round((attended / expected) * 1000) / 1000
+      attendance_recommendation = attendance_pct >= 0.6 ? 'promote' : 'review'
+    }
+
+    // האם הילד יעבור לבוגרים השנה? (יגיע ל-16 בין יוני השנה ליוני הבא)
+    const turnsAdult = willTurn16InYear(member.birth_date, eventDateStr)
+    const target_to_adult = !!turnsAdult
+
+    let target_belt
+    if (target_to_adult) {
+      target_belt = 'white' // עובר לבוגרים = חגורה לבנה (מבוגרים)
+    } else {
+      // הבא ב-KIDS_BELTS לפי החגורה הנוכחית
+      const idx = KIDS_BELTS.findIndex(b => b.value === member.belt)
+      target_belt = idx >= 0 && idx < KIDS_BELTS.length - 1
+        ? KIDS_BELTS[idx + 1].value
+        : (member.belt || 'kids_white')
+    }
+
+    return {
+      member_id: member.id,
+      current_belt: member.belt || null,
+      current_stripes: member.belt_stripes ?? 0,
+      target_belt,
+      target_stripes: 0,
+      target_to_adult,
+      expected_sessions: expected,
+      attended_sessions: attended,
+      attendance_pct,
+      attendance_recommendation,
+      status: 'planned',
+    }
+  }
+
+  async function handleCreate() {
+    if (selectedClassIds.size === 0) { setErr('בחר לפחות קבוצה אחת'); return }
+    if (!eventDate) { setErr('בחר תאריך מבחן'); return }
+    setSaving(true); setErr('')
+
+    try {
+      const ids = Array.from(selectedClassIds)
+      let created = 0
+      for (let i = 0; i < ids.length; i++) {
+        const cls = classById.get(ids[i])
+        if (!cls) continue
+        const kidsIds = Array.from(kidsByClass.get(ids[i]) || [])
+        if (kidsIds.length === 0) continue
+
+        setProgress({ step: cls.name || 'קבוצה', cur: i + 1, total: ids.length })
+
+        const branchName = branchById.get(cls.branch_id)?.name || ''
+        const eventName = `מבחן ילדים יוני · ${cls.name || ''}${branchName ? ' · ' + branchName : ''}`.trim()
+
+        // 1) צור event
+        const { data: evRow, error: evErr } = await supabase.from('promotion_events').insert({
+          name: eventName,
+          event_date: eventDate,
+          event_type: 'kids_annual_test',
+          class_id: cls.id,
+          attendance_threshold: 0.6,
+          branch_ids: cls.branch_id ? [cls.branch_id] : [],
+          notes: 'מבחן דרגות שנתי לילדים — נוצר אוטומטית.',
+          status: 'planned',
+          trainer_id: trainerId || null,
+        }).select('id').single()
+        if (evErr) throw evErr
+
+        // 2) חשב candidates לכל ילד
+        const cands = []
+        for (const kidId of kidsIds) {
+          const mem = memberById.get(kidId)
+          if (!mem) continue
+          const cand = buildCandidate(mem, cls, eventDate)
+          cands.push({ event_id: evRow.id, ...cand })
+        }
+        if (cands.length > 0) {
+          // chunked insert (50 בכל פעם — pg יכול לשבור בריצה גדולה)
+          for (let j = 0; j < cands.length; j += 50) {
+            const chunk = cands.slice(j, j + 50)
+            const { error: candErr } = await supabase.from('promotion_candidates').insert(chunk)
+            if (candErr) throw candErr
+          }
+        }
+        created++
+      }
+
+      onCreated?.(created)
+    } catch (e) {
+      console.error('KidsAnnualTestCreator error:', e)
+      setErr(e?.message || String(e))
+    } finally {
+      setSaving(false)
+      setProgress({ step: '', cur: 0, total: 0 })
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={() => !saving && onClose()}
+      dir="rtl"
+    >
+      <div
+        className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <header className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+          <h3 className="font-black text-gray-900 text-base">
+            🧒 יצירת מבחן ילדים יוני
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="text-gray-500 hover:text-gray-800 text-xl leading-none disabled:opacity-30"
+          >✕</button>
+        </header>
+
+        <div className="p-4 space-y-3">
+          {err && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-2 text-xs">
+              {err}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="text-center text-gray-500 py-8">טוען נתונים…</div>
+          ) : (
+            <>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 leading-relaxed">
+                המערכת תיצור <b>אירוע מבחן נפרד לכל קבוצת ילדים</b> שתבחר.
+                לכל ילד תיווצר רשומת candidate עם חגורת היעד הבאה, אחוז נוכחות מחושב,
+                והמלצה: 🟢 לקידום (≥60%) / 🟡 לבדיקה (&lt;60%).<br />
+                ילדים שיגיעו ל־16 השנה יסומנו אוטומטית <b>🎓 מעבר לבוגרים</b> (target_belt=לבנה).
+              </div>
+
+              {/* תאריך */}
+              <label className="block">
+                <span className="text-xs font-bold text-gray-700">תאריך המבחן (יחול על כל הקבוצות שתבחר)</span>
+                <input
+                  type="date"
+                  value={eventDate}
+                  onChange={e => setEventDate(e.target.value)}
+                  disabled={saving}
+                  className="mt-1 w-full border border-gray-300 rounded-lg p-2 text-sm disabled:bg-gray-100"
+                />
+              </label>
+
+              {/* רשימת קבוצות */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-gray-700">
+                    קבוצות ילדים זמינות ({kidsClasses.length})
+                  </span>
+                  {kidsClasses.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={toggleAll}
+                      disabled={saving}
+                      className="text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-2 py-1 rounded disabled:opacity-50"
+                    >
+                      {selectedClassIds.size === kidsClasses.length ? 'נקה הכל' : 'בחר הכל'}
+                    </button>
+                  )}
+                </div>
+
+                {kidsClasses.length === 0 ? (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center text-xs text-gray-500">
+                    לא נמצאו קבוצות עם ילדים פעילים (ב-180 הימים האחרונים).
+                  </div>
+                ) : (
+                  <ul className="space-y-1 max-h-72 overflow-y-auto border border-gray-200 rounded-lg p-1 bg-gray-50">
+                    {kidsClasses.map(c => {
+                      const selected = selectedClassIds.has(c.id)
+                      const dayLabel = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'][c.day_of_week] || ''
+                      const time = c.start_time ? c.start_time.slice(0, 5) : ''
+                      return (
+                        <li key={c.id}>
+                          <button
+                            type="button"
+                            onClick={() => toggleClass(c.id)}
+                            disabled={saving}
+                            className={`w-full text-right p-2 rounded border transition flex items-center gap-2 ${
+                              selected ? 'bg-amber-50 border-amber-400' : 'bg-white border-gray-200 hover:bg-gray-100'
+                            } disabled:opacity-50`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              readOnly
+                              className="w-4 h-4 accent-amber-600 shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-sm text-gray-900 truncate">{c.name || '(ללא שם)'}</div>
+                              <div className="text-[11px] text-gray-500">
+                                📍 {c.branchName} · {dayLabel} {time}
+                              </div>
+                            </div>
+                            <div className="text-center shrink-0">
+                              <div className="text-base font-black text-amber-700">{c.kidsCount}</div>
+                              <div className="text-[10px] text-gray-500">ילדים</div>
+                            </div>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+
+              {/* progress while saving */}
+              {saving && progress.total > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs text-blue-900">
+                  יוצר אירוע {progress.cur}/{progress.total} · {progress.step}…
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <footer className="sticky bottom-0 bg-white border-t border-gray-200 p-3 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="text-xs bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold px-3 py-2 rounded-lg disabled:opacity-50"
+          >
+            ביטול
+          </button>
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={saving || loading || selectedClassIds.size === 0 || !eventDate}
+            className="text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-2 rounded-lg disabled:opacity-50"
+          >
+            {saving ? 'יוצר…' : `צור ${selectedClassIds.size} אירועים`}
+          </button>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+// ===== עזר ל-KidsAnnualTestCreator =====
+// שישי אחרון ביוני של השנה הנוכחית (או הבאה אם כבר עבר).
+function defaultJuneTestDate() {
+  const today = new Date()
+  let year = today.getFullYear()
+  // אם כבר עברנו את 30.6 בשנה הנוכחית → השנה הבאה
+  const juneEnd = new Date(year, 5, 30)
+  if (today > juneEnd) year += 1
+  // 30.6 → אחורה עד שמגיעים ליום שישי (5)
+  const d = new Date(year, 5, 30)
+  while (d.getDay() !== 5) d.setDate(d.getDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
+// האם הילד ימלא 16 בין eventDate ל-eventDate+שנה?
+// (משמש לזיהוי "מעבר לבוגרים השנה")
+function willTurn16InYear(birthDate, eventDateStr) {
+  if (!birthDate) return false
+  const bd = new Date(birthDate)
+  if (isNaN(bd.getTime())) return false
+  const ev = new Date(eventDateStr)
+  if (isNaN(ev.getTime())) return false
+  // יום הולדת 16 = birthDate + 16 שנים
+  const b16 = new Date(bd.getFullYear() + 16, bd.getMonth(), bd.getDate())
+  // טווח: [event_date, event_date + שנה)
+  const yearLater = new Date(ev.getFullYear() + 1, ev.getMonth(), ev.getDate())
+  return b16 >= ev && b16 < yearLater
 }

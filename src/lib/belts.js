@@ -42,6 +42,23 @@ const ALL_BELTS_MAP = Object.fromEntries(
   [...ADULT_BELTS, ...KIDS_BELTS].map(b => [b.value, b])
 )
 
+// גיל מינימום לקבלת כל חגורת ילדים (לפי IBJJF)
+export const KIDS_BELT_MIN_AGE = {
+  kids_gray_white:   4,
+  kids_gray:         5,
+  kids_gray_black:   6,
+  kids_yellow_white: 7,
+  kids_yellow:       8,
+  kids_yellow_black: 9,
+  kids_orange_white: 10,
+  kids_orange:       11,
+  kids_orange_black: 12,
+  kids_green_white:  13,
+  kids_green:        14,
+  kids_green_black:  15,
+}
+export const KIDS_MIN_MONTHS_AT_BELT = 6
+
 export function getBeltMeta(beltValue) {
   if (!beltValue) return null
   return ALL_BELTS_MAP[beltValue] || null
@@ -143,4 +160,98 @@ export function formatHebrewMonthYear(dateStr) {
   const year = d.getFullYear()
   const monthName = Object.entries(HEBREW_MONTHS).find(([_, n]) => n === month)?.[0] || ''
   return `${monthName} ${year}`
+}
+
+// ============================================================
+// Kids belt families & syllabus helpers
+// ============================================================
+// משמש למבחן הדרגות השנתי (יוני). מהמיר חגורת ילדים
+// (kids_gray_white / kids_gray / kids_gray_black) → משפחה (gray)
+// + מיקום במשפחה (entry / mid / top).
+// ============================================================
+
+/**
+ * Returns the belt family ('gray'/'yellow'/'orange'/'green') for a kids belt,
+ * or null for kids_white (no family) and any non-kids belt.
+ */
+export function getBeltFamily(beltValue) {
+  if (!beltValue || typeof beltValue !== 'string') return null
+  if (!beltValue.startsWith('kids_')) return null
+  if (beltValue === 'kids_white') return null
+  if (beltValue.startsWith('kids_gray'))   return 'gray'
+  if (beltValue.startsWith('kids_yellow')) return 'yellow'
+  if (beltValue.startsWith('kids_orange')) return 'orange'
+  if (beltValue.startsWith('kids_green'))  return 'green'
+  return null
+}
+
+/**
+ * Returns the position within the belt family:
+ *   'entry' = X-לבנה (kids_gray_white, kids_yellow_white, ...)
+ *   'mid'   = X      (kids_gray, kids_yellow, ...)
+ *   'top'   = X-שחורה (kids_gray_black, kids_yellow_black, ...)
+ *   null    = kids_white or non-family belt
+ */
+export function getBeltLevelPosition(beltValue) {
+  if (!beltValue || typeof beltValue !== 'string') return null
+  if (!beltValue.startsWith('kids_')) return null
+  if (beltValue === 'kids_white') return null
+  if (beltValue.endsWith('_white')) return 'entry'
+  if (beltValue.endsWith('_black')) return 'top'
+  // אם זה kids_gray, kids_yellow, kids_orange, kids_green בלבד
+  return 'mid'
+}
+
+/**
+ * Belt family Hebrew label (e.g. 'gray' → 'אפורה').
+ */
+export function getBeltFamilyLabel(family) {
+  return ({
+    gray:   'אפורה',
+    yellow: 'צהובה',
+    orange: 'כתומה',
+    green:  'ירוקה',
+  })[family] || family || ''
+}
+
+/**
+ * Belt family color (matches Tailwind palette used in KIDS_BELTS).
+ */
+export function getBeltFamilyColor(family) {
+  return ({
+    gray:   '#6b7280',
+    yellow: '#f59e0b',
+    orange: '#ea580c',
+    green:  '#16a34a',
+  })[family] || '#9ca3af'
+}
+
+/**
+ * For a target belt (the one being tested toward), returns:
+ *   { family, level }
+ * which is the syllabus-key needed to look up belt_test_syllabus row + level_notes.
+ *
+ * Examples:
+ *   getSyllabusKeyForTarget('kids_gray_white')  → { family: 'gray',   level: 'entry' }
+ *   getSyllabusKeyForTarget('kids_gray')        → { family: 'gray',   level: 'mid'   }
+ *   getSyllabusKeyForTarget('kids_gray_black')  → { family: 'gray',   level: 'top'   }
+ *   getSyllabusKeyForTarget('kids_yellow_white')→ { family: 'yellow', level: 'entry' }
+ *   getSyllabusKeyForTarget('white')            → { family: null,     level: null    }
+ */
+export function getSyllabusKeyForTarget(targetBelt) {
+  return {
+    family: getBeltFamily(targetBelt),
+    level:  getBeltLevelPosition(targetBelt),
+  }
+}
+
+/**
+ * Hebrew label for a level position.
+ */
+export function getLevelLabel(level) {
+  return ({
+    entry: 'דרגת כניסה',
+    mid:   'דרגת אמצע',
+    top:   'דרגה עליונה',
+  })[level] || ''
 }

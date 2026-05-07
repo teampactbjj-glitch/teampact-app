@@ -98,6 +98,87 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
     setLoading(false)
   }
 
+  // ===== קיצורי מבחן ילדים יוני =====
+  // 3 טמפלייטים: חודש לפני / שבוע לפני (כולל סילבוס) / יום אחרי.
+  async function applyKidsTestTemplate(which) {
+    setEditingId(null)
+    // תאריך מבחן יוני קרוב — שישי האחרון של יוני בשנה הקרובה
+    const today = new Date()
+    let year = today.getFullYear()
+    const juneEnd = new Date(year, 5, 30)
+    if (today > juneEnd) year += 1
+    const d = new Date(year, 5, 30)
+    while (d.getDay() !== 5) d.setDate(d.getDate() - 1)
+    const dateStr = d.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })
+
+    let title = '', content = ''
+    if (which === 'month_before') {
+      title = `📅 חודש לפני המבחן השנתי — ${dateStr}`
+      content = [
+        `שלום הורים יקרים!`,
+        ``,
+        `עוד חודש (${dateStr}) יתקיים מבחן הדרגות השנתי לילדים.`,
+        ``,
+        `כל ילד יעבור מבחן — לא רק "המוכנים". מי שיש לו אחוז נוכחות תקין יקודם לחגורה הבאה,`,
+        `ומי שזקוק לתרגול נוסף יקבל פס נוסף או יישאר באותה דרגה לבדיקה.`,
+        ``,
+        `🎯 חשוב להגיע לכל האימונים החודש — זה הבסיס להצלחה במבחן.`,
+        ``,
+        `נשמח לראות את כל הילדים על המזרון!`,
+      ].join('\n')
+    } else if (which === 'week_before') {
+      // טוען סילבוס + מצרף לתוכן
+      const { data: syl } = await supabase.from('belt_test_syllabus')
+        .select('belt_family, age_range_label, content, level_notes, display_order')
+        .order('display_order', { ascending: true })
+      title = `🥋 שבוע לפני המבחן — תוכן הסילבוס`
+      const sylLines = []
+      for (const s of (syl || [])) {
+        const familyLabels = { gray: 'אפורה', yellow: 'צהובה', orange: 'כתומה', green: 'ירוקה' }
+        sylLines.push(`\n=== חגורה ${familyLabels[s.belt_family] || s.belt_family} (גילאי ${s.age_range_label}) ===`)
+        if (Array.isArray(s.content?.sections)) {
+          for (const sec of s.content.sections) {
+            sylLines.push(`• ${sec.title}: ${(sec.items || []).join(', ')}`)
+          }
+        }
+      }
+      content = [
+        `שלום הורים יקרים!`,
+        ``,
+        `המבחן השנתי בעוד שבוע (${dateStr}). זה תוכן הסילבוס שלפיו הילדים נבחנים:`,
+        sylLines.join('\n'),
+        ``,
+        `הילדים יודעים את החומר — חשוב שיהיו רגועים ומלאי ביטחון.`,
+        `מי שמרגיש שצריך תרגול נוסף — מוזמנים להגיע לאימונים האחרונים השבוע.`,
+        ``,
+        `בהצלחה לכולם! 🥋`,
+      ].join('\n')
+    } else if (which === 'day_after') {
+      title = `🎉 כל הכבוד למתבחנים!`
+      content = [
+        `שלום הורים יקרים!`,
+        ``,
+        `אתמול התקיים מבחן הדרגות השנתי וכל הילדים השקיעו ועבדו קשה. גאים בכל אחד ואחת מהם!`,
+        ``,
+        `🥋 חגורות חדשות + פסים יחולקו באימון הקרוב.`,
+        `📋 דוח אישי של כל ילד נשלח להורים לאפליקציה — מי קודם, מי קיבל פס, ומי הוזמן לחזור על הדרגה לעוד תרגול.`,
+        ``,
+        `תודה לכל המשפחות על התמיכה לאורך השנה. נמשיך לעבוד יחד גם בשנה הבאה!`,
+      ].join('\n')
+    }
+
+    setForm({
+      title,
+      content,
+      type: 'general',
+      event_date: '',
+      price: '',
+      image_url: '',
+      branch_ids: [],
+    })
+    setShowForm(true)
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     const branchIds = Array.isArray(form.branch_ids) ? form.branch_ids.filter(Boolean) : []
@@ -198,6 +279,28 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
         <button onClick={() => showForm ? setShowForm(false) : openAdd()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
           {showForm ? 'ביטול' : '+ פרסם הודעה חדשה'}
         </button>
+      </div>
+
+      {/* קיצורי מבחן ילדים יוני */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+        <div className="text-xs font-bold text-amber-900 mb-2">🥋 קיצורים — מבחן ילדים יוני</div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => applyKidsTestTemplate('month_before')}
+            className="text-xs bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-lg"
+          >📅 חודש לפני המבחן</button>
+          <button
+            type="button"
+            onClick={() => applyKidsTestTemplate('week_before')}
+            className="text-xs bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-lg"
+          >🥋 שבוע לפני (כולל סילבוס)</button>
+          <button
+            type="button"
+            onClick={() => applyKidsTestTemplate('day_after')}
+            className="text-xs bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-lg"
+          >🎉 יום אחרי המבחן</button>
+        </div>
       </div>
 
       {showForm && (

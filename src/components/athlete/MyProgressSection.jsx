@@ -681,8 +681,8 @@ export default function MyProgressSection({ profile, member }) {
         </div>
       )}
 
-      {/* ===== ההיסטוריה שלי — Timeline אנכי של כל החגורות (שלב 3) ===== */}
-      {showBeltCard && beltHistory.length > 0 && (
+      {/* ===== ההיסטוריה שלי — Timeline אנכי של כל החגורות ===== */}
+      {beltHistory.length > 0 && (
         <div className="rounded-xl shadow-sm bg-white border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 bg-gradient-to-l from-amber-50 to-white border-b border-amber-100">
             <h3 className="font-bold text-gray-800 flex items-center gap-2 text-sm">

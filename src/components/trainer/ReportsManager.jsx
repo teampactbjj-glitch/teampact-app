@@ -1332,19 +1332,22 @@ export default function ReportsManager({ isAdmin, profile }) {
       }
       const minAge = KIDS_BELT_MIN_AGE[nextBelt.value] ?? null
       const ageOk = age != null && minAge != null ? age >= minAge : null
-      // זמן בחגורה
+      // זמן בחגורה — fallback ל-bjj_start_date אם belt_received_at חסר (לבנה חדשה)
       let monthsAtBelt = null
-      if (m.belt_received_at) {
-        const br = new Date(m.belt_received_at)
+      let timeSource = null // 'belt' | 'bjj_start'
+      const beltDateRef = m.belt_received_at || m.bjj_start_date || null
+      if (beltDateRef) {
+        const br = new Date(beltDateRef)
         if (!isNaN(br.getTime())) {
           monthsAtBelt = (today.getTime() - br.getTime()) / (1000 * 60 * 60 * 24 * 30.5)
+          timeSource = m.belt_received_at ? 'belt' : 'bjj_start'
         }
       }
       const timeOk = monthsAtBelt != null ? monthsAtBelt >= KIDS_MIN_MONTHS_AT_BELT : null
       // ready: גיל OK + זמן OK; almostReady: גיל OK + זמן לא מספיק
       const ready = ageOk === true && timeOk === true
       const almostReady = ageOk === true && timeOk === false
-      results.push({ m, age, nextBelt, minAge, ageOk, monthsAtBelt, timeOk, ready, almostReady })
+      results.push({ m, age, nextBelt, minAge, ageOk, monthsAtBelt, timeOk, timeSource, ready, almostReady })
     }
     // מיון: מוכנים → כמעט מוכנים → שאר
     results.sort((a, b) => {
@@ -2066,9 +2069,12 @@ export default function ReportsManager({ isAdmin, profile }) {
           }
         >
           <div className="space-y-1">
-            {kidsReadyForPromotion.map(({ m, age, nextBelt, minAge, ageOk, monthsAtBelt, timeOk, ready, almostReady }) => {
+            {kidsReadyForPromotion.map(({ m, age, nextBelt, minAge, ageOk, monthsAtBelt, timeOk, timeSource, ready, almostReady }) => {
               const nextMeta = getBeltMeta(nextBelt.value)
               const months = monthsAtBelt != null ? Math.floor(monthsAtBelt) : null
+              const timeLabel = months != null
+                ? `${months} חודשים${timeSource === 'bjj_start' ? ' (מתחילת אימונים)' : ''}`
+                : 'אין תאריך'
               return (
                 <div
                   key={m.id}
@@ -2085,13 +2091,13 @@ export default function ReportsManager({ isAdmin, profile }) {
                   {/* שם */}
                   <span className="font-bold flex-1 truncate">{m.full_name}</span>
                   {/* גיל */}
-                  <span className={`shrink-0 ${ageOk ? 'text-emerald-700' : 'text-red-500'}`}>
+                  <span className={`shrink-0 ${ageOk ? 'text-emerald-700' : ageOk === false ? 'text-red-500' : 'text-gray-400'}`}>
                     {age != null ? `גיל ${age}` : 'גיל ?'}
-                    {minAge != null && !ageOk && <span className="text-gray-400"> (צריך {minAge})</span>}
+                    {minAge != null && ageOk === false && <span className="text-gray-400"> (צריך {minAge})</span>}
                   </span>
-                  {/* זמן בחגורה */}
+                  {/* זמן בחגורה / מתחילת אימונים */}
                   <span className={`shrink-0 ${timeOk ? 'text-emerald-700' : timeOk === false ? 'text-amber-600' : 'text-gray-400'}`}>
-                    {months != null ? `${months} חודשים` : 'אין תאריך'}
+                    {timeLabel}
                   </span>
                   {/* חגורה נוכחית → יעד */}
                   <span className="shrink-0 flex items-center gap-1">

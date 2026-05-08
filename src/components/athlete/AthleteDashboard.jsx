@@ -809,8 +809,33 @@ function ProfileTab({ profile, member }) {
   const [bjjStartDate, setBjjStartDate] = useState(member?.bjj_start_date || '')
   const [reqTrainsGi, setReqTrainsGi] = useState(member?.trains_gi ?? true)
   const [reqTrainsNogi, setReqTrainsNogi] = useState(member?.trains_nogi ?? false)
+  const [birthDate, setBirthDate] = useState(member?.birth_date || '')
   const [priorAcademy, setPriorAcademy] = useState('')
   const [beltNote, setBeltNote] = useState('')
+
+  // === חישוב גיל + קטגוריה אוטומטית לפי תאריך לידה ===
+  const autoAge = (() => {
+    if (!birthDate) return null
+    const bd = new Date(birthDate)
+    if (isNaN(bd.getTime())) return null
+    const today = new Date()
+    let age = today.getFullYear() - bd.getFullYear()
+    const mo = today.getMonth() - bd.getMonth()
+    if (mo < 0 || (mo === 0 && today.getDate() < bd.getDate())) age--
+    return age
+  })()
+  const autoCategory = autoAge === null ? null : (autoAge >= 16 ? 'adult' : 'kids')
+
+  // כשהקטגוריה משתנה — אפס את הבחירה
+  useEffect(() => {
+    if (!autoCategory) return
+    if (autoCategory !== beltCategory) {
+      setBeltCategory(autoCategory)
+      setBeltVal('')
+      setBeltStripes(0)
+    }
+  }, [autoCategory]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // המאמנים של המתאמן הזה — נגזר מ-class_registrations + checkins ב-60 ימים אחרונים.
   // [{ id, name, phone }] — רק מאמנים שיש להם טלפון מוגדר.
   const [myCoaches, setMyCoaches] = useState([])
@@ -1029,6 +1054,7 @@ function ProfileTab({ profile, member }) {
       requested_bjj_start_date: bjjStartDate || null,
       requested_trains_gi: !!reqTrainsGi,
       requested_trains_nogi: !!reqTrainsNogi,
+      requested_birth_date: birthDate || null,
       prior_academy: priorAcademy || null,
       note: beltNote || null,
     })
@@ -1253,42 +1279,43 @@ function ProfileTab({ profile, member }) {
           <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">⏳ יש בקשת דרגה ממתינה — לא ניתן לשלוח בקשה נוספת</p>
         ) : (
           <>
-            {/* קטגוריה */}
+            {/* 1. תאריך לידה — קובע קטגוריה אוטומטית */}
             <div>
-              <label className="block text-xs text-gray-500 mb-1">קטגוריה</label>
-              <div className="flex gap-2">
-                <button type="button"
-                  onClick={() => { setBeltCategory('adult'); setBeltVal('') }}
-                  className={`flex-1 px-3 py-1.5 rounded-lg text-sm border transition ${
-                    beltCategory === 'adult' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-300'
-                  }`}>מבוגרים (16+)</button>
-                <button type="button"
-                  onClick={() => { setBeltCategory('kids'); setBeltVal('') }}
-                  className={`flex-1 px-3 py-1.5 rounded-lg text-sm border transition ${
-                    beltCategory === 'kids' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-300'
-                  }`}>ילדים (4-15)</button>
+              <label className="block text-xs text-gray-500 mb-1">תאריך לידה <span className="text-red-500">*</span></label>
+              <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={birthDate || ''} onChange={e => setBirthDate(e.target.value)} />
+              {autoAge !== null && (
+                <p className={`text-xs mt-1.5 font-semibold px-2 py-1 rounded-lg inline-block ${
+                  autoCategory === 'kids' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
+                }`}>
+                  {autoCategory === 'kids' ? `🧒 גיל ${autoAge} — קטגוריית ילדים` : `👤 גיל ${autoAge} — קטגוריית בוגרים`}
+                </p>
+              )}
+            </div>
+
+            {/* 2. חגורה נוכחית — מוצגת רק אחרי הזנת DOB */}
+            {autoCategory && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">חגורה נוכחית <span className="text-red-500">*</span></label>
+                <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                  value={beltVal}
+                  onChange={e => {
+                    const v = e.target.value
+                    setBeltVal(v)
+                    setBeltStripes(s => Math.min(s || 0, getMaxStripes(v)))
+                  }}>
+                  <option value="">— בחר חגורה —</option>
+                  {(autoCategory === 'kids' ? KIDS_BELTS : ADULT_BELTS).map(b => (
+                    <option key={b.value} value={b.value}>{b.label}</option>
+                  ))}
+                </select>
               </div>
-            </div>
-            {/* חגורה */}
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">חגורה נוכחית *</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                value={beltVal}
-                onChange={e => {
-                  const v = e.target.value
-                  setBeltVal(v)
-                  setBeltStripes(s => Math.min(s || 0, getMaxStripes(v)))
-                }}>
-                <option value="">— בחר חגורה —</option>
-                {(beltCategory === 'kids' ? KIDS_BELTS : ADULT_BELTS).map(b => (
-                  <option key={b.value} value={b.value}>{b.label}</option>
-                ))}
-              </select>
-            </div>
+            )}
+
             {/* פסים */}
             {beltVal && (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">פסים (0-{getMaxStripes(beltVal)})</label>
+                <label className="block text-xs text-gray-500 mb-1">פסים (0–{getMaxStripes(beltVal)})</label>
                 <div className="flex gap-2">
                   {Array.from({ length: getMaxStripes(beltVal) + 1 }, (_, i) => (
                     <button key={i} type="button"
@@ -1300,45 +1327,57 @@ function ProfileTab({ profile, member }) {
                 </div>
               </div>
             )}
-            {/* תאריך קבלת חגורה */}
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">תאריך קבלת חגורה</label>
-              <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
-                value={beltReceivedAt || ''} onChange={e => setBeltReceivedAt(e.target.value)} />
-            </div>
-            {/* תאריך התחלת BJJ */}
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">תאריך התחלת BJJ (חגורה לבנה)</label>
-              <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
-                value={bjjStartDate || ''} onChange={e => setBjjStartDate(e.target.value)} />
-            </div>
-            {/* Gi / NoGi */}
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">סוג אימון *</label>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="flex items-center gap-2 text-sm cursor-pointer bg-white border rounded-lg px-3 py-2">
-                  <input type="checkbox" checked={!!reqTrainsGi}
-                    onChange={e => setReqTrainsGi(e.target.checked)}
-                    className="w-4 h-4 accent-amber-600" />
-                  🥋 גי
+
+            {/* 3. תאריך התחלה משוער — רק לחגורה לבנה + בוגר (16+) */}
+            {beltVal === 'white' && autoCategory === 'adult' && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  תאריך התחלה משוער
+                  <span className="text-gray-400 mr-1">(מתי התחלת להתאמן BJJ)</span>
                 </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer bg-white border rounded-lg px-3 py-2">
-                  <input type="checkbox" checked={!!reqTrainsNogi}
-                    onChange={e => setReqTrainsNogi(e.target.checked)}
-                    className="w-4 h-4 accent-blue-600" />
-                  🤼 נו-גי
-                </label>
+                <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={bjjStartDate || ''} onChange={e => setBjjStartDate(e.target.value)} />
               </div>
-            </div>
-            {/* אקדמיה קודמת */}
+            )}
+
+            {/* תאריך קבלת חגורה — לחגורות שאינן לבנה */}
+            {beltVal && beltVal !== 'white' && beltVal !== 'kids_white' && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">תאריך קבלת חגורה</label>
+                <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={beltReceivedAt || ''} onChange={e => setBeltReceivedAt(e.target.value)} />
+              </div>
+            )}
+
+            {/* 4. גי / נו-גי */}
+            {autoCategory && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">סוג אימון <span className="text-red-500">*</span></label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer bg-white border rounded-lg px-3 py-2">
+                    <input type="checkbox" checked={!!reqTrainsGi}
+                      onChange={e => setReqTrainsGi(e.target.checked)}
+                      className="w-4 h-4 accent-amber-600" />
+                    🥋 גי
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer bg-white border rounded-lg px-3 py-2">
+                    <input type="checkbox" checked={!!reqTrainsNogi}
+                      onChange={e => setReqTrainsNogi(e.target.checked)}
+                      className="w-4 h-4 accent-blue-600" />
+                    🤼 נו-גי
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* אקדמיה קודמת + הערה */}
             <input type="text" value={priorAcademy} onChange={e => setPriorAcademy(e.target.value)}
               placeholder="אקדמיה קודמת (אופציונלי)"
               className="w-full border rounded-lg px-3 py-2 text-sm" />
-            {/* הערה */}
             <textarea value={beltNote} onChange={e => setBeltNote(e.target.value)}
               placeholder="הערה למנהל (אופציונלי)" rows="2"
               className="w-full border rounded-lg px-3 py-2 text-sm resize-none" />
-            <button onClick={submitBeltChange} disabled={saving}
+            <button onClick={submitBeltChange} disabled={saving || !autoCategory}
               className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
               {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
             </button>

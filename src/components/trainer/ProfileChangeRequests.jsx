@@ -67,6 +67,7 @@ export default function ProfileChangeRequests({ onChange }) {
       }
       if (req.requested_trains_gi != null) update.trains_gi = !!req.requested_trains_gi
       if (req.requested_trains_nogi != null) update.trains_nogi = !!req.requested_trains_nogi
+      if (req.requested_birth_date) update.birth_date = req.requested_birth_date
       const { error: memErr } = await supabase.from('members').update(update).eq('id', req.athlete_id)
       memberError = memErr
       if (!memErr && req.requested_belt_received_at) {
@@ -174,6 +175,9 @@ export default function ProfileChangeRequests({ onChange }) {
                   )}
                   {req.requested_bjj_start_date && (
                     <p>התחלת BJJ: <span className="font-semibold">{req.requested_bjj_start_date}</span></p>
+                  )}
+                  {req.requested_birth_date && (
+                    <p>תאריך לידה: <span className="font-semibold text-blue-800">{req.requested_birth_date}</span></p>
                   )}
                   {req.prior_academy && (
                     <p>אקדמיה קודמת: <span className="font-semibold">{req.prior_academy}</span></p>

@@ -1371,6 +1371,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                           placeholder="חפש לפי שם..."
                           value={visitorSearch[cls.id] || ''}
                           onChange={e => searchVisitor(cls.id, e.target.value, cls.branch_id)}
+                          autoComplete="off"
                         />
                         {visitorLoading[cls.id] && (
                           <span className="absolute left-3 top-2.5 text-xs text-gray-400">טוען...</span>

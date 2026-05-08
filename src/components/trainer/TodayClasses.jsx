@@ -578,19 +578,36 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     fetchClassDetails(classId)
   }
 
-  async function searchVisitor(classId, query) {
+  async function searchVisitor(classId, query, classBranchId) {
     setVisitorSearch(p => ({ ...p, [classId]: query }))
     if (!query.trim()) { setVisitorResults(p => ({ ...p, [classId]: [] })); return }
 
     setVisitorLoading(p => ({ ...p, [classId]: true }))
-    const { data, error } = await supabase
+
+    // שליפת כל המתאמנים הפעילים שמתאימים לשם — ללא סינון סניף בשאילתה
+    // (כי Supabase לא תומך ב-OR בין עמודה רגילה למערך בשאילתה אחת בצורה פשוטה).
+    // נסנן בצד הלקוח לפי סניף השיעור.
+    const { data: allData, error } = await supabase
       .from('members')
-      .select('id, full_name, membership_type, subscription_type')
+      .select('id, full_name, membership_type, subscription_type, branch_id, branch_ids')
       .ilike('full_name', `%${query}%`)
       .eq('active', true)
-      .limit(8)
+      .limit(50)
 
     if (error) console.error('searchVisitor error:', error)
+
+    // סינון לפי סניף: מציגים רק מתאמנים שמנויים בסניף של השיעור
+    // (או אם לשיעור אין branch_id — מציגים הכל)
+    const data = !classBranchId
+      ? (allData || [])
+      : (allData || []).filter(m => {
+          // branch_ids הוא מערך — בדוק אם הסניף של השיעור נמצא בו
+          if (Array.isArray(m.branch_ids) && m.branch_ids.length > 0) {
+            return m.branch_ids.includes(classBranchId)
+          }
+          // פולבק: branch_id רגיל
+          return m.branch_id === classBranchId
+        }).slice(0, 8)
 
     // לא מסננים — מציגים גם רשומים. מסמנים לכל תוצאה אם היא כבר רשומה
     // (כדי שב-UI נציג "רשום ✓" באפור במקום כפתור הוספה).
@@ -1353,7 +1370,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                           className="w-full border rounded-lg px-3 py-2 text-sm"
                           placeholder="חפש לפי שם..."
                           value={visitorSearch[cls.id] || ''}
-                          onChange={e => searchVisitor(cls.id, e.target.value)}
+                          onChange={e => searchVisitor(cls.id, e.target.value, cls.branch_id)}
                         />
                         {visitorLoading[cls.id] && (
                           <span className="absolute left-3 top-2.5 text-xs text-gray-400">טוען...</span>

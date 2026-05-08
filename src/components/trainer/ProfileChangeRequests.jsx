@@ -70,13 +70,14 @@ export default function ProfileChangeRequests({ onChange }) {
       if (req.requested_birth_date) update.birth_date = req.requested_birth_date
       const { error: memErr } = await supabase.from('members').update(update).eq('id', req.athlete_id)
       memberError = memErr
-      if (!memErr && req.requested_belt_received_at) {
-        // INSERT ל-belt_history. UNIQUE(member_id, belt, belt_stripes) → ignoreDuplicates
+      // INSERT ל-belt_history — fallback ל-bjj_start_date אם אין belt_received_at (לבנה חדשה)
+      const historyDate = req.requested_belt_received_at || req.requested_bjj_start_date || null
+      if (!memErr && historyDate) {
         const { error: histErr } = await supabase.from('belt_history').upsert({
           member_id: req.athlete_id,
           belt: beltVal,
           belt_stripes: stripes,
-          received_at: req.requested_belt_received_at,
+          received_at: historyDate,
           source: 'manual',
           notes: 'אושר מתוך בקשת אישור דרגה',
         }, { onConflict: 'member_id,belt,belt_stripes', ignoreDuplicates: true })

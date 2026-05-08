@@ -74,7 +74,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       const path = `seminars/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
       const buckets = ['images', 'products']
       for (const b of buckets) {
-        const { error } = await supabase.storage.from(b).upload(path, file)
+        const { error } = await supabase.storage.from(b).upload(path, file, { cacheControl: '31536000', upsert: false })
         if (!error) {
           const { data: pub } = supabase.storage.from(b).getPublicUrl(path)
           return pub.publicUrl

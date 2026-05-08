@@ -208,9 +208,9 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     try {
       const ext = file.name.split('.').pop()
       const path = `products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: upErr } = await supabase.storage.from('products').upload(path, file)
+      const { error: upErr } = await supabase.storage.from('products').upload(path, file, { cacheControl: '31536000', upsert: false })
       if (upErr) {
-        const { error: upErr2 } = await supabase.storage.from('images').upload(path, file)
+        const { error: upErr2 } = await supabase.storage.from('images').upload(path, file, { cacheControl: '31536000', upsert: false })
         if (upErr2) { toast.error('שגיאת העלאה: ' + upErr2.message); return null }
         const { data: pub } = supabase.storage.from('images').getPublicUrl(path)
         return pub.publicUrl

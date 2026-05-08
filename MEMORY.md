@@ -1,5 +1,66 @@
 # MEMORY - TeamPact App
 
+## ✅ Session 08.05.2026 (תאריך לידה + redesign טופס דרגה + fallback ילדים) — COMPLETED
+
+> **My last pending task:** הכל בפרודקשן. קומיטים `244bb55` + `c67d032`. **SQL חסר** — דודי עוד לא הריץ את ה-migration.
+
+### 🎯 מה נבנה
+
+**1. שדה תאריך לידה בבקשת דרגה (AthleteDashboard + ProfileChangeRequests)**
+- מתאמן מזין `birth_date` בטופס בקשת הדרגה
+- נשלח כ-`requested_birth_date` ב-`profile_change_requests`
+- כשמנהל מאשר → נשמר אוטומטית על `members.birth_date`
+- מוצג בכרטיס הבקשה אצל המנהל
+
+**2. Redesign מלא של טופס בקשת הדרגה (AthleteDashboard ProfileTab)**
+- **סדר חדש:** תאריך לידה ראשון → גיל מחושב אוטומטית → חגורה מתאימה → Gi/NoGi
+- **אין יותר כפתורי "ילדים/מבוגרים"** — קטגוריה נגזרת אוטומטית מה-DOB
+- מתחת ל-16 → מציג את 13 חגורות הילדים (כולל כל החצאי-צבעים: אפור-לבן, אפור-שחור וכו')
+- מעל 16 → מציג חגורות בוגרים
+- **תאריך התחלה משוער** — מופיע **רק** כשחגורה לבנה + בוגר (16+)
+- **תאריך קבלת חגורה** — מופיע לכל חגורה שאינה לבנה
+- **הסרת שדה פסים** — הוסר לגמרי מהטופס
+- כפתור שליחה disabled עד שמוזן DOB
+
+**3. Fallback bjj_start_date בחישוב מועמדים לקידום (ReportsManager)**
+- `kidsReadyForPromotion`: אם `belt_received_at` חסר → fallback ל-`bjj_start_date`
+- מציג `(מתחילת אימונים)` בתווית כשמשתמש ב-fallback
+- פותר בעיית לבנה חדשה שלא קפצה כמוכנה
+
+**4. היסטוריית חגורות לכולם (MyProgressSection)**
+- הסרת תנאי `showBeltCard` מהתצוגה — מעכשיו כל מתאמן עם שורות `belt_history` רואה את ה-Timeline
+- כולל NoGi-בלבד וילדים
+
+### 📁 קבצים ששונו
+
+| קובץ | מה שונה |
+|---|---|
+| `src/components/athlete/AthleteDashboard.jsx` | redesign טופס דרגה + auto age/category + birth_date state + autoAge/autoCategory computed + הסרת פסים |
+| `src/components/athlete/MyProgressSection.jsx` | היסטוריה מוצגת לכולם (הסרת `showBeltCard`) |
+| `src/components/trainer/ProfileChangeRequests.jsx` | שמירת `birth_date` בעת אישור + הצגה בכרטיס |
+| `src/components/trainer/ReportsManager.jsx` | fallback `bjj_start_date` + `timeSource` label |
+
+### ⚠️ SQL שעוד לא רץ — חובה להריץ ב-Supabase
+
+```sql
+ALTER TABLE profile_change_requests
+  ADD COLUMN IF NOT EXISTS requested_birth_date date;
+```
+
+### 📌 קומיטים
+| קומיט | תיאור |
+|---|---|
+| `244bb55` | feat: belt request form redesign + auto age/category + kids history for all |
+| `c67d032` | fix: remove belt stripes from athlete belt request form |
+
+### 🆕 מה נשאר / רעיונות להמשך
+
+- [ ] **SQL לא רץ** — `requested_birth_date` עוד לא קיים ב-DB. לפני הבאות — להריץ.
+- [ ] **היסטוריית חגורות ידנית למתאמנים ותיקים** — ילד שמתאמן מחגורה צהובה ועד ירוקה-שחורה, המנהל צריך להזין את ההיסטוריה ידנית ב-BeltHistoryEditor (AthleteManagement). זה כלי קיים, רק צריך למלא.
+- [ ] **מה קורה כשמתאמן מגיע ל-16?** — המערכת יודעת לזהות (ReportsManager `willTurn16InYear`), אבל אין flow אוטומטי שמעביר אותו מקטגוריית ילדים לבוגרים. צריך שיקול: האם לעשות זאת אוטומטית? ידנית?
+
+---
+
 ## ✅ Session 07.05.2026 (NoGi + בקשת אישור דרגה) — COMPLETED
 
 > **My last pending task:** **הפיצ'ר הושלם במלואו ובפרודקשן.** Merge commit `15ca959` ב-main + commit `38f0db4` "feat: NoGi support + athlete belt approval requests". 8 קבצים שונו, 378 שורות נוספו. SQL Migration רץ ע"י דודי לפני ה-push. דודי בדק לוקאלית מ-worktree והאישר שהכל עובד.

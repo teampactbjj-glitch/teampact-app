@@ -79,6 +79,22 @@ function monthKey(d) {
 // === שם חודש בעברית ===
 const MONTH_HE = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
 
+// חישוב זמן בין שני תאריכים (YYYY-MM-DD) → "X שנים, Y חודשים"
+function formatYearsMonths2Dates(fromStr, toStr) {
+  if (!fromStr || !toStr) return null
+  const from = new Date(fromStr)
+  const to = new Date(toStr)
+  if (isNaN(from.getTime()) || isNaN(to.getTime())) return null
+  let years = to.getFullYear() - from.getFullYear()
+  let months = to.getMonth() - from.getMonth()
+  if (months < 0) { years--; months += 12 }
+  if (years <= 0 && months <= 0) return null
+  const parts = []
+  if (years > 0) parts.push(years === 1 ? 'שנה' : `${years} שנים`)
+  if (months > 0) parts.push(months === 1 ? 'חודש' : `${months} חודשים`)
+  return parts.join(', ')
+}
+
 // === badges של יחידות אימון (כל הזמן) ===
 // יחידת אימון = checkin אחד שהסתיים, בלי קשר לאורך השיעור.
 // מבטל את אי-הצדק שהיה בספירת שעות (60 דק' מול 90 דק').
@@ -682,54 +698,111 @@ export default function MyProgressSection({ profile, member }) {
       )}
 
       {/* ===== ההיסטוריה שלי — Timeline אנכי של כל החגורות ===== */}
-      {beltHistory.length > 0 && (
-        <div className="rounded-xl shadow-sm bg-white border border-gray-200 overflow-hidden">
-          <div className="px-4 py-3 bg-gradient-to-l from-amber-50 to-white border-b border-amber-100">
-            <h3 className="font-bold text-gray-800 flex items-center gap-2 text-sm">
-              <span>📜</span>
-              <span>ההיסטוריה שלי</span>
-              <span className="text-xs text-gray-500 font-normal">({beltHistory.length} {beltHistory.length === 1 ? 'חגורה' : 'חגורות'})</span>
-            </h3>
-          </div>
-          <div className="p-4">
-            <ol className="relative" style={{ borderInlineStart: '2px solid #e5e7eb' }}>
-              {beltHistory.map((h, idx) => {
-                const meta = getBeltMeta(h.belt)
-                const isCurrent = idx === beltHistory.length - 1 && h.belt === member.belt
-                return (
-                  <li key={h.id || idx} className="ms-4 pb-4 last:pb-0 relative">
-                    {/* נקודה על הקו */}
+      {(beltHistory.length > 0 || member?.bjj_start_date) && (() => {
+        // בודק אם bjj_start_date כבר מכוסה ע"י שורה ב-belt_history (חגורה לבנה)
+        const startDate = member?.bjj_start_date || null
+        const firstHistoryBelt = beltHistory[0]?.belt || null
+        // נציג "הצטרפות לBJJ" רק אם יש תאריך התחלה ואין חגורה לבנה כשורה ראשונה בהיסטוריה
+        const showStartRow = startDate && firstHistoryBelt !== 'white'
+        const totalBjjTime = startDate ? formatYearsMonths(startDate) : null
+
+        return (
+          <div className="rounded-xl shadow-sm bg-white border border-gray-200 overflow-hidden">
+            <div className="px-4 py-3 bg-gradient-to-l from-amber-50 to-white border-b border-amber-100">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2 text-sm">
+                  <span>📜</span>
+                  <span>ההיסטוריה שלי</span>
+                  {beltHistory.length > 0 && (
+                    <span className="text-xs text-gray-500 font-normal">({beltHistory.length} {beltHistory.length === 1 ? 'חגורה' : 'חגורות'})</span>
+                  )}
+                </h3>
+                {totalBjjTime && (
+                  <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">
+                    {totalBjjTime} ב-BJJ
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="p-4">
+              <ol className="relative" style={{ borderInlineStart: '2px solid #e5e7eb' }}>
+
+                {/* שורת "התחלת BJJ" — אם יש bjj_start_date ואין white belt בהיסטוריה */}
+                {showStartRow && (
+                  <li className="ms-4 pb-4 relative">
                     <span
-                      className={`absolute -start-[22px] top-1 flex items-center justify-center rounded-full ring-4 ring-white ${isCurrent ? 'w-5 h-5' : 'w-4 h-4'}`}
-                      style={{ background: meta?.color || '#10b981' }}
-                      aria-label={isCurrent ? 'החגורה הנוכחית' : 'הושלם'}>
-                      <span className="text-[10px]" style={{ color: meta?.text || '#fff' }}>
-                        {isCurrent ? '★' : '✓'}
-                      </span>
+                      className="absolute -start-[20px] top-1 flex items-center justify-center w-4 h-4 rounded-full ring-4 ring-white bg-gray-300"
+                      aria-label="התחלת אימוני BJJ">
+                      <span className="text-[9px] text-gray-600">🌱</span>
                     </span>
-                    <div className={`flex items-baseline justify-between gap-2 ${isCurrent ? 'font-bold' : ''}`}>
-                      <span className={isCurrent ? 'text-gray-900' : 'text-gray-700'}>
-                        {getBeltLabel(h.belt)}
-                        {h.belt_stripes > 0 && (
-                          <span className="text-xs text-gray-500"> · {h.belt_stripes} פסים</span>
-                        )}
-                      </span>
-                      <span className="text-xs text-gray-500 whitespace-nowrap">
-                        {formatHebrewMonthYear(h.received_at)}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-gray-500 text-sm">התחלת BJJ</span>
+                      <span className="text-xs text-gray-400 whitespace-nowrap">
+                        {formatHebrewMonthYear(startDate)}
                       </span>
                     </div>
-                    {isCurrent && (
-                      <div className="mt-1 inline-block bg-amber-100 text-amber-800 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                        החגורה הנוכחית
-                      </div>
-                    )}
+                    <div className="text-[10px] text-gray-400 mt-0.5">תאריך התחלה משוער</div>
                   </li>
-                )
-              })}
-            </ol>
+                )}
+
+                {beltHistory.map((h, idx) => {
+                  const meta = getBeltMeta(h.belt)
+                  const isCurrent = idx === beltHistory.length - 1 && h.belt === member.belt
+                  // חישוב כמה זמן עברה בין שתי חגורות
+                  const prevDate = idx === 0
+                    ? (startDate || null)
+                    : beltHistory[idx - 1]?.received_at || null
+                  const timeAtPrev = (prevDate && h.received_at && h.belt !== 'white')
+                    ? formatYearsMonths2Dates(prevDate, h.received_at)
+                    : null
+
+                  return (
+                    <li key={h.id || idx} className="ms-4 pb-4 last:pb-0 relative">
+                      {/* נקודה על הקו */}
+                      <span
+                        className={`absolute -start-[22px] top-1 flex items-center justify-center rounded-full ring-4 ring-white ${isCurrent ? 'w-5 h-5' : 'w-4 h-4'}`}
+                        style={{ background: meta?.color || '#10b981' }}
+                        aria-label={isCurrent ? 'החגורה הנוכחית' : 'הושלם'}>
+                        <span className="text-[10px]" style={{ color: meta?.text || '#fff' }}>
+                          {isCurrent ? '★' : '✓'}
+                        </span>
+                      </span>
+                      <div className={`flex items-baseline justify-between gap-2 ${isCurrent ? 'font-bold' : ''}`}>
+                        <span className={isCurrent ? 'text-gray-900' : 'text-gray-700'}>
+                          {getBeltLabel(h.belt)}
+                          {h.belt_stripes > 0 && (
+                            <span className="text-xs text-gray-500"> · {h.belt_stripes} פסים</span>
+                          )}
+                        </span>
+                        <span className="text-xs text-gray-500 whitespace-nowrap">
+                          {formatHebrewMonthYear(h.received_at)}
+                        </span>
+                      </div>
+                      {timeAtPrev && (
+                        <div className="text-[10px] text-gray-400 mt-0.5">
+                          לקח {timeAtPrev} מהחגורה הקודמת
+                        </div>
+                      )}
+                      {isCurrent && (
+                        <div className="mt-1 inline-block bg-amber-100 text-amber-800 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                          החגורה הנוכחית · {formatYearsMonths(h.received_at)} על החגורה
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
+
+                {/* אם אין היסטוריה אבל יש תאריך התחלה — הראה הודעה */}
+                {beltHistory.length === 0 && showStartRow && (
+                  <li className="ms-4 relative text-xs text-gray-400 italic">
+                    עדיין אין חגורות מאושרות — שלח בקשה ממסך הפרופיל שלך.
+                  </li>
+                )}
+              </ol>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ===== Hero card — כותרת + מספר החודש + פילוח תחום קומפקטי ===== */}
       <div className="rounded-xl shadow-sm overflow-hidden"

@@ -1313,22 +1313,22 @@ function ProfileTab({ profile, member }) {
             )}
 
 
-            {/* 3. תאריך התחלה משוער — רק לחגורה לבנה + בוגר (16+) */}
-            {beltVal === 'white' && autoCategory === 'adult' && (
+            {/* 3. תאריך התחלת BJJ — לכל בוגר (16+), ללא קשר לחגורה */}
+            {beltVal && autoCategory === 'adult' && (
               <div>
                 <label className="block text-xs text-gray-500 mb-1">
-                  תאריך התחלה משוער
-                  <span className="text-gray-400 mr-1">(מתי התחלת להתאמן BJJ)</span>
+                  מתי התחלת להתאמן BJJ?
+                  <span className="text-gray-400 mr-1">(תאריך משוער — חודש/שנה)</span>
                 </label>
                 <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={bjjStartDate || ''} onChange={e => setBjjStartDate(e.target.value)} />
               </div>
             )}
 
-            {/* תאריך קבלת חגורה — לחגורות שאינן לבנה */}
+            {/* תאריך קבלת חגורה הנוכחית — לחגורות שאינן לבנה */}
             {beltVal && beltVal !== 'white' && beltVal !== 'kids_white' && (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">תאריך קבלת חגורה</label>
+                <label className="block text-xs text-gray-500 mb-1">תאריך קבלת החגורה הנוכחית</label>
                 <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={beltReceivedAt || ''} onChange={e => setBeltReceivedAt(e.target.value)} />
               </div>

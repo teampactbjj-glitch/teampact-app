@@ -1312,21 +1312,6 @@ function ProfileTab({ profile, member }) {
               </div>
             )}
 
-            {/* פסים */}
-            {beltVal && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">פסים (0–{getMaxStripes(beltVal)})</label>
-                <div className="flex gap-2">
-                  {Array.from({ length: getMaxStripes(beltVal) + 1 }, (_, i) => (
-                    <button key={i} type="button"
-                      onClick={() => setBeltStripes(i)}
-                      className={`flex-1 py-1.5 rounded-lg text-sm border transition ${
-                        beltStripes === i ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-300'
-                      }`}>{i}</button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* 3. תאריך התחלה משוער — רק לחגורה לבנה + בוגר (16+) */}
             {beltVal === 'white' && autoCategory === 'adult' && (

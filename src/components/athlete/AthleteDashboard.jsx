@@ -785,23 +785,55 @@ function ShopTab({ profile, member, allAnnouncements }) {
   )
 }
 
+// ─── ProfileTab — התקדמות בלבד (קריאה) ──────────────────────────────────────
 function ProfileTab({ profile, member }) {
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border shadow-sm p-5 text-center">
+        <div className="w-16 h-16 rounded-full bg-gray-900 flex items-center justify-center mx-auto mb-3">
+          <span className="text-white text-xl font-medium">
+            {(member?.full_name || profile?.full_name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('')}
+          </span>
+        </div>
+        <h2 className="text-lg font-semibold text-gray-900">{member?.full_name || profile?.full_name}</h2>
+        <p className="text-sm text-gray-400 mt-0.5">{profile?.email}</p>
+        {member?.belt && (
+          <span className="inline-flex items-center gap-1.5 mt-2.5 px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-full border border-gray-200">
+            <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+            {getBeltLabel(member.belt)}{member.belt_stripes ? ` · ${member.belt_stripes} פסים` : ''}
+          </span>
+        )}
+      </div>
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div className="p-4">
+          <MyProgressSection profile={profile} member={member} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── SettingsTab — הגדרות חשבון ─────────────────────────────────────────────
+function SettingsTab({ profile, member }) {
   const toast = useToast()
+  const [saving, setSaving] = useState(false)
+  const [pendingRequests, setPendingRequests] = useState([])
+  // פרטים אישיים
   const [newEmail, setNewEmail] = useState('')
+  // אבטחה
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [pwSaving, setPwSaving] = useState(false)
   const [pwMsg, setPwMsg] = useState(null)
-  const [requestedSub, setRequestedSub] = useState(member?.subscription_type || '2x_week')
+  // מנוי
+  const [requestedSub, setRequestedSub] = useState(member?.subscription_type || '1x_week')
   const [subNote, setSubNote] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [pendingRequests, setPendingRequests] = useState([])
   const [allBranches, setAllBranches] = useState([])
   const [requestedBranchIds, setRequestedBranchIds] = useState(
     Array.isArray(member?.branch_ids) ? member.branch_ids : (member?.branch_id ? [member.branch_id] : [])
   )
-  const [branchSessions, setBranchSessions] = useState({}) // {branchId: count}
-  // === בקשת אישור דרגה ===
+  const [branchSessions, setBranchSessions] = useState(member?.branch_sessions || {})
+  // דרגה
   const [beltCategory, setBeltCategory] = useState(member?.belt_category || 'adult')
   const [beltVal, setBeltVal] = useState(member?.belt || '')
   const [beltStripes, setBeltStripes] = useState(member?.belt_stripes || 0)
@@ -812,8 +844,14 @@ function ProfileTab({ profile, member }) {
   const [birthDate, setBirthDate] = useState(member?.birth_date || '')
   const [priorAcademy, setPriorAcademy] = useState('')
   const [beltNote, setBeltNote] = useState('')
+  // מאמנים + ניווט
+  const [myCoaches, setMyCoaches] = useState([])
+  const [settingsView, setSettingsView] = useState(null)
 
-  // === חישוב גיל + קטגוריה אוטומטית לפי תאריך לידה ===
+  const athleteName = member?.full_name || profile?.full_name || profile?.email || '—'
+  const currentSub = member?.subscription_type || profile?.subscription_type || '—'
+
+  // === חישוב גיל + קטגוריה לפי תאריך לידה ===
   const autoAge = (() => {
     if (!birthDate) return null
     const bd = new Date(birthDate)
@@ -826,28 +864,28 @@ function ProfileTab({ profile, member }) {
   })()
   const autoCategory = autoAge === null ? null : (autoAge >= 16 ? 'adult' : 'kids')
 
-  // כשהקטגוריה משתנה — אפס את הבחירה
   useEffect(() => {
     if (!autoCategory) return
-    if (autoCategory !== beltCategory) {
-      setBeltCategory(autoCategory)
-      setBeltVal('')
-      setBeltStripes(0)
-    }
+    if (autoCategory !== beltCategory) { setBeltCategory(autoCategory); setBeltVal(''); setBeltStripes(0) }
   }, [autoCategory]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // המאמנים של המתאמן הזה — נגזר מ-class_registrations + checkins ב-60 ימים אחרונים.
-  // [{ id, name, phone }] — רק מאמנים שיש להם טלפון מוגדר.
-  const [myCoaches, setMyCoaches] = useState([])
+  useEffect(() => {
+    if (profile?.id) loadPending()
+  }, [profile?.id])
+
+  async function loadPending() {
+    const { data } = await supabase.from('profile_change_requests').select('*')
+      .eq('athlete_id', profile.id).eq('status', 'pending')
+      .order('created_at', { ascending: false })
+    setPendingRequests(data || [])
+  }
 
   useEffect(() => {
-    // ה-checkins/registrations נשמרים תחת members.id — fallback ל-profile.id לתאימות אחורה.
     const athleteId = member?.id || profile?.id
     if (!athleteId) return
     let cancelled = false
     ;(async () => {
       try {
-        // 1) class_ids שאליהם המתאמן רשום (כל history) או נכח ב-60 ימים אחרונים
         const sixtyDaysAgoISO = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
         const [regsRes, checksRes] = await Promise.all([
           supabase.from('class_registrations').select('class_id').eq('athlete_id', athleteId),
@@ -860,36 +898,17 @@ function ProfileTab({ profile, member }) {
           ...(checksRes.data || []).map(c => c.class_id).filter(Boolean),
         ])
         if (classIds.size === 0) { if (!cancelled) setMyCoaches([]); return }
-
-        // 2) coach_id לכל class
-        const { data: classesData } = await supabase
-          .from('classes')
-          .select('id, coach_id')
-          .in('id', Array.from(classIds))
+        const { data: classesData } = await supabase.from('classes').select('id, coach_id').in('id', Array.from(classIds))
         const coachIds = new Set((classesData || []).map(c => c.coach_id).filter(Boolean))
         if (coachIds.size === 0) { if (!cancelled) setMyCoaches([]); return }
-
-        // 3) coaches עצמם (name + user_id לחיבור ל-profiles)
-        const { data: coachesData } = await supabase
-          .from('coaches')
-          .select('id, name, user_id')
-          .in('id', Array.from(coachIds))
+        const { data: coachesData } = await supabase.from('coaches').select('id, name, user_id').in('id', Array.from(coachIds))
         const userIds = (coachesData || []).map(c => c.user_id).filter(Boolean)
-
-        // 4) טלפונים מ-profiles (טלפון של המאמן נשמר על profile של המשתמש שלו)
         const phonesMap = {}
         if (userIds.length > 0) {
-          const { data: profilesData } = await supabase
-            .from('profiles')
-            .select('id, phone')
-            .in('id', userIds)
+          const { data: profilesData } = await supabase.from('profiles').select('id, phone').in('id', userIds)
           ;(profilesData || []).forEach(p => { if (p.phone) phonesMap[p.id] = p.phone })
         }
-
-        // 5) רשימה סופית — דדפלקציה לפי user_id (מאמן יכול להיות בכמה סניפים = כמה coach records),
-        //    סינון רק מי שיש לו טלפון, ומיון לפי שם.
-        //    ה-fallback ל-`name|phone` הוא ליציבות אם user_id חסר.
-        const seen = new Map() // key → { id, name, phone }
+        const seen = new Map()
         for (const c of (coachesData || [])) {
           const phone = phonesMap[c.user_id]
           if (!phone) continue
@@ -897,11 +916,9 @@ function ProfileTab({ profile, member }) {
           if (seen.has(key)) continue
           seen.set(key, { id: c.id, name: c.name || '—', phone })
         }
-        const list = Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name, 'he'))
-
-        if (!cancelled) setMyCoaches(list)
+        if (!cancelled) setMyCoaches(Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name, 'he')))
       } catch (e) {
-        console.warn('[ProfileTab] loadMyCoaches failed', e)
+        console.warn('[SettingsTab] loadMyCoaches failed', e)
         if (!cancelled) setMyCoaches([])
       }
     })()
@@ -912,10 +929,8 @@ function ProfileTab({ profile, member }) {
     supabase.from('branches').select('id, name').eq('hidden', false).order('name').then(({ data }) => {
       const list = data || []
       setAllBranches(list)
-      // ניקוי IDs של סניפים מוסתרים/מחוקים שכבר אין בהם גישה ב-UI
       const visibleIds = new Set(list.map(b => b.id))
       setRequestedBranchIds(prev => prev.filter(id => visibleIds.has(id)))
-      // ניקוי ערכי ספירה ישנים של סניפים שלא קיימים
       setBranchSessions(s => {
         const cleaned = {}
         for (const k of Object.keys(s)) if (visibleIds.has(k)) cleaned[k] = s[k]
@@ -927,24 +942,17 @@ function ProfileTab({ profile, member }) {
   function toggleRequestedBranch(id) {
     setRequestedBranchIds(prev => {
       const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-      // אם מסירים סניף — נקה את הספירה שלו
-      if (prev.includes(id)) {
-        setBranchSessions(s => { const c = { ...s }; delete c[id]; return c })
-      }
+      if (prev.includes(id)) setBranchSessions(s => { const c = { ...s }; delete c[id]; return c })
       return next
     })
   }
 
   function setBranchSessionCount(id, count) {
-    const n = Math.max(0, parseInt(count) || 0)
-    setBranchSessions(s => ({ ...s, [id]: n }))
+    setBranchSessions(s => ({ ...s, [id]: Math.max(0, parseInt(count) || 0) }))
   }
 
   const totalSessionsAllowed = requestedSub === '1x_week' ? 1 : requestedSub === '2x_week' ? 2 : requestedSub === '4x_week' ? 4 : null
-  // סופרים רק את הסניפים שהמשתמש באמת בחר (מתעלמים מערכים תקועים)
   const totalSelectedSessions = requestedBranchIds.reduce((a, id) => a + (branchSessions[id] || 0), 0)
-
-  const athleteName = member?.full_name || profile?.full_name || profile?.email || '—'
 
   async function updatePassword() {
     setPwMsg(null)
@@ -958,439 +966,413 @@ function ProfileTab({ profile, member }) {
     setNewPassword(''); setConfirmPassword('')
   }
 
-  const currentSub = member?.subscription_type || profile?.subscription_type || '—'
-
-  useEffect(() => {
-    if (profile?.id) loadPending()
-  }, [profile?.id])
-
-  async function loadPending() {
-    const { data } = await supabase.from('profile_change_requests').select('*')
-      .eq('athlete_id', profile.id).eq('status', 'pending')
-      .order('created_at', { ascending: false })
-    setPendingRequests(data || [])
-  }
-
   async function submitEmailChange() {
     if (!newEmail || newEmail === profile.email) { toast.error('הזן כתובת מייל חדשה'); return }
     setSaving(true)
     const { error } = await supabase.from('profile_change_requests').insert({
-      athlete_id: profile.id,
-      athlete_name: athleteName,
-      change_type: 'email',
-      current_value: profile.email,
-      requested_value: newEmail,
+      athlete_id: profile.id, athlete_name: athleteName,
+      change_type: 'email', current_value: profile.email, requested_value: newEmail,
     })
     setSaving(false)
     if (error) { toast.error('שגיאה: ' + error.message); return }
     toast.success('בקשת שינוי המייל נשלחה למנהל')
-    setNewEmail('')
-    loadPending()
+    setNewEmail(''); loadPending()
   }
 
   async function submitSubChange() {
     const currentBranches = Array.isArray(member?.branch_ids) ? member.branch_ids : (member?.branch_id ? [member.branch_id] : [])
-    // נשלח/נבדוק רק סניפים גלויים שהמשתמש יכול לבחור ב-UI
     const visibleIds = new Set((allBranches || []).map(b => b.id))
     const submitBranchIds = requestedBranchIds.filter(id => visibleIds.has(id))
-    const branchesChanged =
-      submitBranchIds.length !== currentBranches.length ||
-      submitBranchIds.some(id => !currentBranches.includes(id))
+    const branchesChanged = submitBranchIds.length !== currentBranches.length || submitBranchIds.some(id => !currentBranches.includes(id))
     if (requestedSub === currentSub && !branchesChanged) { toast.error('בחר מנוי אחר או סניפים אחרים'); return }
     if (submitBranchIds.length === 0) { toast.error('יש לבחור לפחות סניף אחד'); return }
-    // ולידציה — סכום האימונים חייב להתאים למנוי (רק ל-2x/4x)
     let submitBranchSessions = null
     if (totalSessionsAllowed !== null) {
-      // נבדוק רק על הסניפים הגלויים שמופיעים ב-UI
       const sumVisible = submitBranchIds.reduce((a, id) => a + (branchSessions[id] || 0), 0)
-      if (sumVisible !== totalSessionsAllowed) {
-        toast.error(`סכום האימונים בסניפים חייב להיות בדיוק ${totalSessionsAllowed} (כרגע ${sumVisible})`)
-        return
-      }
+      if (sumVisible !== totalSessionsAllowed) { toast.error(`סכום האימונים בסניפים חייב להיות בדיוק ${totalSessionsAllowed} (כרגע ${sumVisible})`); return }
       for (const id of submitBranchIds) {
-        if (!branchSessions[id] || branchSessions[id] < 1) {
-          toast.error('יש להזין מספר אימונים לכל סניף שנבחר')
-          return
-        }
+        if (!branchSessions[id] || branchSessions[id] < 1) { toast.error('יש להזין מספר אימונים לכל סניף שנבחר'); return }
       }
       submitBranchSessions = {}
       for (const id of submitBranchIds) submitBranchSessions[id] = branchSessions[id]
     }
     setSaving(true)
     const { error } = await supabase.from('profile_change_requests').insert({
-      athlete_id: profile.id,
-      athlete_name: athleteName,
-      change_type: 'subscription',
-      current_value: currentSub,
-      requested_value: requestedSub,
-      requested_branch_ids: submitBranchIds,
-      requested_branch_sessions: submitBranchSessions,
-      note: subNote,
+      athlete_id: profile.id, athlete_name: athleteName,
+      change_type: 'subscription', current_value: currentSub, requested_value: requestedSub,
+      requested_branch_ids: submitBranchIds, requested_branch_sessions: submitBranchSessions, note: subNote,
     })
     setSaving(false)
     if (error) { toast.error('שגיאה: ' + error.message); return }
     toast.success('בקשת שינוי המנוי נשלחה למנהל')
-    setSubNote('')
-    loadPending()
+    setSubNote(''); loadPending()
   }
-
-  const hasPendingEmail = pendingRequests.some(r => r.change_type === 'email')
-  const hasPendingSub = pendingRequests.some(r => r.change_type === 'subscription')
-  const hasPendingBelt = pendingRequests.some(r => r.change_type === 'belt')
 
   async function submitBeltChange() {
     if (!beltVal) { toast.error('בחר חגורה'); return }
     if (!reqTrainsGi && !reqTrainsNogi) { toast.error('סמן לפחות סוג אימון אחד (Gi או NoGi)'); return }
     setSaving(true)
     const { error } = await supabase.from('profile_change_requests').insert({
-      athlete_id: profile.id,
-      athlete_name: athleteName,
-      change_type: 'belt',
-      current_value: member?.belt || '—',
-      requested_value: beltVal,
-      requested_belt: beltVal,
-      requested_belt_stripes: Number(beltStripes) || 0,
-      requested_belt_received_at: beltReceivedAt || null,
-      requested_bjj_start_date: bjjStartDate || null,
-      requested_trains_gi: !!reqTrainsGi,
-      requested_trains_nogi: !!reqTrainsNogi,
-      requested_birth_date: birthDate || null,
-      prior_academy: priorAcademy || null,
-      note: beltNote || null,
+      athlete_id: profile.id, athlete_name: athleteName,
+      change_type: 'belt', current_value: member?.belt || '—', requested_value: beltVal,
+      requested_belt: beltVal, requested_belt_stripes: Number(beltStripes) || 0,
+      requested_belt_received_at: beltReceivedAt || null, requested_bjj_start_date: bjjStartDate || null,
+      requested_trains_gi: !!reqTrainsGi, requested_trains_nogi: !!reqTrainsNogi,
+      requested_birth_date: birthDate || null, prior_academy: priorAcademy || null, note: beltNote || null,
     })
     setSaving(false)
     if (error) { toast.error('שגיאה: ' + error.message); return }
-    // התראה למנהל (push) — שיראה את הבקשה גם כשהאפליקציה סגורה
     allTrainerUserIds().then(ids => notifyPush({
       userIds: ids,
       title: 'בקשת אישור דרגה חדשה',
       body: `${athleteName} מבקש דרגה: ${getBeltLabel(beltVal)}${beltStripes ? ` · ${beltStripes} פסים` : ''}`,
-      url: '/#requests',
-      tag: `belt-request:${profile.id}`,
+      url: '/#requests', tag: `belt-request:${profile.id}`,
     })).catch(() => {})
     toast.success('הבקשה נשלחה למנהל')
-    setBeltNote('')
-    setPriorAcademy('')
-    loadPending()
+    setBeltNote(''); setPriorAcademy(''); loadPending()
   }
+
+  const hasPendingEmail = pendingRequests.some(r => r.change_type === 'email')
+  const hasPendingSub = pendingRequests.some(r => r.change_type === 'subscription')
+  const hasPendingBelt = pendingRequests.some(r => r.change_type === 'belt')
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border shadow-sm p-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-3xl mx-auto mb-3">💪</div>
-        <h2 className="text-lg font-bold text-gray-800">{profile?.full_name}</h2>
-        <p className="text-sm text-gray-500 mt-0.5">{profile?.email}</p>
+      {/* כותרת */}
+      <div className="bg-white rounded-xl border shadow-sm p-5 text-center">
+        <div className="w-16 h-16 rounded-full bg-gray-900 flex items-center justify-center mx-auto mb-3">
+          <span className="text-white text-xl font-medium">
+            {(member?.full_name || profile?.full_name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('')}
+          </span>
+        </div>
+        <h2 className="text-lg font-semibold text-gray-900">{member?.full_name || profile?.full_name}</h2>
+        <p className="text-sm text-gray-400 mt-0.5">{profile?.email}</p>
       </div>
 
-      {/* === ההתקדמות שלי — דוח אישי לחודש הנוכחי === */}
-      <MyProgressSection profile={profile} member={member} />
+      <div className="space-y-3">
+        {/* ── מסך ראשי ── */}
+        {!settingsView && (
+          <div className="space-y-3">
+            <div className="divide-y divide-gray-100 rounded-xl border bg-white overflow-hidden">
+              <button onClick={() => setSettingsView('personal')}
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-right hover:bg-gray-50 transition">
+                <span className="text-xl w-8 text-center shrink-0">👤</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-900">פרטים אישיים</div>
+                  <div className="text-xs text-gray-400 truncate">{member?.full_name || profile?.full_name}</div>
+                </div>
+                {hasPendingEmail && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-300 shrink-0 rotate-180"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
 
-      {/* פרטים לקריאה בלבד */}
-      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
-        <h3 className="font-bold text-gray-800 text-sm">פרטים אישיים</h3>
-        <div className="flex justify-between items-center text-sm">
-          <span className="text-gray-500">שם מלא</span>
-          <span className="font-semibold text-gray-800">{member?.full_name || profile?.full_name || '—'}</span>
-        </div>
-        <div className="flex justify-between items-center text-sm">
-          <span className="text-gray-500">טלפון</span>
-          <span className="font-semibold text-gray-800">{member?.phone || '—'}</span>
-        </div>
-        <div className="flex justify-between items-center text-sm">
-          <span className="text-gray-500">מנוי נוכחי</span>
-          <span className="font-semibold text-emerald-700">{SUBSCRIPTION_LABELS[currentSub] || currentSub}</span>
-        </div>
-        {member?.belt && (
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-500">חגורה</span>
-            <span className="font-semibold text-gray-800">{member.belt}</span>
-          </div>
-        )}
-        <p className="text-xs text-gray-400 pt-2 border-t">לשינוי שם או טלפון — פנה למאמן</p>
-      </div>
+              <button onClick={() => setSettingsView('subscription')}
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-right hover:bg-gray-50 transition">
+                <span className="text-xl w-8 text-center shrink-0">🎫</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-900">מנוי</div>
+                  <div className="text-xs text-gray-400">{SUBSCRIPTION_LABELS[currentSub] || currentSub}</div>
+                </div>
+                {hasPendingSub && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-300 shrink-0 rotate-180"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
 
-      {/* === דבר עם המאמן — דינמי לפי האימונים שהמתאמן רשום אליהם === */}
-      {myCoaches.length > 0 && (
-        <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
-          <div>
-            <h3 className="font-bold text-gray-800 text-sm">💬 המאמנים שלך</h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {myCoaches.length === 1
-                ? 'לחץ לפתיחת ווצאפ ישירות עם המאמן'
-                : `${myCoaches.length} מאמנים — לחץ לפתיחת ווצאפ עם המאמן הרצוי`}
-            </p>
-          </div>
-          <div className="space-y-2">
-            {myCoaches.map(c => {
-              const wa = athleteWaLink(c.phone, `שלום ${c.name}, מדבר ${athleteName} מ-Team Pact`)
-              if (!wa) return null
-              return (
-                <a
-                  key={c.id}
-                  href={wa}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  aria-label={`שלח הודעת ווצאפ ל${c.name}`}
-                  className="flex items-center gap-3 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200 rounded-xl px-4 py-3 transition focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-600"
-                >
-                  <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center text-lg shrink-0" aria-hidden="true">💬</div>
-                  <div className="flex-1 min-w-0 text-right">
-                    <div className="font-bold text-gray-900 text-sm truncate">{c.name}</div>
-                    <div className="text-xs text-gray-500" dir="ltr">{c.phone}</div>
-                  </div>
-                  <span className="text-emerald-700 text-lg shrink-0" aria-hidden="true">›</span>
-                </a>
-              )
-            })}
-          </div>
-        </div>
-      )}
+              <button onClick={() => setSettingsView('belt')}
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-right hover:bg-gray-50 transition">
+                <span className="text-xl w-8 text-center shrink-0">🥋</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-900">עדכון דרגה</div>
+                  <div className="text-xs text-gray-400">{member?.belt ? getBeltLabel(member.belt) : 'לא הוגדרה דרגה'}</div>
+                </div>
+                {hasPendingBelt && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-300 shrink-0 rotate-180"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
 
-      {/* בקשות ממתינות */}
-      {pendingRequests.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
-          <h3 className="font-bold text-amber-900 text-sm">⏳ בקשות ממתינות לאישור מנהל</h3>
-          {pendingRequests.map(r => {
-            const prefix = r.change_type === 'email' ? '📧 שינוי מייל ל-'
-              : r.change_type === 'subscription' ? '🎫 שינוי מנוי ל-'
-              : r.change_type === 'belt' ? '🥋 בקשת דרגה: '
-              : '📝 שינוי: '
-            const value = r.change_type === 'subscription'
-              ? (SUBSCRIPTION_LABELS[r.requested_value] || r.requested_value)
-              : r.change_type === 'belt'
-                ? `${getBeltLabel(r.requested_belt || r.requested_value)}${r.requested_belt_stripes ? ` · ${r.requested_belt_stripes} פסים` : ''}`
-                : r.requested_value
-            return (
-              <div key={r.id} className="text-xs text-amber-800">
-                {prefix}
-                <span className="font-semibold">{value}</span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* שינוי מייל */}
-      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
-        <h3 className="font-bold text-gray-800 text-sm">שינוי כתובת מייל</h3>
-        {hasPendingEmail ? (
-          <p className="text-xs text-amber-700">יש בקשה ממתינה — לא ניתן לשלוח בקשה נוספת</p>
-        ) : (
-          <>
-            <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
-              placeholder="הזן מייל חדש"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-            <button onClick={submitEmailChange} disabled={saving}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
-              {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* שינוי סיסמה */}
-      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
-        <h3 className="font-bold text-gray-800 text-sm">שינוי סיסמה</h3>
-        <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
-          placeholder="סיסמה חדשה (לפחות 6 תווים)"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-        <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
-          placeholder="אימות סיסמה"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-        {pwMsg && <p className={`text-xs ${pwMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>{pwMsg.text}</p>}
-        <button onClick={updatePassword} disabled={pwSaving}
-          className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
-          {pwSaving ? 'מעדכן...' : 'עדכן סיסמה'}
-        </button>
-      </div>
-
-      {/* שינוי מנוי */}
-      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
-        <h3 className="font-bold text-gray-800 text-sm">שינוי מנוי / כמות אימונים</h3>
-        {hasPendingSub ? (
-          <p className="text-xs text-amber-700">יש בקשה ממתינה — לא ניתן לשלוח בקשה נוספת</p>
-        ) : (
-          <>
-            <select value={requestedSub} onChange={e => setRequestedSub(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-              <option value="1x_week">1× שבוע</option>
-              <option value="2x_week">2× שבוע</option>
-              <option value="4x_week">4× שבוע</option>
-              <option value="unlimited">ללא הגבלה</option>
-            </select>
-            <div>
-              <p className="text-xs text-gray-500 mb-1.5">סניפים (ניתן לבחור יותר מאחד)</p>
-              <div className="flex gap-2 flex-wrap">
-                {allBranches.map(b => (
-                  <button key={b.id} type="button" onClick={() => toggleRequestedBranch(b.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-                      requestedBranchIds.includes(b.id)
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
-                    }`}>
-                    {requestedBranchIds.includes(b.id) ? '✓ ' : ''}📍 {b.name}
-                  </button>
-                ))}
-              </div>
+              <button onClick={() => setSettingsView('security')}
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-right hover:bg-gray-50 transition">
+                <span className="text-xl w-8 text-center shrink-0">🔒</span>
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-gray-900">אבטחה</div>
+                  <div className="text-xs text-gray-400">סיסמה ויציאה</div>
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-300 shrink-0 rotate-180"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
             </div>
 
-            {totalSessionsAllowed !== null && requestedBranchIds.length > 0 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
-                <p className="text-xs font-semibold text-blue-900">
-                  כמה אימונים בשבוע בכל סניף? (סה"כ חייב להיות {totalSessionsAllowed})
-                </p>
-                {requestedBranchIds.map(id => {
-                  const b = allBranches.find(x => x.id === id)
-                  if (!b) return null
-                  return (
-                    <div key={id} className="flex items-center gap-2">
-                      <span className="text-sm text-gray-700 flex-1">📍 {b.name}</span>
-                      <input type="number" min="0" max={totalSessionsAllowed}
-                        value={branchSessions[id] ?? ''}
-                        onChange={e => setBranchSessionCount(id, e.target.value)}
-                        className="w-16 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center" />
-                      <span className="text-xs text-gray-500">אימונים</span>
-                    </div>
-                  )
-                })}
-                <p className={`text-xs font-semibold ${totalSelectedSessions === totalSessionsAllowed ? 'text-emerald-700' : 'text-red-600'}`}>
-                  סה"כ: {totalSelectedSessions} / {totalSessionsAllowed}
-                </p>
-              </div>
-            )}
-            <textarea value={subNote} onChange={e => setSubNote(e.target.value)}
-              placeholder="הערה (אופציונלי)" rows="2"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none" />
-            <button onClick={submitSubChange} disabled={saving}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
-              {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* === בקשת אישור דרגה === */}
-      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
-        <h3 className="font-bold text-gray-800 text-sm">🥋 בקשת אישור דרגה</h3>
-        <p className="text-[11px] text-gray-500 -mt-2">
-          {member?.belt ? 'אם הדרגה הנוכחית לא מעודכנת — שלח בקשה לתיקון.' : 'הזן את הדרגה הנוכחית שלך לאישור המנהל.'}
-        </p>
-        {hasPendingBelt ? (
-          <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">⏳ יש בקשת דרגה ממתינה — לא ניתן לשלוח בקשה נוספת</p>
-        ) : (
-          <>
-            {/* 1. תאריך לידה — קובע קטגוריה אוטומטית */}
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">תאריך לידה <span className="text-red-500">*</span></label>
-              <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
-                value={birthDate || ''} onChange={e => setBirthDate(e.target.value)} />
-              {autoAge !== null && (
-                <p className={`text-xs mt-1.5 font-semibold px-2 py-1 rounded-lg inline-block ${
-                  autoCategory === 'kids' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
-                }`}>
-                  {autoCategory === 'kids' ? `🧒 גיל ${autoAge} — קטגוריית ילדים` : `👤 גיל ${autoAge} — קטגוריית בוגרים`}
-                </p>
-              )}
-            </div>
-
-            {/* 2. חגורה נוכחית — מוצגת רק אחרי הזנת DOB */}
-            {autoCategory && (
+            {myCoaches.length > 0 && (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">חגורה נוכחית <span className="text-red-500">*</span></label>
-                <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                  value={beltVal}
-                  onChange={e => {
-                    const v = e.target.value
-                    setBeltVal(v)
-                    setBeltStripes(s => Math.min(s || 0, getMaxStripes(v)))
-                  }}>
-                  <option value="">— בחר חגורה —</option>
-                  {(autoCategory === 'kids' ? KIDS_BELTS : ADULT_BELTS).map(b => (
-                    <option key={b.value} value={b.value}>{b.label}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-
-            {/* 3. תאריך התחלת BJJ — לכל בוגר (16+), ללא קשר לחגורה */}
-            {beltVal && autoCategory === 'adult' && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  מתי התחלת להתאמן BJJ?
-                  <span className="text-gray-400 mr-1">(תאריך משוער — חודש/שנה)</span>
-                </label>
-                <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
-                  value={bjjStartDate || ''} onChange={e => setBjjStartDate(e.target.value)} />
-              </div>
-            )}
-
-            {/* תאריך קבלת חגורה הנוכחית — לחגורות שאינן לבנה */}
-            {beltVal && beltVal !== 'white' && beltVal !== 'kids_white' && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">תאריך קבלת החגורה הנוכחית</label>
-                <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
-                  value={beltReceivedAt || ''} onChange={e => setBeltReceivedAt(e.target.value)} />
-              </div>
-            )}
-
-            {/* 4. גי / נו-גי */}
-            {autoCategory && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">סוג אימון <span className="text-red-500">*</span></label>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer bg-white border rounded-lg px-3 py-2">
-                    <input type="checkbox" checked={!!reqTrainsGi}
-                      onChange={e => setReqTrainsGi(e.target.checked)}
-                      className="w-4 h-4 accent-amber-600" />
-                    🥋 גי
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer bg-white border rounded-lg px-3 py-2">
-                    <input type="checkbox" checked={!!reqTrainsNogi}
-                      onChange={e => setReqTrainsNogi(e.target.checked)}
-                      className="w-4 h-4 accent-blue-600" />
-                    🤼 נו-גי
-                  </label>
+                <p className="text-xs text-gray-400 px-1 mb-1.5">המאמנים שלך</p>
+                <div className="divide-y divide-gray-100 rounded-xl border bg-white overflow-hidden">
+                  {myCoaches.map(c => {
+                    const wa = athleteWaLink(c.phone, `שלום ${c.name}, מדבר ${athleteName} מ-Team Pact`)
+                    if (!wa) return null
+                    return (
+                      <a key={c.id} href={wa} target="_blank" rel="noreferrer noopener"
+                        className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition">
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 text-emerald-700 text-xs font-semibold">
+                          {c.name.trim()[0]}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900">{c.name}</div>
+                          <div className="text-xs text-gray-400" dir="ltr">{c.phone}</div>
+                        </div>
+                        <span className="text-xs text-emerald-600 font-medium shrink-0">ווצאפ</span>
+                      </a>
+                    )
+                  })}
                 </div>
               </div>
             )}
 
-            {/* אקדמיה קודמת + הערה */}
-            <input type="text" value={priorAcademy} onChange={e => setPriorAcademy(e.target.value)}
-              placeholder="אקדמיה קודמת (אופציונלי)"
-              className="w-full border rounded-lg px-3 py-2 text-sm" />
-            <textarea value={beltNote} onChange={e => setBeltNote(e.target.value)}
-              placeholder="הערה למנהל (אופציונלי)" rows="2"
-              className="w-full border rounded-lg px-3 py-2 text-sm resize-none" />
-            <button onClick={submitBeltChange} disabled={saving || !autoCategory}
-              className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
-              {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
-            </button>
-          </>
+            <div className="flex flex-col items-center gap-2 pt-1 pb-2">
+              <a href="https://www.teampact.co.il" target="_blank" rel="noopener noreferrer"
+                className="text-sm text-emerald-700 hover:underline font-medium">teampact.co.il</a>
+              <a href="/accessibility" className="text-xs text-gray-400 hover:underline">הצהרת נגישות</a>
+            </div>
+          </div>
         )}
-      </div>
 
-      <button onClick={() => supabase.auth.signOut()}
-        className="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-medium text-sm hover:bg-red-100 transition">
-        יציאה מהמערכת
-      </button>
+        {/* ── פרטים אישיים ── */}
+        {settingsView === 'personal' && (
+          <div className="space-y-4">
+            <button onClick={() => setSettingsView(null)} className="flex items-center gap-1 text-sm text-emerald-600 font-medium -mb-1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l6-6-6-6"/></svg>
+              הגדרות
+            </button>
+            <div className="divide-y divide-gray-100 rounded-xl border bg-white overflow-hidden">
+              <div className="flex justify-between items-center px-4 py-3">
+                <span className="text-xs text-gray-400">שם מלא</span>
+                <span className="text-sm text-gray-800 font-medium">{member?.full_name || profile?.full_name || '—'}</span>
+              </div>
+              <div className="flex justify-between items-center px-4 py-3">
+                <span className="text-xs text-gray-400">מייל</span>
+                <span className="text-sm text-gray-800 font-medium">{profile?.email || '—'}</span>
+              </div>
+              <div className="flex justify-between items-center px-4 py-3">
+                <span className="text-xs text-gray-400">טלפון</span>
+                <span className="text-sm text-gray-800 font-medium">{member?.phone || '—'}</span>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 px-1">לשינוי שם או טלפון — פנה למאמן</p>
+            <div className="space-y-2">
+              <p className="text-xs text-gray-400 px-1">שינוי כתובת מייל</p>
+              {hasPendingEmail ? (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">יש בקשה ממתינה לאישור מנהל</p>
+              ) : (
+                <div className="space-y-2">
+                  <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
+                    placeholder="הזן מייל חדש" className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm" />
+                  <button onClick={submitEmailChange} disabled={saving}
+                    className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                    {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
-      {/* קישור לאתר המועדון */}
-      <div className="text-center pt-2">
-        <a href="https://www.teampact.co.il" target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm text-emerald-700 hover:text-emerald-800 hover:underline font-medium">
-          <span aria-hidden="true">🌐</span> בקרו באתר המועדון — teampact.co.il
-        </a>
-      </div>
+        {/* ── מנוי ── */}
+        {settingsView === 'subscription' && (
+          <div className="space-y-4">
+            <button onClick={() => setSettingsView(null)} className="flex items-center gap-1 text-sm text-emerald-600 font-medium -mb-1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l6-6-6-6"/></svg>
+              הגדרות
+            </button>
+            <div>
+              <p className="text-xs text-gray-400 px-1 mb-1.5">מנוי נוכחי</p>
+              <div className="divide-y divide-gray-100 rounded-xl border bg-white overflow-hidden">
+                <div className="flex justify-between items-center px-4 py-3">
+                  <span className="text-xs text-gray-400">סוג</span>
+                  <span className="text-sm font-medium text-emerald-700">{SUBSCRIPTION_LABELS[currentSub] || currentSub}</span>
+                </div>
+                {(Array.isArray(member?.branch_ids) ? member.branch_ids : (member?.branch_id ? [member.branch_id] : [])).length > 0 && (
+                  <div className="flex justify-between items-start px-4 py-3 gap-4">
+                    <span className="text-xs text-gray-400 shrink-0">סניפים</span>
+                    <span className="text-sm text-gray-800 text-right">
+                      {(Array.isArray(member?.branch_ids) ? member.branch_ids : [member.branch_id])
+                        .map(id => allBranches.find(b => b.id === id)?.name || id).join(', ')}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs text-gray-400 px-1">בקשת שינוי מנוי</p>
+              {hasPendingSub ? (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">יש בקשה ממתינה לאישור מנהל</p>
+              ) : (
+                <div className="space-y-3">
+                  <select value={requestedSub} onChange={e => setRequestedSub(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm">
+                    <option value="1x_week">1× שבוע</option>
+                    <option value="2x_week">2× שבוע</option>
+                    <option value="4x_week">4× שבוע</option>
+                    <option value="unlimited">ללא הגבלה</option>
+                  </select>
+                  <div>
+                    <p className="text-xs text-gray-400 mb-1.5">סניפים</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {allBranches.map(b => (
+                        <button key={b.id} type="button" onClick={() => toggleRequestedBranch(b.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                            requestedBranchIds.includes(b.id)
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                          }`}>
+                          {requestedBranchIds.includes(b.id) ? '✓ ' : ''}{b.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {totalSessionsAllowed !== null && requestedBranchIds.length > 0 && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+                      <p className="text-xs font-medium text-gray-700">כמה אימונים בשבוע בכל סניף? (סה"כ: {totalSessionsAllowed})</p>
+                      {requestedBranchIds.map(id => {
+                        const b = allBranches.find(x => x.id === id)
+                        if (!b) return null
+                        return (
+                          <div key={id} className="flex items-center gap-2">
+                            <span className="text-sm text-gray-700 flex-1">{b.name}</span>
+                            <input type="number" min="0" max={totalSessionsAllowed}
+                              value={branchSessions[id] ?? ''}
+                              onChange={e => setBranchSessionCount(id, e.target.value)}
+                              className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-sm text-center" />
+                            <span className="text-xs text-gray-400">אימונים</span>
+                          </div>
+                        )
+                      })}
+                      <p className={`text-xs font-semibold ${totalSelectedSessions === totalSessionsAllowed ? 'text-emerald-700' : 'text-red-500'}`}>
+                        סה"כ: {totalSelectedSessions} / {totalSessionsAllowed}
+                      </p>
+                    </div>
+                  )}
+                  <textarea value={subNote} onChange={e => setSubNote(e.target.value)}
+                    placeholder="הערה (אופציונלי)" rows="2"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none" />
+                  <button onClick={submitSubChange} disabled={saving}
+                    className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                    {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
-      {/* קישור לדף נגישות — חובה לפי תקנות הנגישות לשירות */}
-      <div className="text-center pb-4">
-        <a
-          href="/accessibility"
-          className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-800 hover:underline font-medium focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-600 rounded"
-        >
-          <span aria-hidden="true">♿</span> הצהרת נגישות
-        </a>
+        {/* ── עדכון דרגה ── */}
+        {settingsView === 'belt' && (
+          <div className="space-y-4">
+            <button onClick={() => setSettingsView(null)} className="flex items-center gap-1 text-sm text-emerald-600 font-medium -mb-1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l6-6-6-6"/></svg>
+              הגדרות
+            </button>
+            {member?.belt && (
+              <div className="divide-y divide-gray-100 rounded-xl border bg-white overflow-hidden">
+                <div className="flex justify-between items-center px-4 py-3">
+                  <span className="text-xs text-gray-400">דרגה נוכחית</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {getBeltLabel(member.belt)}{member.belt_stripes ? ` · ${member.belt_stripes} פסים` : ''}
+                  </span>
+                </div>
+              </div>
+            )}
+            {hasPendingBelt ? (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">יש בקשת דרגה ממתינה — לא ניתן לשלוח בקשה נוספת</p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-gray-400 px-1">{member?.belt ? 'הדרגה לא מעודכנת? שלח בקשה לתיקון.' : 'הזן את הדרגה הנוכחית שלך לאישור המנהל.'}</p>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">תאריך לידה <span className="text-red-500">*</span></label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                    value={birthDate || ''} onChange={e => setBirthDate(e.target.value)} />
+                  {autoAge !== null && (
+                    <p className={`text-xs mt-1.5 font-semibold px-2 py-1 rounded-lg inline-block ${autoCategory === 'kids' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>
+                      {autoCategory === 'kids' ? `גיל ${autoAge} — קטגוריית ילדים` : `גיל ${autoAge} — קטגוריית בוגרים`}
+                    </p>
+                  )}
+                </div>
+                {autoCategory && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">חגורה נוכחית <span className="text-red-500">*</span></label>
+                    <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white" value={beltVal}
+                      onChange={e => { const v = e.target.value; setBeltVal(v); setBeltStripes(s => Math.min(s || 0, getMaxStripes(v))) }}>
+                      <option value="">— בחר חגורה —</option>
+                      {(autoCategory === 'kids' ? KIDS_BELTS : ADULT_BELTS).map(b => (
+                        <option key={b.value} value={b.value}>{b.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {beltVal && autoCategory === 'adult' && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">מתי התחלת להתאמן BJJ? <span className="text-gray-400">(תאריך משוער)</span></label>
+                    <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                      value={bjjStartDate || ''} onChange={e => setBjjStartDate(e.target.value)} />
+                  </div>
+                )}
+                {beltVal && beltVal !== 'white' && beltVal !== 'kids_white' && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">תאריך קבלת החגורה הנוכחית</label>
+                    <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                      value={beltReceivedAt || ''} onChange={e => setBeltReceivedAt(e.target.value)} />
+                  </div>
+                )}
+                {autoCategory && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">סוג אימון <span className="text-red-500">*</span></label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="flex items-center gap-2 text-sm cursor-pointer bg-white border rounded-lg px-3 py-2">
+                        <input type="checkbox" checked={!!reqTrainsGi} onChange={e => setReqTrainsGi(e.target.checked)} className="w-4 h-4 accent-amber-600" />גי
+                      </label>
+                      <label className="flex items-center gap-2 text-sm cursor-pointer bg-white border rounded-lg px-3 py-2">
+                        <input type="checkbox" checked={!!reqTrainsNogi} onChange={e => setReqTrainsNogi(e.target.checked)} className="w-4 h-4 accent-blue-600" />נו-גי
+                      </label>
+                    </div>
+                  </div>
+                )}
+                <input type="text" value={priorAcademy} onChange={e => setPriorAcademy(e.target.value)}
+                  placeholder="אקדמיה קודמת (אופציונלי)" className="w-full border rounded-lg px-3 py-2 text-sm bg-white" />
+                <textarea value={beltNote} onChange={e => setBeltNote(e.target.value)}
+                  placeholder="הערה למנהל (אופציונלי)" rows="2"
+                  className="w-full border rounded-lg px-3 py-2 text-sm resize-none bg-white" />
+                <button onClick={submitBeltChange} disabled={saving || !autoCategory}
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                  {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── אבטחה ── */}
+        {settingsView === 'security' && (
+          <div className="space-y-4">
+            <button onClick={() => setSettingsView(null)} className="flex items-center gap-1 text-sm text-emerald-600 font-medium -mb-1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l6-6-6-6"/></svg>
+              הגדרות
+            </button>
+            <div className="space-y-2">
+              <p className="text-xs text-gray-400 px-1">שינוי סיסמה</p>
+              <div className="space-y-2">
+                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                  placeholder="סיסמה חדשה (לפחות 6 תווים)"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm" />
+                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="אימות סיסמה"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm" />
+                {pwMsg && <p className={`text-xs ${pwMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>{pwMsg.text}</p>}
+                <button onClick={updatePassword} disabled={pwSaving}
+                  className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                  {pwSaving ? 'מעדכן...' : 'עדכן סיסמה'}
+                </button>
+              </div>
+            </div>
+            <button onClick={() => supabase.auth.signOut()}
+              className="w-full border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 py-2.5 rounded-lg text-sm font-medium transition">
+              יציאה מהמערכת
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1878,6 +1860,7 @@ export default function AthleteDashboard({ profile }) {
           {activeTab === 'shop' && <ShopTab profile={profile} member={member} allAnnouncements={announcements} />}
           {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} />}
           {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}
+          {activeTab === 'settings' && <SettingsTab profile={profile} member={member} />}
         </div>
       </main>
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} isTrainer={false} announcementsCount={announcementsCount} />

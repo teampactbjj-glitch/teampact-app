@@ -14,6 +14,7 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
         { id: 'shop',          icon: '🛒', label: 'חנות' },
         { id: 'announcements', icon: '📢', label: 'הודעות' },
         { id: 'profile',       icon: '👤', label: 'פרופיל' },
+        { id: 'settings',      icon: '⚙️', label: 'הגדרות' },
       ]
   return (
     <nav dir="rtl" className="flex shrink-0 tp-bottom-nav" aria-label="ניווט ראשי"

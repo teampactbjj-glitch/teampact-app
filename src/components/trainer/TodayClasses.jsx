@@ -81,6 +81,10 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   const [selectedBranch, setSelectedBranch] = useState('all')
   const [pendingRequests, setPendingRequests] = useState([])
   const [showPending, setShowPending] = useState(true)
+  // עריכת שיעור — מנהל בלבד
+  const [editingClass, setEditingClass] = useState(null)
+  const [editData, setEditData] = useState({ name: '', coach_id: '', day_of_week: 0, start_time: '', duration_minutes: 60 })
+  const [editError, setEditError] = useState('')
 
   useEffect(() => {
     let q = supabase.from('branches').select('id, name').order('name')
@@ -736,6 +740,51 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     }))
     setAddError('')
     setShowAdd(true)
+  }
+
+  function openEditForm(cls) {
+    setEditData({
+      name: cls.name || '',
+      coach_id: cls.coach_id || '',
+      day_of_week: cls.day_of_week ?? selectedDate.getDay(),
+      start_time: (cls.start_time || '').slice(0, 5),
+      duration_minutes: cls.duration_minutes || 60,
+    })
+    setEditError('')
+    setEditingClass(cls)
+  }
+
+  async function updateClass(e) {
+    e.preventDefault()
+    setEditError('')
+    if (!editData.name?.trim()) { setEditError('יש להזין שם לשיעור'); return }
+    if (!editData.coach_id) { setEditError('יש לבחור מאמן'); return }
+    if (!editData.start_time) { setEditError('יש לבחור שעה'); return }
+
+    const coach = coaches.find(c => c.id === editData.coach_id)
+    const duration = Number(editData.duration_minutes) || 60
+    const [sh, sm] = (editData.start_time || '00:00').split(':').map(Number)
+    const totalMin = sh * 60 + sm + duration
+    const eh = Math.floor((totalMin / 60) % 24)
+    const em = totalMin % 60
+    const endTime = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`
+
+    const { error } = await supabase.from('classes').update({
+      name: editData.name.trim(),
+      coach_id: editData.coach_id,
+      coach_name: coach?.name || null,
+      branch_id: coach?.branch_id || null,
+      day_of_week: Number(editData.day_of_week),
+      start_time: editData.start_time,
+      end_time: endTime,
+      duration_minutes: duration,
+    }).eq('id', editingClass.id)
+
+    if (error) { setEditError(error.message || 'שגיאה בשמירה'); return }
+
+    setEditingClass(null)
+    toast.success('השיעור עודכן בהצלחה ✅')
+    fetchDayClasses(selectedDate)
   }
 
   async function approveClass(classId) {
@@ -1492,6 +1541,18 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                       </div>
                     )}
 
+                    {/* כפתור עריכה — מנהל בלבד */}
+                    {isAdmin && (
+                      <div className="pt-3 border-t">
+                        <button
+                          onClick={() => openEditForm(cls)}
+                          className="w-full text-sm bg-white hover:bg-blue-50 border-2 border-blue-200 hover:border-blue-400 text-blue-600 hover:text-blue-700 px-3 py-2 rounded-lg font-bold transition"
+                        >
+                          ✏️ ערוך שיעור זה
+                        </button>
+                      </div>
+                    )}
+
                     {/* Danger zone — מחיקת שיעור */}
                     <div className="pt-3 border-t">
                       {cls.deletion_requested_at && !isAdmin ? (
@@ -1515,6 +1576,89 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         )
         })
       })()}
+
+      {/* מודל עריכת שיעור — מנהל בלבד */}
+      {editingClass && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={e => { if (e.target === e.currentTarget) setEditingClass(null) }}>
+          <form onSubmit={updateClass} className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl space-y-4" dir="rtl">
+            <h3 className="font-black text-lg text-gray-800">✏️ עריכת שיעור</h3>
+            <div>
+              <label className="text-sm font-bold text-gray-700 block mb-1.5">שם השיעור</label>
+              <input
+                className="w-full border-2 border-gray-200 focus:border-blue-500 focus:outline-none rounded-lg px-3 py-2.5 text-sm transition"
+                placeholder="לדוגמה: No-Gi מתקדמים"
+                value={editData.name}
+                onChange={e => setEditData(p => ({ ...p, name: e.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-bold text-gray-700 block mb-1.5">מאמן</label>
+              <select
+                className="w-full border-2 border-gray-200 focus:border-blue-500 focus:outline-none rounded-lg px-3 py-2.5 text-sm bg-white transition"
+                value={editData.coach_id}
+                onChange={e => setEditData(p => ({ ...p, coach_id: e.target.value }))}
+                required
+              >
+                <option value="">בחר מאמן…</option>
+                {coaches.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-bold text-gray-700 block mb-1.5">יום בשבוע</label>
+              <select
+                className="w-full border-2 border-gray-200 focus:border-blue-500 focus:outline-none rounded-lg px-3 py-2.5 text-sm bg-white transition"
+                value={editData.day_of_week}
+                onChange={e => setEditData(p => ({ ...p, day_of_week: Number(e.target.value) }))}
+              >
+                {DAYS_HE.map((d, i) => (
+                  <option key={i} value={i}>יום {d}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-bold text-gray-700 mb-1.5 flex items-center gap-1">
+                  <span>🕐</span><span>שעת התחלה</span>
+                </label>
+                <input
+                  type="time"
+                  className="w-full border-2 border-gray-200 focus:border-blue-500 focus:outline-none rounded-lg px-3 py-2.5 text-sm transition"
+                  value={editData.start_time}
+                  onChange={e => setEditData(p => ({ ...p, start_time: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-sm font-bold text-gray-700 block mb-1.5">משך (דקות)</label>
+                <input
+                  type="number"
+                  min="15"
+                  step="5"
+                  className="w-full border-2 border-gray-200 focus:border-blue-500 focus:outline-none rounded-lg px-3 py-2.5 text-sm transition"
+                  value={editData.duration_minutes}
+                  onChange={e => setEditData(p => ({ ...p, duration_minutes: Number(e.target.value) }))}
+                />
+              </div>
+            </div>
+            {editError && (
+              <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 font-semibold">
+                ⚠️ {editError}
+              </p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold shadow-sm transition">
+                שמור שינויים
+              </button>
+              <button type="button" onClick={() => setEditingClass(null)} className="flex-1 border-2 border-gray-200 hover:bg-gray-50 py-2.5 rounded-lg text-sm font-bold text-gray-600 transition">
+                ביטול
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }

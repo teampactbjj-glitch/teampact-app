@@ -789,26 +789,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
 function ProfileTab({ profile, member }) {
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border shadow-sm p-5 text-center">
-        <div className="w-16 h-16 rounded-full bg-gray-900 flex items-center justify-center mx-auto mb-3">
-          <span className="text-white text-xl font-medium">
-            {(member?.full_name || profile?.full_name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('')}
-          </span>
-        </div>
-        <h2 className="text-lg font-semibold text-gray-900">{member?.full_name || profile?.full_name}</h2>
-        <p className="text-sm text-gray-400 mt-0.5">{profile?.email}</p>
-        {member?.belt && (
-          <span className="inline-flex items-center gap-1.5 mt-2.5 px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-full border border-gray-200">
-            <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
-            {getBeltLabel(member.belt)}{member.belt_stripes ? ` · ${member.belt_stripes} פסים` : ''}
-          </span>
-        )}
-      </div>
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="p-4">
-          <MyProgressSection profile={profile} member={member} />
-        </div>
-      </div>
+      <MyProgressSection profile={profile} member={member} />
     </div>
   )
 }

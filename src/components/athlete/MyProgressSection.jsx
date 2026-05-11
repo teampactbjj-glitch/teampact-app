@@ -120,6 +120,7 @@ export default function MyProgressSection({ profile, member }) {
   const [coachMap, setCoachMap] = useState(new Map()) // coach_id -> {name}
   const [promotionCandidate, setPromotionCandidate] = useState(null) // { event_name, event_date, status, target_belt, target_stripes, promoted_at }
   const [beltHistory, setBeltHistory] = useState([])                  // היסטוריית חגורות (שלב 3) — sorted ASC לפי received_at
+  const [showHistory, setShowHistory] = useState(false)               // toggle: ההיסטוריה מוצגת רק לאחר לחיצה על כרטיס הפרופיל
   const [err, setErr] = useState(null)
 
   // ה-checkins נשמרים תחת members.id (לפי FK ב-DB).
@@ -635,42 +636,84 @@ export default function MyProgressSection({ profile, member }) {
     return null
   })()
 
-  return (
-    <div className="space-y-4">
-      {/* ===== באנרי קידום ===== */}
-      {promotionBanner}
+  // ===== Unified Profile+Discipline Hero Card =====
+  const heroCard = (() => {
+    const athleteName = member?.full_name || profile?.full_name || ''
+    const athleteEmail = profile?.email || ''
+    const initials = athleteName.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('') || '?'
 
-      {/* ===== Belt card — מופיע רק למתאמני Gi ===== */}
-      {showBeltCard && (
+    // תחום ראשי לפי היסטוריית checkins
+    const primaryDiscipline = (() => {
+      if (events.length === 0) return null
+      const counts = {}
+      for (const e of events) {
+        if (e.discipline !== 'אחר') counts[e.discipline] = (counts[e.discipline] || 0) + 1
+      }
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+      return sorted[0]?.[0] || null
+    })()
+
+    // ותק — מ-checkin הראשון
+    const earliestDate = events.length > 0
+      ? new Date(events[0].timeMs).toISOString().split('T')[0]
+      : null
+
+    const DISC_ICON = { 'BJJ': '🥋', 'Muay Thai': '🥊', 'MMA': '🤼', 'ילדים': '🧒', 'אחר': '💪' }
+    const DISC_BG = {
+      'Muay Thai': 'linear-gradient(135deg, #991b1b, #dc2626)',
+      'MMA': 'linear-gradient(135deg, #4c1d95, #7c3aed)',
+      'ילדים': 'linear-gradient(135deg, #b45309, #d97706)',
+      'אחר': 'linear-gradient(135deg, #1f2937, #374151)',
+    }
+
+    if (showBeltCard) {
+      // ─── BJJ: כרטיס עם צבע החגורה + פרטי הספורטאי ───
+      return (
         <div className="rounded-xl shadow-sm overflow-hidden border-2"
-          style={{ borderColor: beltMeta.color }}>
-          <div className="p-4" style={{ background: beltMeta.color, color: beltMeta.text }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">🥋</span>
-                <div>
-                  <div className="text-xs opacity-80 font-medium">החגורה שלי</div>
-                  <div className="text-xl font-extrabold leading-tight">
-                    {getBeltLabel(member.belt)}
-                  </div>
-                  {trainingTypeLabel && (
-                    <div className="text-[10px] opacity-90 font-semibold mt-0.5">
-                      סוג אימון: {trainingTypeLabel}
-                    </div>
-                  )}
-                </div>
+             style={{ borderColor: beltMeta.color }}>
+          {/* Header — צבע החגורה — לחיץ לפתיחת היסטוריה */}
+          <button type="button" onClick={() => setShowHistory(v => !v)}
+                  className="w-full text-right p-4 focus:outline-none active:opacity-80"
+                  style={{ background: beltMeta.color, color: beltMeta.text }}>
+            <div className="flex items-center gap-3">
+              {/* אבטר */}
+              <div className="w-12 h-12 rounded-full shrink-0 flex items-center justify-center text-base font-extrabold"
+                   style={{ background: beltMeta.text === '#FFFFFF' ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)',
+                            color: beltMeta.text }}>
+                {initials}
               </div>
-              {member.belt_stripes > 0 && (
-                <div className="flex items-center gap-1" aria-label={`${member.belt_stripes} פסים`}>
-                  {Array.from({ length: member.belt_stripes }, (_, i) => (
-                    <span key={i} className="block w-1.5 h-7 rounded-sm"
-                      style={{ background: beltMeta.text === '#FFFFFF' ? '#FFFFFF' : '#1f2937' }} />
-                  ))}
+              {/* שם + מייל + סוג אימון */}
+              <div className="flex-1 min-w-0">
+                <div className="font-extrabold text-base leading-tight truncate">{athleteName}</div>
+                <div className="text-[11px] opacity-65 truncate mt-0.5">{athleteEmail}</div>
+                {trainingTypeLabel && (
+                  <div className="text-[10px] opacity-85 font-semibold mt-1">סוג אימון: {trainingTypeLabel}</div>
+                )}
+              </div>
+              {/* אייקון + שם חגורה + פסים + חץ */}
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className="text-2xl leading-none">🥋</span>
+                <div className="text-right">
+                  <div className="text-[9px] opacity-70 leading-tight">החגורה שלי</div>
+                  <div className="font-extrabold text-sm leading-tight">{getBeltLabel(member.belt)}</div>
                 </div>
-              )}
+                {member.belt_stripes > 0 && (
+                  <div className="flex items-center gap-0.5 mt-0.5" aria-label={`${member.belt_stripes} פסים`}>
+                    {Array.from({ length: member.belt_stripes }, (_, i) => (
+                      <span key={i} className="block w-1.5 h-5 rounded-sm"
+                            style={{ background: beltMeta.text === '#FFFFFF' ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.55)' }} />
+                    ))}
+                  </div>
+                )}
+                <span className="text-[11px] opacity-60 mt-1 leading-none">
+                  {showHistory ? '▲' : '▼'}
+                </span>
+              </div>
             </div>
-          </div>
-          <div className="bg-white p-3 grid grid-cols-3 gap-2 text-center">
+          </button>
+          {/* Stats row */}
+          <div className="bg-white p-3 grid gap-2 text-center"
+               style={{ gridTemplateColumns: member.belt_received_at ? 'repeat(3, 1fr)' : '1fr' }}>
             {member.belt_received_at && (
               <div>
                 <div className="text-[10px] text-gray-500 leading-tight">קבלתי</div>
@@ -695,10 +738,62 @@ export default function MyProgressSection({ profile, member }) {
             </div>
           </div>
         </div>
-      )}
+      )
+    }
 
-      {/* ===== ההיסטוריה שלי — Timeline אנכי של כל החגורות ===== */}
-      {(beltHistory.length > 0 || member?.bjj_start_date) && (() => {
+    // ─── לא-BJJ: כרטיס עם צבע התחום + ותק ───
+    const disc = primaryDiscipline || 'אחר'
+    const bgStyle = DISC_BG[disc] || DISC_BG['אחר']
+    const icon = DISC_ICON[disc] || '💪'
+    const seniorityStr = earliestDate ? formatYearsMonths(earliestDate) : null
+    const totalSessions = events.filter(e => primaryDiscipline ? e.discipline === primaryDiscipline : true).length
+
+    return (
+      <div className="rounded-xl shadow-sm overflow-hidden border border-gray-200">
+        <button type="button" onClick={() => setShowHistory(v => !v)}
+                className="w-full text-right focus:outline-none active:opacity-80">
+        <div className="p-4 text-white" style={{ background: bgStyle }}>
+          <div className="flex items-center gap-3">
+            {/* אבטר */}
+            <div className="w-12 h-12 rounded-full shrink-0 flex items-center justify-center text-base font-extrabold bg-white/20">
+              {initials}
+            </div>
+            {/* שם + מייל + ותק */}
+            <div className="flex-1 min-w-0">
+              <div className="font-extrabold text-base leading-tight truncate">{athleteName}</div>
+              <div className="text-[11px] opacity-65 truncate mt-0.5">{athleteEmail}</div>
+              {seniorityStr && (
+                <div className="text-[10px] opacity-85 font-semibold mt-1">ותק: {seniorityStr}</div>
+              )}
+            </div>
+            {/* אייקון + תחום + סשנים + חץ */}
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <span className="text-2xl leading-none">{icon}</span>
+              <div className="text-xs font-bold opacity-90 text-right">{disc}</div>
+              {totalSessions > 0 && (
+                <div className="text-[10px] opacity-75 text-right">{totalSessions} יחידות</div>
+              )}
+              <span className="text-[11px] opacity-60 mt-1 leading-none">
+                {showHistory ? '▲' : '▼'}
+              </span>
+            </div>
+          </div>
+        </div>
+        </button>
+      </div>
+    )
+  })()
+
+  return (
+    <div className="space-y-4">
+      {/* ===== כרטיס פרופיל מאוחד (פרטים + תחום/חגורה) ===== */}
+      {heroCard}
+
+      {/* ===== באנרי קידום ===== */}
+      {promotionBanner}
+
+      {/* ===== ההיסטוריה שלי — מוצגת רק כשה-toggle פתוח ===== */}
+      {showHistory && (beltHistory.length > 0 || member?.bjj_start_date) && (() => {
         // בודק אם bjj_start_date כבר מכוסה ע"י שורה ב-belt_history (חגורה לבנה)
         const startDate = member?.bjj_start_date || null
         const firstHistoryBelt = beltHistory[0]?.belt || null

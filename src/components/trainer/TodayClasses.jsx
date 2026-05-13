@@ -357,9 +357,6 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     const allAthleteIds = Array.from(new Set([...memberIds, ...regMemberIds]))
     let weeklyCount = {}
     if (allAthleteIds.length > 0) {
-      const openMatClassIds = new Set(
-        (classes || []).filter(isOpenMatClass).map(c => c.id)
-      )
       const { data: weekChks, error: wErr } = await supabase
         .from('checkins')
         .select('athlete_id, class_id')
@@ -369,6 +366,22 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         .neq('status', 'absent')
 
       if (wErr) console.error('weekly checkins error:', wErr)
+
+      // שיעורי מזרן פתוח/ספארינג — שולפים מהדאטאבייס לפי class_ids שנמצאו ב-checkins,
+      // כדי לא להסתמך על `classes` state שמכיל רק את שיעורי היום הנבחר.
+      // זה מונע ספירה שגויה של שיעורי מזרן פתוח מימים אחרים בשבוע.
+      const weekCheckinClassIds = Array.from(new Set((weekChks || []).map(c => c.class_id).filter(Boolean)))
+      let openMatClassIds = new Set()
+      if (weekCheckinClassIds.length > 0) {
+        const { data: weekClasses } = await supabase
+          .from('classes')
+          .select('id, name, class_type')
+          .in('id', weekCheckinClassIds)
+        openMatClassIds = new Set(
+          (weekClasses || []).filter(isOpenMatClass).map(c => c.id)
+        )
+      }
+
       ;(weekChks || []).forEach(c => {
         if (openMatClassIds.has(c.class_id)) return // מזרן פתוח — לא נספר
         weeklyCount[c.athlete_id] = (weeklyCount[c.athlete_id] || 0) + 1
@@ -455,8 +468,17 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         .gte('checked_in_at', weekStart)
         .lte('checked_in_at', weekEnd)
       if (wErr) console.error('quota check error:', wErr)
-      // לא סופרים מזרן פתוח (בדיוק כמו ב-fetchClassDetails)
-      const openMatIds = new Set((classes || []).filter(isOpenMatClass).map(c => c.id))
+      // לא סופרים מזרן פתוח — שולפים class info מהדאטאבייס לפי ה-class_ids שנמצאו,
+      // כדי לא להסתמך על `classes` state שמכיל רק את שיעורי היום הנבחר.
+      const checkinClassIds = Array.from(new Set((weekChks || []).map(r => r.class_id).filter(Boolean)))
+      let openMatIds = new Set()
+      if (checkinClassIds.length > 0) {
+        const { data: chkClasses } = await supabase
+          .from('classes')
+          .select('id, name, class_type')
+          .in('id', checkinClassIds)
+        openMatIds = new Set((chkClasses || []).filter(isOpenMatClass).map(c => c.id))
+      }
       const weekCount = (weekChks || []).filter(r => !openMatIds.has(r.class_id)).length
       if (weekCount >= limit) {
         toast.error(`${member.full_name} כבר ניצל/ה ${weekCount}/${limit} שיעורים השבוע. לא ניתן להוסיף יותר.`)

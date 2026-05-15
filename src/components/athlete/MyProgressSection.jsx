@@ -264,10 +264,14 @@ export default function MyProgressSection({ profile, member }) {
       if (disc === 'אחר') disc = detectDiscipline(cls.name || '')
       const dur = Number.isFinite(cls.duration_minutes) && cls.duration_minutes > 0 ? cls.duration_minutes : 60
       const date = new Date(timeMs)
+      // משתמשים ב-checkin_date ישירות כדי להימנע מבעיות timezone בחישוב endTime.
+      // fallback לחישוב מה-timestamp רק אם checkin_date חסר.
+      const dateKey = c.checkin_date ||
+        `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
       list.push({
         timeMs,
         date,
-        dateKey: `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`,
+        dateKey,
         monthKey: monthKey(date),
         discipline: disc,
         durationMin: dur,
@@ -432,6 +436,10 @@ export default function MyProgressSection({ profile, member }) {
     return { text: 'תמשיך להגיע. ההתקדמות מגיעה ממי שמתמיד.', tone: 'neutral' }
   }, [stats, streaks])
 
+  // todayStr מחושב בכל רינדור ומשמש כ-dependency ל-calendarDays — כדי שה-memo
+  // יתרענן כשהתאריך משתנה (חצות), גם אם events לא השתנה (אפליקציה פתוחה מאתמול).
+  const todayStr = new Date().toDateString()
+
   // ── סטריפ "28 ימים אחרונים" — קומפקטי, מודרני (כמו שעון כושר) ─────────────
   // 4 שורות × 7 ימים = 28 יום אחורה מהיום (כולל היום).
   // לכל יום: הצבע של התחום העיקרי (הכי הרבה אימונים באותו יום).
@@ -475,7 +483,8 @@ export default function MyProgressSection({ profile, member }) {
       })
     }
     return cells
-  }, [events])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, todayStr])
 
   // סופר ימים שהתאמנתי ב-28 ימים אחרונים (לכותרת)
   const last28Days = useMemo(() => calendarDays.filter(c => c.kind === 'day' && c.primary).length, [calendarDays])

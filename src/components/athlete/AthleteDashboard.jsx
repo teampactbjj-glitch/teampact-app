@@ -73,9 +73,13 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
   }).length
   const effectiveCount = computeCount(registrations)
   const effectiveCountNext = computeCount(registrationsNext)
-  // selectedDate=null במצב התחלתי — מציגים רק "השיעורים שנרשמתי אליהם"
-  // רק כשהמתאמן לוחץ על תאריך בסלייד — מוצג פירוט השיעורים של אותו יום
-  const [selectedDate, setSelectedDate] = useState(null)
+  // selectedDate מאותחל להיום — כדי שהשיעורים של היום יוצגו מיד בטעינה.
+  // כשהמתאמן לוחץ על תאריך אחר בסלייד — מוצג פירוט השיעורים של אותו יום.
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    return d
+  })
   const todayBtnRef = useRef(null)
   const selectedBtnRef = useRef(null)
   const sliderContainerRef = useRef(null)
@@ -289,7 +293,6 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
           <p className="font-black text-gray-800 text-base leading-tight">
             {dateLabel || (isNextWeekView ? 'השיעורים שלי לשבוע הבא' : 'השיעורים שלי השבוע')}
           </p>
-          {!selectedDate && <p className="text-xs text-gray-400 mt-0.5">לחץ על תאריך בסלייד כדי לראות את השיעורים של אותו יום</p>}
         </div>
         <span className="text-xs bg-red-100 text-red-800 px-3 py-1 rounded-full font-bold whitespace-nowrap">
           {activeEffectiveCount}/{limit === Infinity ? '∞' : limit} {isNextWeekView ? 'בשבוע הבא' : 'השבוע'}

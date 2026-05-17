@@ -8,6 +8,7 @@ export default function RegisterPage() {
     email: '',
     branch_id: '',
     class_id: '',
+    birth_date: '',
   })
   const [branches, setBranches] = useState([])
   const [classes, setClasses] = useState([])
@@ -76,6 +77,7 @@ export default function RegisterPage() {
       active: false,
       group_ids: form.class_id ? [form.class_id] : null,
       group_id: form.class_id || null,
+      birth_date: form.birth_date || null,
     })
 
     if (insertError) {
@@ -132,6 +134,18 @@ export default function RegisterPage() {
               onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
               className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-right"
               placeholder="050-0000000"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">תאריך לידה *</label>
+            <input
+              type="date"
+              required
+              max={new Date().toISOString().split('T')[0]}
+              value={form.birth_date}
+              onChange={e => setForm(p => ({ ...p, birth_date: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-right"
             />
           </div>
 

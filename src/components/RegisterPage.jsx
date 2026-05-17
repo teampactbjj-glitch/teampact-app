@@ -9,7 +9,11 @@ const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_w
 
 export default function RegisterPage() {
   const [branches, setBranches] = useState([])
-  const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '', passwordConfirm: '', branch_ids: [], subscription_type: '2x_week' })
+  const [form, setForm] = useState({
+    full_name: '', email: '', phone: '', password: '', passwordConfirm: '',
+    branch_ids: [], subscription_type: '2x_week',
+    birth_date: '',
+  })
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState(null)
@@ -70,6 +74,10 @@ export default function RegisterPage() {
       setError('נא למלא שם, אימייל ולבחור לפחות סניף אחד')
       return
     }
+    if (!form.birth_date) {
+      setError('נא למלא תאריך לידה')
+      return
+    }
     if (!form.password || form.password.length < 6) {
       setError('סיסמה חייבת להכיל לפחות 6 תווים')
       return
@@ -104,6 +112,7 @@ export default function RegisterPage() {
       branch_id: form.branch_ids[0],
       subscription_type: form.subscription_type,
       status: 'pending',
+      birth_date: form.birth_date || null,
     }
     if (userId) memberPayload.id = userId
     const { error: memberErr } = await supabase.from('members').insert(memberPayload)
@@ -210,6 +219,19 @@ export default function RegisterPage() {
                 placeholder="050-0000000"
                 value={form.phone}
                 onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
+              />
+            )}
+          </Field>
+
+          <Field label="תאריך לידה" required>
+            {(props) => (
+              <input
+                {...props}
+                type="date"
+                max={new Date().toISOString().split('T')[0]}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                value={form.birth_date}
+                onChange={e => setForm(p => ({ ...p, birth_date: e.target.value }))}
               />
             )}
           </Field>

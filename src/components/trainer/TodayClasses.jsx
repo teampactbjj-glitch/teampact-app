@@ -519,9 +519,32 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       { onConflict: 'class_id,athlete_id,checkin_date', ignoreDuplicates: true }
     )
 
-    // ניקוי חיפוש + רענון פרטי השיעור
+    // ניקוי חיפוש
+    document.activeElement?.blur()
     setVisitorSearch(p => ({ ...p, [classId]: '' }))
     setVisitorResults(p => ({ ...p, [classId]: [] }))
+
+    // Optimistic update — מעדכן את ה-UI מיידית בלי לחכות ל-fetch
+    setClassData(prev => {
+      const current = prev[classId] || {}
+      const alreadyInWeekly = (current.weeklyRegistrants || []).some(m => m.id === member.id)
+      const newWeeklyRegistrants = alreadyInWeekly
+        ? (current.weeklyRegistrants || [])
+        : [...(current.weeklyRegistrants || []), member]
+      const newCheckedIds = new Set(current.checkedIds || [])
+      newCheckedIds.add(member.id)
+      const newWeeklyCount = {
+        ...(current.weeklyCount || {}),
+        [member.id]: (current.weeklyCount?.[member.id] || 0) + 1,
+      }
+      return {
+        ...prev,
+        [classId]: { ...current, weeklyRegistrants: newWeeklyRegistrants, checkedIds: newCheckedIds, weeklyCount: newWeeklyCount },
+      }
+    })
+    setRegCountsByClass(prev => ({ ...prev, [classId]: (prev[classId] || 0) + 1 }))
+
+    // fetch ברקע לסנק עם השרת (לא מחכים לו)
     fetchClassDetails(classId)
   }
 

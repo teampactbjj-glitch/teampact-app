@@ -1,5 +1,36 @@
 # MEMORY - TeamPact App
 
+## 🗓️ Session 09.05.2026 — Supabase Egress Fix + תכנון עתידי
+
+### מה נעשה
+- גילינו חריגת Cached Egress של 176% (8.8GB מתוך 5GB) ב-Supabase Free Plan
+- Grace period עד **3 יוני 2026** — אחרי זה האפליקציה תחזיר שגיאות 402
+- **תיקון שבוצע:** הוספת `cacheControl: '31536000'` (שנה) לכל uploads ב:
+  - `src/components/trainer/AnnouncementsManager.jsx`
+  - `src/components/trainer/ShopManager.jsx`
+- דודי עדכן ידנית את 3 התמונות הקיימות של המוצרים (הסיר + העלה מחדש)
+- קומיט: `4032fcf` — "fix: add cacheControl 1yr to storage uploads (reduce egress)"
+
+### 📌 החלטות שהתקבלו
+- **לא משדרגים Supabase Pro ($25/חודש) עכשיו** — ממתינים לראות מספרים אמיתיים
+- **שוקלים ברצינות מעבר ל-Cloudflare R2** — $0 egress לצמיתות, כ-4-6 שעות עבודה
+- תזכורת אוטומטית נקבעה ל-**28 מאי 09:00** לבדיקת Usage
+
+### ⚠️ הקשר חשוב לבדיקת 28 מאי
+- יש 140 מתאמנים פעילים + **100+ מתאמנים שעדיין לא נכנסו למערכת**
+- דודי מחכה לראות שהמערכת יציבה לפני שמכניס אותם
+- עם cache תקין: 250 משתמשים × 20 תמונות × 300KB ≈ 1.5GB/חודש — אמור להיות בסדר
+- אם ב-28 מאי יש שוב חריגה → לעבור ל-R2 (לא לשלם לסופרבייס)
+
+### 🔜 Cloudflare R2 — כשמחליטים לעבור
+- יצירת bucket + Cloudflare Worker (גשר לקבלת uploads)
+- שינוי `supabase.storage.from(...).upload(...)` → Worker endpoint
+- העברת 3 תמונות קיימות + עדכון URLs ב-DB
+- זמן משוער: 4-6 שעות עבודה משותפת
+
+---
+
+
 ## ✅ Session 08.05.2026 (תאריך לידה + redesign טופס דרגה + fallback ילדים) — COMPLETED
 
 > **My last pending task:** הכל בפרודקשן. קומיטים `244bb55` + `c67d032`. **SQL חסר** — דודי עוד לא הריץ את ה-migration.

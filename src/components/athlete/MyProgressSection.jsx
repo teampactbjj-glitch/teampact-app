@@ -459,7 +459,17 @@ export default function MyProgressSection({ profile, member }) {
       ag[e.discipline] = (ag[e.discipline] || 0) + 1
     }
 
+    // יום ראשון של החלון (לפני 27 ימים) — כדי ליישר לעמודת יום השבוע הנכונה
+    const firstDay = new Date(todayMs - 27 * DAY)
+    const firstDayOfWeek = firstDay.getDay() // 0=ראשון ... 6=שבת
+
     const cells = []
+
+    // תאים ריקים לפני היום הראשון (יישור לעמודה הנכונה)
+    for (let p = 0; p < firstDayOfWeek; p++) {
+      cells.push({ kind: 'padding' })
+    }
+
     // 28 יום: מ-(היום - 27) עד היום
     for (let i = 27; i >= 0; i--) {
       const d = new Date(todayMs - i * DAY)
@@ -473,15 +483,27 @@ export default function MyProgressSection({ profile, member }) {
         }
       }
       const isToday = i === 0
+      const isFirstOfMonth = d.getDate() === 1
       cells.push({
         kind: 'day',
         day: d.getDate(),
+        month: d.getMonth() + 1,
         primary,
         count: ag ? Object.values(ag).reduce((a,b)=>a+b,0) : 0,
         isToday,
+        isFirstOfMonth,
         dateLabel: `${d.getDate()}/${d.getMonth()+1}`,
       })
     }
+
+    // תאים ריקים בסוף להשלמת השורה האחרונה
+    const remainder = cells.length % 7
+    if (remainder !== 0) {
+      for (let t = 0; t < 7 - remainder; t++) {
+        cells.push({ kind: 'padding' })
+      }
+    }
+
     return cells
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, todayStr])
@@ -994,28 +1016,41 @@ export default function MyProgressSection({ profile, member }) {
 
       {/* פילוח לפי תחום מוצג עכשיו בתוך ה-Hero card למעלה — קומפקטי וחוסך מקום */}
 
-      {/* ===== סטריפ 28 ימים אחרונים — קומפקטי ===== */}
+      {/* ===== לוח 28 ימים אחרונים ===== */}
       <div className="bg-white rounded-xl border shadow-sm p-3">
         <div className="flex items-center justify-between mb-2">
           <h4 className="font-bold text-gray-800 text-sm">28 הימים האחרונים</h4>
           <div className="text-xs text-gray-500">{last28Days} ימים פעילים</div>
         </div>
         <div className="grid grid-cols-7 gap-1" dir="rtl">
+          {/* כותרות ימי שבוע — ראשון (ימין) עד שבת (שמאל) */}
+          {['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳'].map(d => (
+            <div key={d} className="text-center text-[9px] font-semibold text-gray-400 pb-0.5">{d}</div>
+          ))}
           {calendarDays.map((c, i) => {
+            if (c.kind === 'padding') {
+              return <div key={`pad-${i}`} style={{ height: 28 }} />
+            }
             const bg = c.primary ? DISCIPLINE_COLORS[c.primary] : '#f3f4f6'
             const fg = c.primary ? '#fff' : '#9ca3af'
             return (
               <div key={i}
-                className="rounded flex items-center justify-center text-[10px] font-semibold relative"
+                className="rounded flex flex-col items-center justify-center text-[10px] font-semibold relative"
                 style={{
-                  height: 26,
+                  height: 28,
                   background: bg,
                   color: fg,
                   outline: c.isToday ? '2px solid #047857' : 'none',
                   outlineOffset: c.isToday ? '1px' : 0,
+                  borderTop: c.isFirstOfMonth ? '2px solid #9ca3af' : 'none',
                 }}
                 title={c.primary ? `${c.dateLabel} — ${c.count} אימון${c.count>1?'ים':''}` : `${c.dateLabel} — לא התאמנת`}>
-                {c.day}
+                <span>{c.day}</span>
+                {c.isFirstOfMonth && (
+                  <span style={{ fontSize: 7, lineHeight: 1, color: c.primary ? 'rgba(255,255,255,0.8)' : '#9ca3af' }}>
+                    /{c.month}
+                  </span>
+                )}
               </div>
             )
           })}

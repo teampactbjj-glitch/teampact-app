@@ -1694,9 +1694,16 @@ export default function AthleteDashboard({ profile }) {
     const computeOccurrenceStart = () => {
       const [hh = 0, mm = 0, ss = 0] = (cls.start_time || '00:00:00').split(':').map(Number)
       if (isNext) {
-        const base = new Date(weekStart) // יום ראשון של השבוע הבא ב-UTC midnight
-        const occ = new Date(base)
-        occ.setDate(base.getDate() + cls.day_of_week)
+        // ⚠️ weekStart נוצר עם toISOString() שמחזיר UTC midnight — בישראל (UTC+2/3)
+        // זה יום לפני היום המקומי. new Date(weekStart) ייתן שבת במקום ראשון.
+        // לכן מחשבים את ראשון הבא ישירות מ-local time, ולא דרך weekStart.
+        const now2 = new Date()
+        const daysToNextSunday = 7 - now2.getDay() // 1–7 (לעולם לפחות 1 = שבוע הבא)
+        const nextSunday = new Date(now2)
+        nextSunday.setDate(now2.getDate() + daysToNextSunday)
+        nextSunday.setHours(0, 0, 0, 0)
+        const occ = new Date(nextSunday)
+        occ.setDate(nextSunday.getDate() + cls.day_of_week)
         occ.setHours(hh, mm, ss || 0, 0)
         return occ
       }

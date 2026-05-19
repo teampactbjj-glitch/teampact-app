@@ -610,26 +610,6 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                   </select>
                 </div>
 
-                {form.belt && (
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">
-                      פסים על החגורה (0-{getMaxStripes(form.belt)})
-                    </label>
-                    <div className="flex gap-2">
-                      {Array.from({ length: getMaxStripes(form.belt) + 1 }, (_, i) => (
-                        <button key={i} type="button"
-                          onClick={() => setForm(p => ({ ...p, belt_stripes: i }))}
-                          className={`flex-1 py-1.5 rounded-lg text-sm border transition ${
-                            form.belt_stripes === i
-                              ? 'bg-amber-600 text-white border-amber-600'
-                              : 'bg-white text-gray-600 border-gray-300'
-                          }`}>
-                          {i}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">תאריך קבלת חגורה נוכחית</label>

@@ -128,7 +128,7 @@ export default function BeltHistoryEditor({ memberId, memberName, memberCategory
 
           {rows.map(r => (
             <div key={r.id} className="p-2 grid grid-cols-12 gap-2 text-xs items-center">
-              <div className="col-span-3">
+              <div className="col-span-4">
                 <select disabled={r.source === 'promotion'}
                   className="w-full border rounded px-1 py-1 text-xs disabled:bg-gray-50 disabled:text-gray-400"
                   value={r.belt}
@@ -138,17 +138,7 @@ export default function BeltHistoryEditor({ memberId, memberName, memberCategory
                   ))}
                 </select>
               </div>
-              <div className="col-span-2">
-                <select disabled={r.source === 'promotion'}
-                  className="w-full border rounded px-1 py-1 text-xs disabled:bg-gray-50 disabled:text-gray-400"
-                  value={r.belt_stripes || 0}
-                  onChange={e => handleUpdate(r.id, { belt_stripes: parseInt(e.target.value, 10) })}>
-                  {Array.from({ length: getMaxStripes(r.belt) + 1 }, (_, i) => (
-                    <option key={i} value={i}>{i} פסים</option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-span-3">
+              <div className="col-span-4">
                 <input type="date" disabled={r.source === 'promotion'}
                   className="w-full border rounded px-1 py-1 text-xs disabled:bg-gray-50 disabled:text-gray-400"
                   value={r.received_at}
@@ -169,7 +159,7 @@ export default function BeltHistoryEditor({ memberId, memberName, memberCategory
 
           {adding && (
             <div className="p-2 bg-amber-50/50 grid grid-cols-12 gap-2 text-xs items-center">
-              <div className="col-span-3">
+              <div className="col-span-5">
                 <select className="w-full border rounded px-1 py-1 text-xs"
                   value={newRow.belt}
                   onChange={e => setNewRow(p => ({ ...p, belt: e.target.value, belt_stripes: 0 }))}>
@@ -179,21 +169,12 @@ export default function BeltHistoryEditor({ memberId, memberName, memberCategory
                   ))}
                 </select>
               </div>
-              <div className="col-span-2">
-                <select className="w-full border rounded px-1 py-1 text-xs"
-                  value={newRow.belt_stripes}
-                  onChange={e => setNewRow(p => ({ ...p, belt_stripes: parseInt(e.target.value, 10) }))}>
-                  {Array.from({ length: getMaxStripes(newRow.belt) + 1 }, (_, i) => (
-                    <option key={i} value={i}>{i} פסים</option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-span-3">
+              <div className="col-span-4">
                 <input type="date" className="w-full border rounded px-1 py-1 text-xs"
                   value={newRow.received_at}
                   onChange={e => setNewRow(p => ({ ...p, received_at: e.target.value }))} />
               </div>
-              <div className="col-span-4 flex gap-1 justify-end">
+              <div className="col-span-3 flex gap-1 justify-end">
                 <button type="button" onClick={handleAdd}
                   className="bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700">
                   ✓ שמור

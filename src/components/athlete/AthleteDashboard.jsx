@@ -1255,7 +1255,7 @@ function SettingsTab({ profile, member }) {
                 <div className="flex justify-between items-center px-4 py-3">
                   <span className="text-xs text-gray-400">דרגה נוכחית</span>
                   <span className="text-sm font-medium text-gray-900">
-                    {getBeltLabel(member.belt)}{member.belt_stripes ? ` · ${member.belt_stripes} פסים` : ''}
+                    {getBeltLabel(member.belt)}
                   </span>
                 </div>
               </div>

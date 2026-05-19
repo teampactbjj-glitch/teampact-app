@@ -610,9 +610,6 @@ export default function MyProgressSection({ profile, member }) {
                     {targetMeta.label}
                   </span>
                 </div>
-                {promotionCandidate.target_stripes > 0 && (
-                  <div className="text-[10px] text-amber-800 mt-0.5">+ {promotionCandidate.target_stripes} פסים</div>
-                )}
               </div>
               <div>
                 <div className="text-[10px] text-amber-900 font-bold">
@@ -654,9 +651,6 @@ export default function MyProgressSection({ profile, member }) {
             <div className="text-5xl">🏆</div>
             <div className="text-[11px] opacity-90 mt-2 font-bold tracking-wider">מזל טוב! קיבלת חגורה</div>
             <div className="text-2xl font-black mt-1">{targetMeta.label}</div>
-            {promotionCandidate.target_stripes > 0 && (
-              <div className="text-sm opacity-90 mt-1">{promotionCandidate.target_stripes} פסים</div>
-            )}
             <div className="text-[11px] opacity-85 mt-2">
               "{promotionCandidate.event_name}"
             </div>
@@ -728,14 +722,6 @@ export default function MyProgressSection({ profile, member }) {
                   <div className="text-[9px] opacity-70 leading-tight">החגורה שלי</div>
                   <div className="font-extrabold text-sm leading-tight">{getBeltLabel(member.belt)}</div>
                 </div>
-                {member.belt_stripes > 0 && (
-                  <div className="flex items-center gap-0.5 mt-0.5" aria-label={`${member.belt_stripes} פסים`}>
-                    {Array.from({ length: member.belt_stripes }, (_, i) => (
-                      <span key={i} className="block w-1.5 h-5 rounded-sm"
-                            style={{ background: beltMeta.text === '#FFFFFF' ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.55)' }} />
-                    ))}
-                  </div>
-                )}
                 <span className="text-[11px] opacity-60 mt-1 leading-none">
                   {showHistory ? '▲' : '▼'}
                 </span>
@@ -896,9 +882,6 @@ export default function MyProgressSection({ profile, member }) {
                       <div className={`flex items-baseline justify-between gap-2 ${isCurrent ? 'font-bold' : ''}`}>
                         <span className={isCurrent ? 'text-gray-900' : 'text-gray-700'}>
                           {getBeltLabel(h.belt)}
-                          {h.belt_stripes > 0 && (
-                            <span className="text-xs text-gray-500"> · {h.belt_stripes} פסים</span>
-                          )}
                         </span>
                         <span className="text-xs text-gray-500 whitespace-nowrap">
                           {formatHebrewMonthYear(h.received_at)}

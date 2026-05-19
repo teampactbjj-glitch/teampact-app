@@ -874,7 +874,6 @@ function EventEditDialog({ ev, existingCandidates, presetMemberIds, members, bra
                         </div>
                         <div className="text-[11px] text-gray-500">
                           נוכחית: {mem?.belt ? getBeltLabel(mem.belt) : '—'}
-                          {mem?.belt_stripes > 0 && ` · ${mem.belt_stripes} פסים`}
                         </div>
                       </div>
                       {!isLocked && (

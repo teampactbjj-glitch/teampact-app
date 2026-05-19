@@ -1963,7 +1963,6 @@ export default function ReportsManager({ isAdmin, profile }) {
                               style={{ background: meta?.color, color: meta?.text, borderColor: meta?.color }}
                             >
                               {r.beltLabel}
-                              {r.member.belt_stripes > 0 && ` · ${r.member.belt_stripes}`}
                             </span>
                           </td>
                           <td className="p-2">
@@ -2226,7 +2225,6 @@ export default function ReportsManager({ isAdmin, profile }) {
                                       {c.expected_sessions != null && ` (${c.attended_sessions}/${c.expected_sessions})`}
                                       {' · '}
                                       נוכחית: {c.current_belt ? getBeltLabel(c.current_belt) : '—'}
-                                      {c.current_stripes > 0 && ` · ${c.current_stripes} פסים`}
                                     </div>
                                   </div>
                                   {done ? (

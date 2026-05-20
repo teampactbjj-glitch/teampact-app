@@ -48,6 +48,18 @@ function calcAge(birthDate) {
   return age
 }
 
+function formatDate(dateStr) {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-')
+  return `${d}/${m}/${y}`
+}
+
+function endOfMonthDate() {
+  const today = new Date()
+  const last = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+  return last.toISOString().split('T')[0]
+}
+
 export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null, stackedLayout = false, extraTop = null }) {
   const toast = useToast()
   const confirm = useConfirm()
@@ -115,6 +127,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
 
     const [{ data: pendingData }, { data: deletionData }, { data, error }] = await Promise.all([pendingQ, deletionReqQ, activeQ])
     if (error) console.error('fetchAthletes error:', error)
+
+    // בדיקה אוטומטית: מתאמנים שתאריך הביטול שלהם הגיע
+    const todayStr = new Date().toISOString().split('T')[0]
+    const toCancel = (data || []).filter(m => m.cancel_date && m.cancel_date <= todayStr && m.membership_status !== 'cancelled')
+    if (toCancel.length > 0) {
+      const ids = toCancel.map(m => m.id)
+      await supabase.from('members').update({ membership_status: 'cancelled', cancel_date: null }).in('id', ids)
+      toCancel.forEach(m => { m.membership_status = 'cancelled'; m.cancel_date = null })
+    }
 
     const matchesAllowed = (m) => {
       if (!allowedBranchIds) return true
@@ -225,6 +246,45 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
     if (!ok) return
     const { error } = await supabase.from('members').update({ status: 'approved' }).eq('id', id)
     if (error) { toast.error('שגיאה: ' + error.message); return }
+    fetchAthletes()
+  }
+
+  async function freezeAthlete(id) {
+    const ok = await confirm({ title: 'הקפאת מנוי', message: 'להקפיא את המנוי? המתאמן לא יוכל להירשם לאימונים עד שתפעיל מחדש.', confirmText: 'הקפא' })
+    if (!ok) return
+    const { error } = await supabase.from('members').update({ membership_status: 'frozen' }).eq('id', id)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    toast.success('המנוי הוקפא בהצלחה')
+    fetchAthletes()
+  }
+
+  async function unfreezeAthlete(id) {
+    const { error } = await supabase.from('members').update({ membership_status: 'active', cancel_date: null }).eq('id', id)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    toast.success('המנוי הופעל מחדש')
+    fetchAthletes()
+  }
+
+  async function cancelAthleteAtMonthEnd(id) {
+    const cancelDate = endOfMonthDate()
+    const ok = await confirm({
+      title: 'ביטול מנוי',
+      message: `המנוי יבוטל ב-${formatDate(cancelDate)}. עד אז המתאמן ממשיך להיות פעיל.`,
+      confirmText: 'אשר ביטול',
+    })
+    if (!ok) return
+    const { error } = await supabase.from('members').update({ cancel_date: cancelDate }).eq('id', id)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    toast.success(`המנוי יבוטל ב-${formatDate(cancelDate)}`)
+    fetchAthletes()
+  }
+
+  async function undoCancelAthlete(id) {
+    const ok = await confirm({ title: 'ביטול הביטול', message: 'לבטל את הביטול? המתאמן יישאר פעיל.', confirmText: 'כן, בטל' })
+    if (!ok) return
+    const { error } = await supabase.from('members').update({ cancel_date: null }).eq('id', id)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    toast.success('הביטול בוטל')
     fetchAthletes()
   }
 
@@ -864,9 +924,18 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                           />
                         )}
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
                             {!a.active && <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 rounded">לא פעיל</span>}
+                            {a.membership_status === 'frozen' && (
+                              <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">❄️ מוקפא</span>
+                            )}
+                            {a.membership_status === 'cancelled' && (
+                              <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium">🚫 מבוטל</span>
+                            )}
+                            {a.cancel_date && a.membership_status !== 'cancelled' && (
+                              <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-medium">⏳ ביטול {formatDate(a.cancel_date)}</span>
+                            )}
                           </div>
                           <p className="text-xs text-gray-400">
                             {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
@@ -875,12 +944,37 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                           </p>
                         </div>
                       </div>
-                      <div className="flex gap-3 shrink-0">
-                        {/* עריכה ומחיקה — מוצגות רק למנהל. מאמן רגיל = קריאה בלבד (Bug 1.3 + Bug-followup) */}
+                      <div className="flex gap-1.5 shrink-0 flex-wrap justify-end items-center">
                         {isAdmin && (
                           <>
-                            <button onClick={() => startEdit(a)} className="text-xs text-blue-600 hover:underline">עריכה</button>
-                            <button onClick={() => deleteAthlete(a.id)} className="text-xs text-red-400 hover:underline">
+                            <button onClick={() => startEdit(a)}
+                              className="text-xs px-2 py-1 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition">
+                              עריכה
+                            </button>
+                            {a.membership_status === 'cancelled' || a.membership_status === 'frozen' ? (
+                              <button onClick={() => unfreezeAthlete(a.id)}
+                                className="text-xs px-2 py-1 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition font-medium">
+                                ✅ הפעל
+                              </button>
+                            ) : (
+                              <button onClick={() => freezeAthlete(a.id)}
+                                className="text-xs px-2 py-1 rounded-lg border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 transition">
+                                ❄️ הקפא
+                              </button>
+                            )}
+                            {a.cancel_date && a.membership_status !== 'cancelled' ? (
+                              <button onClick={() => undoCancelAthlete(a.id)}
+                                className="text-xs px-2 py-1 rounded-lg border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 transition">
+                                ↩️ בטל ביטול
+                              </button>
+                            ) : a.membership_status !== 'cancelled' && a.membership_status !== 'frozen' && (
+                              <button onClick={() => cancelAthleteAtMonthEnd(a.id)}
+                                className="text-xs px-2 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition">
+                                🚫 ביטול
+                              </button>
+                            )}
+                            <button onClick={() => deleteAthlete(a.id)}
+                              className="text-xs px-2 py-1 rounded-lg border border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition">
                               מחק
                             </button>
                           </>

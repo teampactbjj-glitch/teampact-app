@@ -53,6 +53,16 @@ export default function ProfileChangeRequests({ onChange }) {
       }
       const { error } = await supabase.from('members').update(update).eq('id', req.athlete_id)
       memberError = error
+    } else if (req.change_type === 'membership_freeze') {
+      const { error } = await supabase.from('members').update({ membership_status: 'frozen' }).eq('id', req.athlete_id)
+      memberError = error
+    } else if (req.change_type === 'membership_cancel') {
+      // ביטול — תחול בסוף החודש
+      const today = new Date()
+      const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      const cancelDate = lastDay.toISOString().split('T')[0]
+      const { error } = await supabase.from('members').update({ cancel_date: cancelDate }).eq('id', req.athlete_id)
+      memberError = error
     } else if (req.change_type === 'belt') {
       // אישור דרגה: עדכון members + INSERT ל-belt_history (source='manual')
       const beltVal = req.requested_belt || req.requested_value
@@ -153,8 +163,21 @@ export default function ProfileChangeRequests({ onChange }) {
                 {req.change_type === 'email' && '📧 שינוי מייל'}
                 {req.change_type === 'subscription' && '🎫 שינוי מנוי'}
                 {req.change_type === 'belt' && '🥋 בקשת אישור דרגה'}
+                {req.change_type === 'membership_freeze' && '❄️ בקשת הקפאת מנוי'}
+                {req.change_type === 'membership_cancel' && '🚫 בקשת ביטול מנוי'}
               </p>
-              {!isBelt && (
+              {(req.change_type === 'membership_freeze' || req.change_type === 'membership_cancel') && (
+                <div className={`mt-2 text-xs rounded-lg p-2.5 space-y-1 ${req.change_type === 'membership_freeze' ? 'bg-blue-50 border border-blue-200' : 'bg-red-50 border border-red-200'}`}>
+                  {req.change_type === 'membership_freeze' && (
+                    <p className="text-blue-700 font-medium">הקפאה תחול מיידית עם האישור</p>
+                  )}
+                  {req.change_type === 'membership_cancel' && (
+                    <p className="text-red-700 font-medium">הביטול ייכנס לתוקף בסוף החודש הנוכחי</p>
+                  )}
+                  {req.note && <p className="text-gray-600">סיבה: {req.note}</p>}
+                </div>
+              )}
+              {!isBelt && req.change_type !== 'membership_freeze' && req.change_type !== 'membership_cancel' && (
                 <div className="text-xs text-gray-500 mt-2 space-y-1">
                   <p>מ: <span className="line-through">
                     {req.change_type === 'subscription' ? (SUB_LABELS[req.current_value] || req.current_value) : req.current_value}

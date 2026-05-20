@@ -831,6 +831,9 @@ function SettingsTab({ profile, member }) {
   // מאמנים + ניווט
   const [myCoaches, setMyCoaches] = useState([])
   const [settingsView, setSettingsView] = useState(null)
+  // הקפאה/ביטול מנוי
+  const [membershipAction, setMembershipAction] = useState(null) // 'freeze' | 'cancel' | null
+  const [membershipNote, setMembershipNote] = useState('')
 
   const athleteName = member?.full_name || profile?.full_name || profile?.email || '—'
   const currentSub = member?.subscription_type || profile?.subscription_type || '—'
@@ -992,6 +995,25 @@ function SettingsTab({ profile, member }) {
     setSubNote(''); loadPending()
   }
 
+  async function submitMembershipRequest() {
+    if (!membershipAction) return
+    setSaving(true)
+    const { error } = await supabase.from('profile_change_requests').insert({
+      athlete_id: profile.id,
+      athlete_name: athleteName,
+      change_type: membershipAction === 'freeze' ? 'membership_freeze' : 'membership_cancel',
+      current_value: currentSub,
+      requested_value: membershipAction,
+      note: membershipNote || null,
+    })
+    setSaving(false)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    toast.success(membershipAction === 'freeze' ? 'בקשת ההקפאה נשלחה למנהל' : 'בקשת הביטול נשלחה למנהל')
+    setMembershipNote('')
+    setMembershipAction(null)
+    loadPending()
+  }
+
   async function submitBeltChange() {
     if (!beltVal) { toast.error('בחר חגורה'); return }
     if (!reqTrainsGi && !reqTrainsNogi) { toast.error('סמן לפחות סוג אימון אחד (Gi או NoGi)'); return }
@@ -1019,6 +1041,7 @@ function SettingsTab({ profile, member }) {
   const hasPendingEmail = pendingRequests.some(r => r.change_type === 'email')
   const hasPendingSub = pendingRequests.some(r => r.change_type === 'subscription')
   const hasPendingBelt = pendingRequests.some(r => r.change_type === 'belt')
+  const hasPendingMembership = pendingRequests.some(r => r.change_type === 'membership_freeze' || r.change_type === 'membership_cancel')
 
   return (
     <div className="space-y-4">
@@ -1180,6 +1203,63 @@ function SettingsTab({ profile, member }) {
                 )}
               </div>
             </div>
+            {/* הקפאה / ביטול מנוי */}
+            <div className="space-y-2">
+              <p className="text-xs text-gray-400 px-1">הקפאה או ביטול מנוי</p>
+              {hasPendingMembership ? (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  יש בקשה ממתינה לאישור מנהל
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMembershipAction(a => a === 'freeze' ? null : 'freeze')}
+                      className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition ${
+                        membershipAction === 'freeze'
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-200 hover:border-blue-400'
+                      }`}>
+                      ❄️ הקפאת מנוי
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMembershipAction(a => a === 'cancel' ? null : 'cancel')}
+                      className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition ${
+                        membershipAction === 'cancel'
+                          ? 'bg-red-600 text-white border-red-600'
+                          : 'bg-white text-gray-700 border-gray-200 hover:border-red-400'
+                      }`}>
+                      🚫 ביטול מנוי
+                    </button>
+                  </div>
+                  {membershipAction && (
+                    <div className="space-y-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                      {membershipAction === 'freeze' ? (
+                        <p className="text-xs text-blue-700 font-medium">הקפאת מנוי — תחול מיידית עם אישור המנהל.</p>
+                      ) : (
+                        <p className="text-xs text-red-700 font-medium">ביטול מנוי — ייכנס לתוקף בסוף החודש הנוכחי.</p>
+                      )}
+                      <textarea
+                        value={membershipNote}
+                        onChange={e => setMembershipNote(e.target.value)}
+                        placeholder="סיבה (אופציונלי)"
+                        rows="2"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none bg-white"
+                      />
+                      <button
+                        onClick={submitMembershipRequest}
+                        disabled={saving}
+                        className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                        {saving ? 'שולח...' : 'שלח בקשה למנהל'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2">
               <p className="text-xs text-gray-400 px-1">בקשת שינוי מנוי</p>
               {hasPendingSub ? (

@@ -126,6 +126,7 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
             src={product.image_url}
             alt={product.title}
             className="w-full h-auto max-h-[400px] object-contain"
+            loading="lazy"
           />
         </div>
       )}

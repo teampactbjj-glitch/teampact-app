@@ -564,7 +564,7 @@ function AnnouncementsTab({ announcements, profile, member }) {
           <div className="space-y-3">
             {seminars.map(item => (
               <div key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" />}
+                {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" loading="lazy" />}
                 <div className="p-4">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">🎓 סמינר</span>
@@ -759,7 +759,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
               >
                 {item.image_url && (
                   <div className="aspect-[3/4] w-full overflow-hidden rounded-xl">
-                    <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
+                    <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" loading="lazy" />
                   </div>
                 )}
                 <div className="p-4">

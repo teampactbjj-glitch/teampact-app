@@ -53,6 +53,8 @@ jobs:
           repository: ${{ secrets.BACKUPS_REPO }}
           token: ${{ secrets.BACKUPS_REPO_TOKEN }}
           path: backups-repo
+          fetch-depth: 1
+          filter: blob:none
 
       - name: Commit snapshot
         working-directory: backups-repo

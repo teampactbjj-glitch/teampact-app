@@ -1,5 +1,34 @@
 # MEMORY - TeamPact App
 
+## 🚨 Session 25.05.2026 — Supabase Egress Crisis Round 2
+
+### מצב דחוף
+- קיבלנו מייל נוסף מ-Supabase: **11.71 GB מתוך 5.5 GB** — חריגה של 213%
+- **Deadline: 27 מאי 2026** — שירות יחסם ויחזיר שגיאות 402
+
+### למה התיקון של מאי 9 לא עבד מספיק
+- `cacheControl: '31536000'` עוזר לדפדפן לא לטעון שוב — אבל כל משתמש חדש/מכשיר חדש עדיין מוריד מהשרת
+- תמונות הודעות ישנות לא הועלו מחדש — אין להן cache header
+- Supabase מודד כל ה-bandwidth מה-CDN, גם cache hits
+
+### תיקונים שבוצעו ב-25.05.2026
+- **`loading="lazy"`** נוסף לכל `<img>` בממשק המתאמן:
+  - `AthleteDashboard.jsx` (שורות 567, 762)
+  - `ProductDetail.jsx` (שורה 126)
+- **דחיסת תמונה לפני upload** נוסף לשני הקבצים:
+  - `AnnouncementsManager.jsx` — פונקציה `compressImage()` לפני upload (max 1200px, 82% quality → JPEG)
+  - `ShopManager.jsx` — אותה פונקציה
+- קומיט מוכן לדחיפה: `"perf: add lazy loading to images + compress before upload"`
+
+### ⚠️ מה דודי חייב לעשות עכשיו (לא ניתן לעשות אוטומטית)
+1. **PUSH** — תריץ `rm -f .git/HEAD.lock && git commit -m "..." && git push origin main` (ראה בתשובה)
+2. **שדרג ל-Supabase Pro** OR המתן לראות אם Supabase מקבל את הצמצום — אבל **Pro הוא הפתרון היחיד המובטח ל-27 מאי**
+
+### My last pending task
+דחיפת הקומיט — נחסמה ע"י git lock file. דודי צריך להריץ ידנית. הקוד עצמו מוכן בקבצים.
+
+---
+
 ## 🗓️ Session 09.05.2026 — Supabase Egress Fix + תכנון עתידי
 
 ### מה נעשה

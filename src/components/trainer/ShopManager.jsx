@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useToast, useConfirm } from '../a11y'
+import { uploadToCloudinary } from '../../lib/cloudinary'
 
 const STATUS_LABELS = { pending: 'ממתין', done: 'טופל' }
 const STATUS_COLORS = { pending: 'bg-orange-100 text-orange-700', done: 'bg-green-100 text-green-700' }
@@ -202,39 +203,15 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     fetchAll()
   }
 
-  async function compressImage(file, maxWidth = 1200, quality = 0.82) {
-    return new Promise(resolve => {
-      const img = new Image()
-      const url = URL.createObjectURL(file)
-      img.onload = () => {
-        URL.revokeObjectURL(url)
-        const scale = Math.min(1, maxWidth / img.width)
-        const canvas = document.createElement('canvas')
-        canvas.width  = Math.round(img.width  * scale)
-        canvas.height = Math.round(img.height * scale)
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
-        canvas.toBlob(blob => resolve(blob || file), 'image/jpeg', quality)
-      }
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
-      img.src = url
-    })
-  }
-
   async function uploadImage(file) {
     if (!file) return null
     setUploading(true)
     try {
-      const compressed = await compressImage(file)
-      const path = `products/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
-      const { error: upErr } = await supabase.storage.from('products').upload(path, compressed, { cacheControl: '31536000', upsert: false, contentType: 'image/jpeg' })
-      if (upErr) {
-        const { error: upErr2 } = await supabase.storage.from('images').upload(path, compressed, { cacheControl: '31536000', upsert: false, contentType: 'image/jpeg' })
-        if (upErr2) { toast.error('שגיאת העלאה: ' + upErr2.message); return null }
-        const { data: pub } = supabase.storage.from('images').getPublicUrl(path)
-        return pub.publicUrl
-      }
-      const { data: pub } = supabase.storage.from('products').getPublicUrl(path)
-      return pub.publicUrl
+      const url = await uploadToCloudinary(file)
+      return url
+    } catch (e) {
+      toast.error('שגיאה בהעלאת תמונה: ' + e.message)
+      return null
     } finally {
       setUploading(false)
     }

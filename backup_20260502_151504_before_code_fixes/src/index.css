@@ -1,0 +1,373 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { direction: rtl; }
+html, body {
+  /* מונע overscroll bounce ב-iOS שגורם לאלמנטים position:fixed לעוף למעלה */
+  overscroll-behavior-y: none;
+}
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #f1f5f9;
+  /* dvh = dynamic viewport height — מתחשב נכון בסרגל הכתובת/מקלדת ב-iOS */
+  min-height: 100dvh;
+}
+#root {
+  min-height: 100vh;          /* fallback לדפדפנים ישנים */
+  min-height: 100dvh;          /* iOS modern */
+}
+
+/* Tailwind אינו מכיר min-h-dvh בכל הגרסאות — fallback */
+.min-h-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Safe area for PWA — prevents header from hiding behind phone status bar */
+.safe-area-header {
+  padding-top: calc(1rem + env(safe-area-inset-top));
+  padding-bottom: 1rem;
+}
+
+/* ============================================================
+   נגישות — מחלקות גלובליות שמופעלות מ-AccessibilityWidget
+   נשמרות ב-localStorage תחת המפתח tp-a11y-prefs
+   ============================================================ */
+
+/* הגדלת פונט - +20% */
+html.a11y-text-large { font-size: 120%; }
+html.a11y-text-large body { font-size: 120%; }
+
+/* הגדלת פונט - +40% */
+html.a11y-text-xl { font-size: 140%; }
+html.a11y-text-xl body { font-size: 140%; }
+
+/* ניגודיות גבוהה - שחור-לבן בעוצמה מקסימלית.
+   מטרה: לעזור למשתמשים עם קטרקט / ניוון רשתית / ראייה מטושטשת. */
+html.a11y-high-contrast,
+html.a11y-high-contrast body {
+  background: #ffffff !important;
+  color: #000000 !important;
+}
+html.a11y-high-contrast * {
+  color: #000000 !important;
+  border-color: #000000 !important;
+}
+/* כותרות, כפתורים וקישורים - נשארים מדגישים */
+html.a11y-high-contrast h1,
+html.a11y-high-contrast h2,
+html.a11y-high-contrast h3,
+html.a11y-high-contrast strong,
+html.a11y-high-contrast b {
+  color: #000000 !important;
+  font-weight: 900 !important;
+}
+html.a11y-high-contrast a {
+  color: #0000ee !important;
+  text-decoration: underline !important;
+  font-weight: 700 !important;
+}
+html.a11y-high-contrast button {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: 2px solid #000000 !important;
+  font-weight: 700 !important;
+}
+html.a11y-high-contrast button:hover,
+html.a11y-high-contrast button:focus {
+  background: #000000 !important;
+  color: #ffffff !important;
+}
+html.a11y-high-contrast input,
+html.a11y-high-contrast textarea,
+html.a11y-high-contrast select {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: 2px solid #000000 !important;
+}
+html.a11y-high-contrast img {
+  filter: contrast(1.2);
+}
+
+/* ============================================================
+   מצב כהה — Dark Mode קלאסי שחור עם ניגודיות מקסימלית
+   פלטה: שחור (#000) רקע ראשי, אפור-כהה (#1a1a1a) כרטיסים, אפור (#2a2a2a) רקעים משניים
+   טקסט: לבן (#ffffff) ראשי, אפור-בהיר (#cccccc) משני
+   צבעים: גוונים זוהרים בהירים מאוד לקריאות מירבית
+   ============================================================ */
+
+html.a11y-dark-mode,
+html.a11y-dark-mode body,
+html.a11y-dark-mode #root {
+  background: #000000 !important;
+  color: #ffffff !important;
+}
+
+/* רקעים - הכל שחור-אפור */
+html.a11y-dark-mode .bg-white,
+html.a11y-dark-mode .bg-gray-50,
+html.a11y-dark-mode .bg-gray-100 {
+  background-color: #1a1a1a !important;
+  color: #ffffff !important;
+}
+html.a11y-dark-mode .bg-gray-200 {
+  background-color: #2a2a2a !important;
+  color: #ffffff !important;
+}
+html.a11y-dark-mode .bg-gray-300 {
+  background-color: #3a3a3a !important;
+  color: #ffffff !important;
+}
+
+/* רקעים צבעוניים בהירים - גוון כהה אבל ניתן לזיהוי */
+html.a11y-dark-mode .bg-emerald-50,
+html.a11y-dark-mode .bg-emerald-100 { background-color: #052e1a !important; }
+html.a11y-dark-mode .bg-blue-50,
+html.a11y-dark-mode .bg-blue-100 { background-color: #0a1f3d !important; }
+html.a11y-dark-mode .bg-red-50,
+html.a11y-dark-mode .bg-red-100 { background-color: #3d0a0a !important; }
+html.a11y-dark-mode .bg-amber-50,
+html.a11y-dark-mode .bg-amber-100 { background-color: #3d2810 !important; }
+html.a11y-dark-mode .bg-orange-50,
+html.a11y-dark-mode .bg-orange-100 { background-color: #3d1a0a !important; }
+html.a11y-dark-mode .bg-purple-50,
+html.a11y-dark-mode .bg-purple-100 { background-color: #2a0a3d !important; }
+html.a11y-dark-mode .bg-rose-50,
+html.a11y-dark-mode .bg-rose-100 { background-color: #3d0a1f !important; }
+html.a11y-dark-mode .bg-green-50,
+html.a11y-dark-mode .bg-green-100 { background-color: #052e1a !important; }
+html.a11y-dark-mode .bg-yellow-50,
+html.a11y-dark-mode .bg-yellow-100 { background-color: #3d2810 !important; }
+
+/* טקסט - לבן וגוונים בהירים בלבד */
+html.a11y-dark-mode .text-gray-400,
+html.a11y-dark-mode .text-gray-500 { color: #cccccc !important; }
+html.a11y-dark-mode .text-gray-600 { color: #d4d4d4 !important; }
+html.a11y-dark-mode .text-gray-700,
+html.a11y-dark-mode .text-gray-800,
+html.a11y-dark-mode .text-gray-900,
+html.a11y-dark-mode .text-black {
+  color: #ffffff !important;
+}
+
+/* צבעי תפקיד - גוונים זוהרים בהירים מאוד לקריאות מירבית */
+html.a11y-dark-mode .text-emerald-500,
+html.a11y-dark-mode .text-emerald-600,
+html.a11y-dark-mode .text-emerald-700,
+html.a11y-dark-mode .text-emerald-800,
+html.a11y-dark-mode .text-emerald-900 { color: #4ade80 !important; }
+html.a11y-dark-mode .text-green-500,
+html.a11y-dark-mode .text-green-600,
+html.a11y-dark-mode .text-green-700 { color: #4ade80 !important; }
+html.a11y-dark-mode .text-blue-500,
+html.a11y-dark-mode .text-blue-600,
+html.a11y-dark-mode .text-blue-700,
+html.a11y-dark-mode .text-blue-800,
+html.a11y-dark-mode .text-blue-900 { color: #7dd3fc !important; }
+html.a11y-dark-mode .text-red-500,
+html.a11y-dark-mode .text-red-600,
+html.a11y-dark-mode .text-red-700 { color: #fca5a5 !important; }
+html.a11y-dark-mode .text-amber-600,
+html.a11y-dark-mode .text-amber-700,
+html.a11y-dark-mode .text-amber-800,
+html.a11y-dark-mode .text-amber-900 { color: #fcd34d !important; }
+html.a11y-dark-mode .text-yellow-600,
+html.a11y-dark-mode .text-yellow-700 { color: #fcd34d !important; }
+html.a11y-dark-mode .text-orange-600,
+html.a11y-dark-mode .text-orange-700 { color: #fdba74 !important; }
+html.a11y-dark-mode .text-purple-600,
+html.a11y-dark-mode .text-purple-700 { color: #d8b4fe !important; }
+html.a11y-dark-mode .text-rose-600,
+html.a11y-dark-mode .text-rose-700 { color: #fda4af !important; }
+html.a11y-dark-mode .text-white { color: #ffffff !important; }
+
+/* גבולות - אפור-בהיר על רקע שחור */
+html.a11y-dark-mode .border,
+html.a11y-dark-mode .border-2,
+html.a11y-dark-mode .border-gray-100,
+html.a11y-dark-mode .border-gray-200,
+html.a11y-dark-mode .border-gray-300 {
+  border-color: #4a4a4a !important;
+}
+html.a11y-dark-mode .border-emerald-200,
+html.a11y-dark-mode .border-emerald-300 { border-color: #059669 !important; }
+html.a11y-dark-mode .border-blue-200,
+html.a11y-dark-mode .border-blue-300 { border-color: #2563eb !important; }
+html.a11y-dark-mode .border-red-200,
+html.a11y-dark-mode .border-red-300 { border-color: #dc2626 !important; }
+html.a11y-dark-mode .border-amber-200,
+html.a11y-dark-mode .border-amber-300 { border-color: #d97706 !important; }
+html.a11y-dark-mode .border-rose-200,
+html.a11y-dark-mode .border-rose-300 { border-color: #e11d48 !important; }
+
+/* divide-y / divide-gray */
+html.a11y-dark-mode [class*="divide-gray"] > * + * {
+  border-color: #4a4a4a !important;
+}
+
+/* כפתורים מלאים - שמירה על הצבעים בולטים */
+html.a11y-dark-mode .bg-emerald-500,
+html.a11y-dark-mode .bg-emerald-600 { background-color: #10b981 !important; color: #000000 !important; }
+html.a11y-dark-mode .bg-emerald-700 { background-color: #059669 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-green-500,
+html.a11y-dark-mode .bg-green-600 { background-color: #10b981 !important; color: #000000 !important; }
+html.a11y-dark-mode .bg-green-700 { background-color: #059669 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-blue-500,
+html.a11y-dark-mode .bg-blue-600 { background-color: #3b82f6 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-blue-700 { background-color: #2563eb !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-red-500,
+html.a11y-dark-mode .bg-red-600 { background-color: #ef4444 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-red-700 { background-color: #dc2626 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-amber-500,
+html.a11y-dark-mode .bg-amber-600 { background-color: #f59e0b !important; color: #000000 !important; }
+html.a11y-dark-mode .bg-orange-500,
+html.a11y-dark-mode .bg-orange-600 { background-color: #f97316 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-purple-500,
+html.a11y-dark-mode .bg-purple-600 { background-color: #a855f7 !important; color: #ffffff !important; }
+html.a11y-dark-mode .bg-rose-500,
+html.a11y-dark-mode .bg-rose-600 { background-color: #f43f5e !important; color: #ffffff !important; }
+
+/* Inputs / textareas - שחור עם טקסט לבן */
+html.a11y-dark-mode input,
+html.a11y-dark-mode textarea,
+html.a11y-dark-mode select {
+  background-color: #0a0a0a !important;
+  color: #ffffff !important;
+  border-color: #4a4a4a !important;
+}
+html.a11y-dark-mode input::placeholder,
+html.a11y-dark-mode textarea::placeholder {
+  color: #888888 !important;
+}
+html.a11y-dark-mode input:focus,
+html.a11y-dark-mode textarea:focus,
+html.a11y-dark-mode select:focus {
+  border-color: #3b82f6 !important;
+  outline-color: #3b82f6 !important;
+}
+
+/* Gradients - שחור אחיד */
+html.a11y-dark-mode [class*="bg-gradient"] {
+  background: #1a1a1a !important;
+}
+
+/* shadow - חזק יותר במצב כהה */
+html.a11y-dark-mode .shadow,
+html.a11y-dark-mode .shadow-sm,
+html.a11y-dark-mode .shadow-md,
+html.a11y-dark-mode .shadow-lg,
+html.a11y-dark-mode .shadow-xl,
+html.a11y-dark-mode .shadow-2xl {
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Hover states - Tailwind מייצר אותם כ-`:hover { ... }` */
+html.a11y-dark-mode [class*="hover:bg-gray"]:hover,
+html.a11y-dark-mode [class*="hover:bg-white"]:hover,
+html.a11y-dark-mode [class*="hover:bg-slate"]:hover {
+  background-color: #2a2a2a !important;
+  color: #ffffff !important;
+}
+html.a11y-dark-mode [class*="hover:bg-emerald"]:hover,
+html.a11y-dark-mode [class*="hover:bg-green"]:hover { background-color: #059669 !important; }
+html.a11y-dark-mode [class*="hover:bg-blue"]:hover { background-color: #2563eb !important; }
+html.a11y-dark-mode [class*="hover:bg-red"]:hover { background-color: #dc2626 !important; }
+html.a11y-dark-mode [class*="hover:bg-amber"]:hover { background-color: #d97706 !important; }
+html.a11y-dark-mode [class*="hover:bg-rose"]:hover { background-color: #e11d48 !important; }
+html.a11y-dark-mode [class*="hover:bg-purple"]:hover { background-color: #9333ea !important; }
+
+/* פסי קצה (ring) */
+html.a11y-dark-mode [class*="ring-amber"] { --tw-ring-color: #d97706 !important; }
+html.a11y-dark-mode [class*="ring-rose"] { --tw-ring-color: #e11d48 !important; }
+html.a11y-dark-mode [class*="ring-emerald"] { --tw-ring-color: #059669 !important; }
+html.a11y-dark-mode [class*="ring-blue"] { --tw-ring-color: #2563eb !important; }
+
+/* Modal backdrop - שחור כמעט לגמרי */
+html.a11y-dark-mode .bg-black\/50 { background-color: rgba(0, 0, 0, 0.85) !important; }
+
+/* Dialog/Modal - רקע כהה עם טקסט לבן */
+html.a11y-dark-mode [role="dialog"] {
+  background-color: #1a1a1a !important;
+  color: #ffffff !important;
+  border: 1px solid #4a4a4a !important;
+}
+
+/* טקסט בתוך כרטיסים צבעוניים בהירים — לבן/בהיר ברור */
+html.a11y-dark-mode .bg-amber-50 *:not(button),
+html.a11y-dark-mode .bg-amber-100 *:not(button) { color: #fef3c7 !important; }
+html.a11y-dark-mode .bg-rose-50 *:not(button),
+html.a11y-dark-mode .bg-rose-100 *:not(button) { color: #ffe4e6 !important; }
+html.a11y-dark-mode .bg-emerald-50 *:not(button),
+html.a11y-dark-mode .bg-emerald-100 *:not(button) { color: #d1fae5 !important; }
+html.a11y-dark-mode .bg-green-50 *:not(button),
+html.a11y-dark-mode .bg-green-100 *:not(button) { color: #d1fae5 !important; }
+html.a11y-dark-mode .bg-blue-50 *:not(button),
+html.a11y-dark-mode .bg-blue-100 *:not(button) { color: #dbeafe !important; }
+html.a11y-dark-mode .bg-purple-50 *:not(button),
+html.a11y-dark-mode .bg-purple-100 *:not(button) { color: #f3e8ff !important; }
+html.a11y-dark-mode .bg-orange-50 *:not(button),
+html.a11y-dark-mode .bg-orange-100 *:not(button) { color: #ffedd5 !important; }
+html.a11y-dark-mode .bg-yellow-50 *:not(button),
+html.a11y-dark-mode .bg-yellow-100 *:not(button) { color: #fef3c7 !important; }
+html.a11y-dark-mode .bg-red-50 *:not(button),
+html.a11y-dark-mode .bg-red-100 *:not(button) { color: #fecaca !important; }
+
+/* כפתורים מלאים - טקסט מתאים בהתאם לרקע */
+html.a11y-dark-mode [class*="bg-emerald-500"] *,
+html.a11y-dark-mode [class*="bg-emerald-600"] *,
+html.a11y-dark-mode [class*="bg-green-500"] *,
+html.a11y-dark-mode [class*="bg-green-600"] *,
+html.a11y-dark-mode [class*="bg-amber-500"] *,
+html.a11y-dark-mode [class*="bg-amber-600"] * {
+  color: #000000 !important;
+}
+html.a11y-dark-mode [class*="bg-blue-500"] *,
+html.a11y-dark-mode [class*="bg-blue-600"] *,
+html.a11y-dark-mode [class*="bg-blue-700"] *,
+html.a11y-dark-mode [class*="bg-red-500"] *,
+html.a11y-dark-mode [class*="bg-red-600"] *,
+html.a11y-dark-mode [class*="bg-red-700"] *,
+html.a11y-dark-mode [class*="bg-emerald-700"] *,
+html.a11y-dark-mode [class*="bg-green-700"] *,
+html.a11y-dark-mode [class*="bg-orange-500"] *,
+html.a11y-dark-mode [class*="bg-orange-600"] *,
+html.a11y-dark-mode [class*="bg-purple-500"] *,
+html.a11y-dark-mode [class*="bg-purple-600"] *,
+html.a11y-dark-mode [class*="bg-rose-500"] *,
+html.a11y-dark-mode [class*="bg-rose-600"] * {
+  color: #ffffff !important;
+}
+
+/* השהיית כל האנימציות והמעברים — חיוני למי שסובל מורטיגו / רגישות */
+html.a11y-no-animations *,
+html.a11y-no-animations *::before,
+html.a11y-no-animations *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* הדגשת קישורים — הקלה לזיהוי קישורים על-ידי משתמשים עם לקויות ראייה */
+html.a11y-emphasized-links a:not(.a11y-no-emphasize) {
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
+  text-decoration-thickness: 2px !important;
+  font-weight: 700 !important;
+}
+
+/* סמן גדול — מקל על משתמשים עם לקויות ראייה */
+html.a11y-big-cursor,
+html.a11y-big-cursor * {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'><path fill='black' stroke='white' stroke-width='2' d='M6 4 L6 38 L14 30 L20 44 L26 42 L20 28 L32 28 Z'/></svg>") 6 4, auto !important;
+}
+
+/* פוקוס מודגש על כל אינטראקציה — תמיד יראו איפה הסמן במקלדת */
+html.a11y-emphasized-links *:focus {
+  outline: 3px solid #2563eb !important;
+  outline-offset: 2px !important;
+}

@@ -333,7 +333,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
   async function refreshCounts() {
     const lastSeen = (lastSeenKey && typeof window !== 'undefined' ? window.localStorage.getItem(lastSeenKey) : '') || ''
     const [{ count: leads }, { count: orders }, { count: requests }, { data: latest }, { count: unread }] = await Promise.all([
-      supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'pending').is('deleted_at', null),
       supabase.from('product_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('announcements').select('created_at').order('created_at', { ascending: false }).limit(1),

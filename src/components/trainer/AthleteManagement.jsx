@@ -382,10 +382,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
   async function rejectPending(id) {
     // Bug 1.3: מאמן רגיל לא יכול לבצע DELETE על members.
     // אדמין → מחיקה לצמיתות. מאמן → soft-delete (UPDATE deleted_at).
+    let error
     if (isAdmin) {
-      await supabase.from('members').delete().eq('id', id)
+      ;({ error } = await supabase.from('members').delete().eq('id', id))
     } else {
-      await supabase.from('members').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+      ;({ error } = await supabase.from('members').update({ deleted_at: new Date().toISOString() }).eq('id', id))
+    }
+    if (error) {
+      console.error('rejectPending error:', error)
+      return
     }
     fetchAthletes()
     onPendingChange?.()

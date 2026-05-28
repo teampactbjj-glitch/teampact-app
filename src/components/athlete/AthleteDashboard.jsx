@@ -617,8 +617,8 @@ function ShopTab({ profile, member, allAnnouncements }) {
       })
   }, [profile?.id, products.length])
 
-  // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם אפשרות/מידה/צבע/רכיבים)
-  async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null, componentSelections = null) {
+  // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם אפשרות/מידה/צבע/אורך/רכיבים)
+  async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null, selectedLength = null, componentSelections = null) {
     if (ordered.has(item.id)) {
       const ok = await confirm({ title: 'ביטול הזמנה', message: `לבטל את ההזמנה של "${item.title}"?`, confirmText: 'בטל הזמנה', danger: true })
       if (!ok) return
@@ -640,19 +640,21 @@ function ShopTab({ profile, member, allAnnouncements }) {
       athlete_name: athleteName,
       status: 'pending',
     }
-    // מידה וצבע כעמודות נפרדות (יש columns ב-DB)
+    // מידה, צבע ואורך כעמודות נפרדות (יש columns ב-DB)
     if (selectedSize) payload.selected_size = selectedSize
     if (selectedColor) payload.selected_color = selectedColor
-    // אם יש בחירות פר-רכיב - שומרים מידה/צבע של הרכיב הראשון כ-selected_size/selected_color (תאימות לאחור)
+    if (selectedLength) payload.selected_length = selectedLength
+    // אם יש בחירות פר-רכיב - שומרים מידה/צבע/אורך של הרכיב הראשון כ-selected_size/selected_color/selected_length (תאימות לאחור)
     if (Array.isArray(componentSelections) && componentSelections.length) {
       const first = componentSelections[0] || {}
       if (first.size) payload.selected_size = first.size
       if (first.color) payload.selected_color = first.color
+      if (first.length) payload.selected_length = first.length
     }
-    // מרכיבים notes מפורט - כולל אפשרות, מידה, צבע, רכיבים
+    // מרכיבים notes מפורט - כולל אפשרות, מידה, צבע, אורך, רכיבים
     const noteParts = []
     if (selectedOption?.name) noteParts.push(`אפשרות: ${selectedOption.name}`)
-    // בחירות פר-רכיב (למשל: מכנס מידה M צבע שחור | רשגארד מידה L צבע לבן)
+    // בחירות פר-רכיב (למשל: מכנס מידה M צבע שחור | ראשגארד מידה L צבע לבן ארוך)
     if (Array.isArray(componentSelections) && componentSelections.length && Array.isArray(selectedOption?.components)) {
       componentSelections.forEach((sel, i) => {
         const comp = selectedOption.components[i]
@@ -660,11 +662,13 @@ function ShopTab({ profile, member, allAnnouncements }) {
         const pieces = [comp.name]
         if (sel?.size) pieces.push(`מידה ${sel.size}`)
         if (sel?.color) pieces.push(`צבע ${sel.color}`)
+        if (sel?.length) pieces.push(sel.length)
         if (pieces.length > 1) noteParts.push(pieces.join(' '))
       })
     } else {
       if (selectedSize) noteParts.push(`מידה: ${selectedSize}`)
       if (selectedColor) noteParts.push(`צבע: ${selectedColor}`)
+      if (selectedLength) noteParts.push(`אורך: ${selectedLength}`)
     }
     if (selectedOption?.note) noteParts.push(selectedOption.note)
     if (noteParts.length) payload.notes = noteParts.join(' · ')
@@ -683,7 +687,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
       // בניית גוף התראה מפורט - כולל מידה, צבע, אפשרות, רכיבים ומחיר
       const bodyParts = [`${athleteName} הזמין: ${item.title}`]
       if (selectedOption?.name) bodyParts.push(`אפשרות: ${selectedOption.name}`)
-      // אם יש רכיבים - מוסיפים אותם עם המידה/צבע לכל אחד
+      // אם יש רכיבים - מוסיפים אותם עם המידה/צבע/אורך לכל אחד
       if (Array.isArray(componentSelections) && componentSelections.length && Array.isArray(selectedOption?.components)) {
         componentSelections.forEach((sel, i) => {
           const comp = selectedOption.components[i]
@@ -691,11 +695,13 @@ function ShopTab({ profile, member, allAnnouncements }) {
           const pieces = [comp.name]
           if (sel?.size) pieces.push(sel.size)
           if (sel?.color) pieces.push(sel.color)
+          if (sel?.length) pieces.push(sel.length)
           if (pieces.length > 1) bodyParts.push(pieces.join(' '))
         })
       } else {
         if (selectedSize) bodyParts.push(`מידה: ${selectedSize}`)
         if (selectedColor) bodyParts.push(`צבע: ${selectedColor}`)
+        if (selectedLength) bodyParts.push(`אורך: ${selectedLength}`)
       }
       // מחיר - מעדיפים את מחיר האפשרות, אחרת מחיר המוצר
       const priceToShow = selectedOption?.price != null ? selectedOption.price : item.price
@@ -734,8 +740,8 @@ function ShopTab({ profile, member, allAnnouncements }) {
       <ProductDetail
         product={selectedProduct}
         onBack={() => setSelectedProductId(null)}
-        onOrder={async (product, option, size, color, componentSelections) => {
-          await handleOrder(product, option, size, color, componentSelections)
+        onOrder={async (product, option, size, color, length, componentSelections) => {
+          await handleOrder(product, option, size, color, length, componentSelections)
           // לאחר הזמנה/ביטול מוצלחים - נשארים בדף הפירוט (כדי שהמתאמן יראה את הסטטוס המתעדכן)
         }}
         alreadyOrdered={ordered.has(selectedProduct.id)}

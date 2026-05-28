@@ -33,6 +33,7 @@ function writeDraft(form, variants) {
       (Array.isArray(form.features) && form.features.some(f => f && f.trim())) ||
       (Array.isArray(form.available_sizes) && form.available_sizes.length > 0) ||
       (Array.isArray(form.available_colors) && form.available_colors.length > 0) ||
+      (Array.isArray(form.available_lengths) && form.available_lengths.length > 0) ||
       (Array.isArray(form.purchase_options) && form.purchase_options.some(o => o && (o.name || o.price)))
     if (!hasContent) {
       localStorage.removeItem(DRAFT_KEY)
@@ -63,9 +64,10 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     price: '',
     image_url: '',
     features: [],           // רשימת תכונות (bullets)
-    has_variants: false,    // האם יש מידות/צבעים
+    has_variants: false,    // האם יש מידות/צבעים/אורך
     available_sizes: [],    // ['A0','A1','A2','A3','A4']
     available_colors: [],   // ['שחור','לבן']
+    available_lengths: [],  // ['ארוך','קצר']
     purchase_options: [],   // אפשרויות רכישה: [{name, price, note, is_featured}]
   })
   const [variants, setVariants] = useState([])  // [{size, color, stock, price_override, sku, active}]
@@ -100,6 +102,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       has_variants: !!product.has_variants,
       available_sizes: product.available_sizes || [],
       available_colors: product.available_colors || [],
+      available_lengths: product.available_lengths || [],
       purchase_options: Array.isArray(product.purchase_options) ? product.purchase_options : [],
     })
     // טוען וריאנטים קיימים
@@ -128,6 +131,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
           has_variants: !!draft.form.has_variants,
           available_sizes: Array.isArray(draft.form.available_sizes) ? draft.form.available_sizes : [],
           available_colors: Array.isArray(draft.form.available_colors) ? draft.form.available_colors : [],
+          available_lengths: Array.isArray(draft.form.available_lengths) ? draft.form.available_lengths : [],
           purchase_options: Array.isArray(draft.form.purchase_options) ? draft.form.purchase_options : [],
         })
         setVariants(Array.isArray(draft.variants) ? draft.variants : [])
@@ -139,6 +143,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     setForm({
       title: '', content: '', description_long: '', price: '', image_url: '',
       features: [], has_variants: false, available_sizes: [], available_colors: [],
+      available_lengths: [],
       purchase_options: [],
     })
     setVariants([])
@@ -254,6 +259,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       has_variants: !!form.has_variants,
       available_sizes: form.available_sizes || [],
       available_colors: form.available_colors || [],
+      available_lengths: form.available_lengths || [],
       purchase_options: Array.isArray(form.purchase_options)
         ? form.purchase_options
             .filter(o => o && (o.name || o.price))
@@ -303,6 +309,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
           product_id: productId,
           size: v.size || null,
           color: v.color || null,
+          length: v.length || null,
           sku: v.sku || null,
           stock: parseInt(v.stock) || 0,
           price_override: v.price_override ? parseFloat(v.price_override) : null,
@@ -322,6 +329,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     setForm({
       title: '', content: '', description_long: '', price: '', image_url: '',
       features: [], has_variants: false, available_sizes: [], available_colors: [],
+      available_lengths: [],
       purchase_options: [],
     })
     setVariants([])
@@ -332,17 +340,23 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     fetchAll()
   }
 
-  // מחולל אוטומטית וריאנטים מכל השילובים של מידות × צבעים
+  // מחולל אוטומטית וריאנטים מכל השילובים של מידות × צבעים × אורך
   function generateVariantsFromMatrix() {
     const sizes = form.available_sizes.length ? form.available_sizes : [null]
     const colors = form.available_colors.length ? form.available_colors : [null]
+    const lengths = form.available_lengths.length ? form.available_lengths : [null]
     const newVariants = []
     for (const size of sizes) {
       for (const color of colors) {
-        // אם כבר קיים השילוב - לא להוסיף שוב
-        const exists = variants.find(v => (v.size || null) === size && (v.color || null) === color)
-        if (exists) { newVariants.push(exists); continue }
-        newVariants.push({ size, color, stock: 0, sku: '', price_override: '', active: true })
+        for (const length of lengths) {
+          const exists = variants.find(v =>
+            (v.size || null) === size &&
+            (v.color || null) === color &&
+            (v.length || null) === length
+          )
+          if (exists) { newVariants.push(exists); continue }
+          newVariants.push({ size, color, length, stock: 0, sku: '', price_override: '', active: true })
+        }
       }
     }
     setVariants(newVariants)
@@ -411,8 +425,8 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                       <span className="font-medium">{order.members?.full_name || order.member_name || 'לא ידוע'}</span>
                       {order.members?.phone && <span className="text-gray-400"> · {order.members.phone}</span>}
                     </p>
-                    {/* באדג'ים של מידה/צבע/כמות */}
-                    {(order.selected_size || order.selected_color || (order.quantity && order.quantity > 1)) && (
+                    {/* באדג'ים של מידה/צבע/אורך/כמות */}
+                    {(order.selected_size || order.selected_color || order.selected_length || (order.quantity && order.quantity > 1)) && (
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {order.selected_size && (
                           <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">
@@ -422,6 +436,11 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                         {order.selected_color && (
                           <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-medium">
                             🎨 צבע: {order.selected_color}
+                          </span>
+                        )}
+                        {order.selected_length && (
+                          <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-medium">
+                            📐 אורך: {order.selected_length}
                           </span>
                         )}
                         {order.quantity > 1 && (
@@ -815,6 +834,41 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                                 e.target.value = ''
                               }} />
                           </div>
+                          {/* אורך של הרכיב - ארוך/קצר */}
+                          <div>
+                            <label className="text-[10px] text-gray-600 block mb-0.5">
+                              📐 אורך
+                            </label>
+                            <div className="flex gap-1.5">
+                              {['ארוך', 'קצר'].map(len => {
+                                const compLengths = Array.isArray(comp.lengths) ? comp.lengths : []
+                                const isSelected = compLengths.includes(len)
+                                return (
+                                  <button
+                                    key={len}
+                                    type="button"
+                                    onClick={() => setForm(p => ({
+                                      ...p,
+                                      purchase_options: p.purchase_options.map((o, i) => i === idx
+                                        ? { ...o, components: o.components.map((c, cidx2) => cidx2 === compIdx
+                                            ? { ...c, lengths: isSelected
+                                                ? (c.lengths || []).filter(l => l !== len)
+                                                : [...(c.lengths || []), len] }
+                                            : c) }
+                                        : o),
+                                    }))}
+                                    className={`flex-1 py-1 rounded border text-[10px] font-bold transition ${
+                                      isSelected
+                                        ? 'border-indigo-500 bg-indigo-500 text-white'
+                                        : 'border-gray-200 bg-white text-gray-600'
+                                    }`}
+                                  >
+                                    {len}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -917,29 +971,64 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                         }} />
                     </div>
 
+                    {/* אורך זמין - ארוך/קצר */}
+                    <div>
+                      <label className="text-xs text-gray-600 block mb-1">
+                        📐 אורך זמין
+                      </label>
+                      <div className="flex gap-2">
+                        {['ארוך', 'קצר'].map(len => {
+                          const isSelected = form.available_lengths.includes(len)
+                          return (
+                            <button
+                              key={len}
+                              type="button"
+                              onClick={() => setForm(p => ({
+                                ...p,
+                                available_lengths: isSelected
+                                  ? p.available_lengths.filter(l => l !== len)
+                                  : [...p.available_lengths, len]
+                              }))}
+                              className={`flex-1 py-1.5 rounded-lg border-2 text-xs font-bold transition ${
+                                isSelected
+                                  ? 'border-indigo-500 bg-indigo-500 text-white'
+                                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-400'
+                              }`}
+                            >
+                              {len}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
                     <button type="button" onClick={generateVariantsFromMatrix}
                       className="w-full bg-blue-600 text-white py-1.5 rounded-lg text-xs">
-                      🔄 צור מטריצת וריאנטים (מידה × צבע)
+                      🔄 צור מטריצת וריאנטים (מידה × צבע × אורך)
                     </button>
 
                     {/* טבלת וריאנטים */}
                     {variants.length > 0 && (
-                      <div className="space-y-1">
-                        <div className="grid grid-cols-[auto_auto_1fr_1fr_auto] gap-1 text-[10px] font-bold text-gray-500 px-1">
+                      <div className="space-y-1 overflow-x-auto">
+                        <div className="grid grid-cols-[auto_auto_auto_1fr_1fr_auto] gap-1 text-[10px] font-bold text-gray-500 px-1 min-w-[420px]">
                           <span className="w-14">מידה</span>
                           <span className="w-14">צבע</span>
+                          <span className="w-14">אורך</span>
                           <span>מלאי</span>
-                          <span>מחיר מיוחד (אופ')</span>
+                          <span>מחיר מיוחד</span>
                           <span className="w-6"></span>
                         </div>
                         {variants.map((v, idx) => (
-                          <div key={idx} className="grid grid-cols-[auto_auto_1fr_1fr_auto] gap-1 items-center">
+                          <div key={idx} className="grid grid-cols-[auto_auto_auto_1fr_1fr_auto] gap-1 items-center min-w-[420px]">
                             <input className="w-14 border rounded px-1 py-1 text-xs" placeholder="מידה"
                               value={v.size || ''}
                               onChange={e => setVariants(prev => prev.map((x, i) => i === idx ? { ...x, size: e.target.value } : x))} />
                             <input className="w-14 border rounded px-1 py-1 text-xs" placeholder="צבע"
                               value={v.color || ''}
                               onChange={e => setVariants(prev => prev.map((x, i) => i === idx ? { ...x, color: e.target.value } : x))} />
+                            <input className="w-14 border rounded px-1 py-1 text-xs" placeholder="אורך"
+                              value={v.length || ''}
+                              onChange={e => setVariants(prev => prev.map((x, i) => i === idx ? { ...x, length: e.target.value } : x))} />
                             <input type="number" className="border rounded px-1 py-1 text-xs" placeholder="0"
                               value={v.stock || 0}
                               onChange={e => setVariants(prev => prev.map((x, i) => i === idx ? { ...x, stock: e.target.value } : x))} />
@@ -951,7 +1040,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                           </div>
                         ))}
                         <button type="button" className="text-xs text-blue-600 mt-1"
-                          onClick={() => setVariants(prev => [...prev, { size: '', color: '', stock: 0, active: true }])}>
+                          onClick={() => setVariants(prev => [...prev, { size: '', color: '', length: '', stock: 0, active: true }])}>
                           + הוסף וריאנט ידנית
                         </button>
                       </div>

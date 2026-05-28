@@ -19,8 +19,10 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
 
   const sizes = Array.isArray(product.available_sizes) ? product.available_sizes.filter(Boolean) : []
   const colors = Array.isArray(product.available_colors) ? product.available_colors.filter(Boolean) : []
+  const lengths = Array.isArray(product.available_lengths) ? product.available_lengths.filter(Boolean) : []
   const hasSizes = sizes.length > 0
   const hasColors = colors.length > 0
+  const hasLengths = lengths.length > 0
 
   // ברירת מחדל: האפשרות המומלצת (⭐) אם יש, אחרת הראשונה
   const [selectedOption, setSelectedOption] = useState(
@@ -28,6 +30,7 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
   )
   const [selectedSize, setSelectedSize] = useState(null)    // חובה לבחור אם hasSizes
   const [selectedColor, setSelectedColor] = useState(null)  // חובה לבחור אם hasColors
+  const [selectedLength, setSelectedLength] = useState(null) // חובה לבחור אם hasLengths
   const [validationError, setValidationError] = useState('')
 
   // רכיבי וריאציה של האפשרות הנבחרת (למשל: תיק + חליפה → רכיב אחד; תיק + סט נו-גי → שני רכיבים)
@@ -41,7 +44,7 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
   // איפוס בחירות הרכיבים כשמשנים אפשרות רכישה
   useEffect(() => {
     if (hasComponents) {
-      setComponentSelections(optionComponents.map(() => ({ size: null, color: null })))
+      setComponentSelections(optionComponents.map(() => ({ size: null, color: null, length: null })))
     } else {
       setComponentSelections([])
     }
@@ -59,7 +62,7 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
   function handleOrderClick() {
     // אם כבר הוזמן - לחיצה = ביטול (לא צריך בדיקת מידה)
     if (alreadyOrdered) {
-      onOrder(product, selectedOption, null, null, null)
+      onOrder(product, selectedOption, null, null, null, null)
       return
     }
     // אם יש רכיבים באפשרות - בדיקה פר-רכיב
@@ -69,6 +72,7 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
         const sel = componentSelections[i] || {}
         const compSizes = Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
         const compColors = Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
+        const compLengths = Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
         if (compSizes.length && !sel.size) {
           setValidationError(`יש לבחור מידה עבור "${comp.name}"`)
           return
@@ -77,12 +81,16 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
           setValidationError(`יש לבחור צבע עבור "${comp.name}"`)
           return
         }
+        if (compLengths.length && !sel.length) {
+          setValidationError(`יש לבחור אורך (ארוך/קצר) עבור "${comp.name}"`)
+          return
+        }
       }
       setValidationError('')
-      onOrder(product, selectedOption, null, null, componentSelections)
+      onOrder(product, selectedOption, null, null, null, componentSelections)
       return
     }
-    // זרימה ישנה - מידה/צבע יחיד ברמת המוצר
+    // זרימה רגילה - מידה/צבע/אורך ברמת המוצר
     if (hasSizes && !selectedSize) {
       setValidationError('יש לבחור מידה')
       return
@@ -91,8 +99,12 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
       setValidationError('יש לבחור צבע')
       return
     }
+    if (hasLengths && !selectedLength) {
+      setValidationError('יש לבחור אורך (ארוך / קצר)')
+      return
+    }
     setValidationError('')
-    onOrder(product, selectedOption, selectedSize, selectedColor, null)
+    onOrder(product, selectedOption, selectedSize, selectedColor, selectedLength, null)
   }
 
   // פונקציית עזר לעדכון בחירה של רכיב ספציפי
@@ -240,12 +252,45 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
         </div>
       )}
 
+      {!hasComponents && hasLengths && (
+        <div role="group" aria-labelledby="length-heading">
+          <div className="flex items-center justify-between mb-2">
+            <h3 id="length-heading" className="font-bold text-sm text-gray-800">📐 בחר אורך</h3>
+            {selectedLength && (
+              <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedLength}</span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {lengths.map(len => {
+              const isSelected = selectedLength === len
+              return (
+                <button
+                  key={len}
+                  type="button"
+                  aria-pressed={isSelected}
+                  aria-label={`אורך ${len}`}
+                  onClick={() => { setSelectedLength(len); setValidationError('') }}
+                  className={`py-2 px-6 rounded-xl border-2 text-sm font-bold transition ${
+                    isSelected
+                      ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                  }`}
+                >
+                  {len}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* בחירת מידה/צבע פר-רכיב - כשהאפשרות הנבחרת מכילה רכיבים */}
       {hasComponents && (
         <div className="space-y-4">
           {optionComponents.map((comp, idx) => {
             const compSizes = Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
             const compColors = Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
+            const compLengths = Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
             const sel = componentSelections[idx] || {}
             return (
               <div key={idx} className="bg-gradient-to-br from-blue-50 to-emerald-50 border border-blue-200 rounded-xl p-3 space-y-3">
@@ -307,6 +352,36 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
                             }`}
                           >
                             {color}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+                {/* אורך לרכיב */}
+                {compLengths.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-gray-700">📐 אורך</span>
+                      {sel.length && <span className="text-xs text-emerald-600 font-bold">{sel.length}</span>}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {compLengths.map(len => {
+                        const isSelected = sel.length === len
+                        return (
+                          <button
+                            key={len}
+                            type="button"
+                            aria-pressed={isSelected}
+                            aria-label={`${comp.name} אורך ${len}`}
+                            onClick={() => updateComponentSelection(idx, 'length', len)}
+                            className={`py-1.5 px-4 rounded-lg border-2 text-xs font-bold transition ${
+                              isSelected
+                                ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                            }`}
+                          >
+                            {len}
                           </button>
                         )
                       })}
@@ -377,7 +452,7 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
       {/* סרגל הזמנה */}
       <div className="pt-2 border-t">
         {/* סיכום בחירות */}
-        {!alreadyOrdered && (hasSizes || hasColors || hasOptions || hasComponents) && (
+        {!alreadyOrdered && (hasSizes || hasColors || hasLengths || hasOptions || hasComponents) && (
           <div className="mb-3 p-2.5 bg-gray-50 rounded-xl text-xs text-gray-600 space-y-0.5">
             {hasOptions && selectedOption && (
               <div>📦 אפשרות: <span className="font-bold text-gray-800">{selectedOption.name}</span></div>
@@ -389,12 +464,16 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
             {!hasComponents && hasColors && (
               <div>🎨 צבע: <span className="font-bold text-gray-800">{selectedColor || '— לא נבחר'}</span></div>
             )}
+            {!hasComponents && hasLengths && (
+              <div>📐 אורך: <span className="font-bold text-gray-800">{selectedLength || '— לא נבחר'}</span></div>
+            )}
             {/* סיכום פר-רכיב */}
             {hasComponents && optionComponents.map((comp, i) => {
               const sel = componentSelections[i] || {}
               const parts = []
               if (Array.isArray(comp.sizes) && comp.sizes.length) parts.push(`מידה: ${sel.size || '— לא נבחר'}`)
               if (Array.isArray(comp.colors) && comp.colors.length) parts.push(`צבע: ${sel.color || '— לא נבחר'}`)
+              if (Array.isArray(comp.lengths) && comp.lengths.length) parts.push(`אורך: ${sel.length || '— לא נבחר'}`)
               return (
                 <div key={i}>
                   <span className="font-bold text-gray-800">{comp.name}:</span> {parts.join(' · ')}

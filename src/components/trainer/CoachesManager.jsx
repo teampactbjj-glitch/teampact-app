@@ -688,19 +688,21 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
             <span className="text-gray-500 shrink-0">🗂️ מזכיר/ה:</span>
             {group.isSecretary ? (
               <div className="flex-1 flex flex-wrap items-center gap-2">
-                <span className="bg-pink-100 text-pink-700 px-2 py-0.5 rounded font-bold text-[11px]">
-                  {branches.find(b => b.id === group.secretaryBranchId)?.name || 'סניף לא ידוע'}
+                <span style={{ background: '#7c3aed', color: '#fff' }} className="px-2 py-0.5 rounded font-bold text-[11px]">
+                  🗂 מזכיר/ה — {branches.find(b => b.id === group.secretaryBranchId)?.name || 'סניף לא ידוע'}
                 </span>
                 <button
                   onClick={() => onSetSecretary(false, null)}
                   disabled={!!busyId}
-                  className="text-xs bg-red-600 text-white hover:bg-red-700 px-3 py-1 rounded-lg font-bold disabled:opacity-50"
+                  style={{ background: '#dc2626', color: '#fff', border: 'none' }}
+                  className="text-xs px-3 py-1 rounded-lg font-bold disabled:opacity-50"
                 >🗑 הסר הגדרה</button>
               </div>
             ) : (
               <div className="flex-1 flex flex-wrap items-center gap-2">
                 <select
-                  className="border rounded-lg px-2 py-1 text-xs"
+                  style={{ background: '#fff', color: '#111', border: '1px solid #d1d5db' }}
+                  className="rounded-lg px-2 py-1 text-xs"
                   value={secBranchId}
                   onChange={e => setSecBranchId(e.target.value)}
                 >
@@ -710,8 +712,9 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
                 <button
                   onClick={() => { if (secBranchId) onSetSecretary(true, secBranchId) }}
                   disabled={!secBranchId || !!busyId}
-                  className="text-xs bg-pink-600 text-white hover:bg-pink-700 px-3 py-1 rounded-lg font-bold disabled:opacity-40"
-                >✅ הגדר כמזכיר/ה</button>
+                  style={{ background: '#7c3aed', color: '#fff', border: 'none', opacity: (!secBranchId || !!busyId) ? 0.4 : 1 }}
+                  className="text-xs px-3 py-1 rounded-lg font-bold"
+                >הגדר כמזכיר/ה 🗂</button>
               </div>
             )}
           </div>

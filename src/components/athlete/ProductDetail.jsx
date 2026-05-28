@@ -11,7 +11,28 @@ import { useState, useEffect } from 'react'
  *   alreadyOrdered - בולאני: האם המוצר כבר הוזמן
  *   ordering       - בולאני: האם כרגע בתהליך הזמנה (לבטל כפתור)
  */
-export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered, ordering }) {
+export default function ProductDetail({ product, variants = [], onBack, onOrder, alreadyOrdered, ordering }) {
+  // variants = מערך וריאנטים מה-DB עם stock. אם ריק = אין מידע מלאי, מציגים הכל
+  const hasVariantData = variants.length > 0
+
+  // פונקציות עזר לבדיקת מלאי
+  const sizeHasStock = (size) =>
+    !hasVariantData || variants.some(v => v.size === size && (v.stock || 0) > 0)
+
+  const colorHasStock = (color, forSize = null) =>
+    !hasVariantData || variants.some(v =>
+      v.color === color &&
+      (!forSize || v.size === forSize) &&
+      (v.stock || 0) > 0
+    )
+
+  const lengthHasStock = (len, forSize = null, forColor = null) =>
+    !hasVariantData || variants.some(v =>
+      v.length === len &&
+      (!forSize || v.size === forSize) &&
+      (!forColor || v.color === forColor) &&
+      (v.stock || 0) > 0
+    )
   const options = Array.isArray(product.purchase_options)
     ? product.purchase_options.filter(o => o && (o.name || o.price != null))
     : []
@@ -199,20 +220,25 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
           <div className="flex flex-wrap gap-2">
             {sizes.map(size => {
               const isSelected = selectedSize === size
+              const inStock = sizeHasStock(size)
               return (
                 <button
                   key={size}
                   type="button"
                   aria-pressed={isSelected}
-                  aria-label={`מידה ${size}`}
-                  onClick={() => { setSelectedSize(size); setValidationError('') }}
-                  className={`min-w-[52px] py-2 px-3 rounded-xl border-2 text-sm font-bold transition ${
-                    isSelected
-                      ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                  aria-label={`מידה ${size}${!inStock ? ' - אזל המלאי' : ''}`}
+                  disabled={!inStock}
+                  onClick={() => { setSelectedSize(size); setSelectedColor(null); setSelectedLength(null); setValidationError('') }}
+                  className={`min-w-[52px] py-2 px-3 rounded-xl border-2 text-sm font-bold transition relative ${
+                    !inStock
+                      ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                      : isSelected
+                        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
                   }`}
                 >
                   {size}
+                  {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
                 </button>
               )
             })}
@@ -231,20 +257,25 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
           <div className="flex flex-wrap gap-2">
             {colors.map(color => {
               const isSelected = selectedColor === color
+              const inStock = colorHasStock(color, selectedSize)
               return (
                 <button
                   key={color}
                   type="button"
                   aria-pressed={isSelected}
-                  aria-label={`צבע ${color}`}
-                  onClick={() => { setSelectedColor(color); setValidationError('') }}
+                  aria-label={`צבע ${color}${!inStock ? ' - אזל' : ''}`}
+                  disabled={!inStock}
+                  onClick={() => { setSelectedColor(color); setSelectedLength(null); setValidationError('') }}
                   className={`py-2 px-4 rounded-xl border-2 text-sm font-bold transition ${
-                    isSelected
-                      ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                    !inStock
+                      ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                      : isSelected
+                        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
                   }`}
                 >
                   {color}
+                  {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
                 </button>
               )
             })}
@@ -263,20 +294,25 @@ export default function ProductDetail({ product, onBack, onOrder, alreadyOrdered
           <div className="flex flex-wrap gap-2">
             {lengths.map(len => {
               const isSelected = selectedLength === len
+              const inStock = lengthHasStock(len, selectedSize, selectedColor)
               return (
                 <button
                   key={len}
                   type="button"
                   aria-pressed={isSelected}
-                  aria-label={`אורך ${len}`}
+                  aria-label={`אורך ${len}${!inStock ? ' - אזל' : ''}`}
+                  disabled={!inStock}
                   onClick={() => { setSelectedLength(len); setValidationError('') }}
                   className={`py-2 px-6 rounded-xl border-2 text-sm font-bold transition ${
-                    isSelected
-                      ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                    !inStock
+                      ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                      : isSelected
+                        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
                   }`}
                 >
                   {len}
+                  {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
                 </button>
               )
             })}

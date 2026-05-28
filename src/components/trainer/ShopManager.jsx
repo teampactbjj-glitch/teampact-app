@@ -75,6 +75,12 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   const [loading, setLoading] = useState(true)
   const [hasDraft, setHasDraft] = useState(false)  // האם יש טיוטה שמורה ב-localStorage
 
+  // מלאי - טאב ניהול מלאי
+  const [inventoryData, setInventoryData] = useState({})      // { [productId]: variants[] }
+  const [inventoryExpanded, setInventoryExpanded] = useState(null) // product id שפתוח
+  const [inventoryLoading, setInventoryLoading] = useState(false)
+  const [inventorySaving, setInventorySaving] = useState(false)
+
   // בדיקה בעת טעינה ראשונית - האם יש טיוטה לא שמורה של מוצר חדש?
   useEffect(() => {
     const draft = readDraft()
@@ -189,6 +195,50 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     const pending = merged.filter(o => o.status === 'pending').length
     onOrdersChange?.(pending)
     setLoading(false)
+  }
+
+  // ─── ניהול מלאי ───────────────────────────────────────────────
+  async function loadInventory(productId) {
+    if (inventoryData[productId]) {
+      // כבר טעון - פשוט פתח/סגור
+      setInventoryExpanded(prev => prev === productId ? null : productId)
+      return
+    }
+    setInventoryLoading(true)
+    setInventoryExpanded(productId)
+    const { data } = await supabase
+      .from('product_variants')
+      .select('*')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: true })
+    setInventoryData(prev => ({ ...prev, [productId]: data || [] }))
+    setInventoryLoading(false)
+  }
+
+  function updateInventoryStock(productId, variantId, newStock) {
+    setInventoryData(prev => ({
+      ...prev,
+      [productId]: (prev[productId] || []).map(v =>
+        v.id === variantId ? { ...v, stock: newStock } : v
+      )
+    }))
+  }
+
+  async function saveInventory(productId) {
+    const vars = inventoryData[productId] || []
+    if (!vars.length) return
+    setInventorySaving(true)
+    let hasError = false
+    for (const v of vars) {
+      const { error } = await supabase
+        .from('product_variants')
+        .update({ stock: parseInt(v.stock) || 0 })
+        .eq('id', v.id)
+      if (error) { hasError = true; break }
+    }
+    setInventorySaving(false)
+    if (hasError) toast.error('שגיאה בשמירת המלאי')
+    else toast.success('המלאי עודכן בהצלחה ✓')
   }
 
   async function deleteProduct(id) {
@@ -393,14 +443,18 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   return (
     <div className="space-y-4">
       {isAdmin && (
-        <div className="flex gap-2 border-b pb-2">
+        <div className="flex gap-2 border-b pb-2 flex-wrap">
           <button onClick={() => setTab('orders')}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium ${tab === 'orders' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === 'orders' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
             בקשות הזמנה {orders.filter(o => o.status === 'pending').length > 0 && `(${orders.filter(o => o.status === 'pending').length})`}
           </button>
           <button onClick={() => setTab('products')}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium ${tab === 'products' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === 'products' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
             מוצרים
+          </button>
+          <button onClick={() => setTab('inventory')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === 'inventory' ? 'bg-emerald-600 text-white' : 'text-gray-500'}`}>
+            📦 מלאי
           </button>
         </div>
       )}
@@ -492,6 +546,152 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* ─── טאב מלאי ─── */}
+      {tab === 'inventory' && (
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500 text-center">לחץ על מוצר כדי לראות ולעדכן את המלאי שלו</p>
+          {products.filter(p => p.has_variants).length === 0 && (
+            <div className="text-center py-10 text-gray-400">
+              <div className="text-3xl mb-2">📦</div>
+              <p>אין מוצרים עם וריאנטים עדיין</p>
+              <p className="text-xs mt-1">עבור למוצרים וסמן "למוצר יש מידות / צבעים"</p>
+            </div>
+          )}
+          {products.filter(p => p.has_variants).map(product => {
+            const isOpen = inventoryExpanded === product.id
+            const vars = inventoryData[product.id] || []
+            const totalStock = vars.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
+            return (
+              <div key={product.id} className="bg-white border rounded-xl shadow-sm overflow-hidden">
+                {/* כותרת מוצר */}
+                <button
+                  type="button"
+                  onClick={() => loadInventory(product.id)}
+                  className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition text-right"
+                >
+                  {product.image_url && (
+                    <img src={product.image_url} alt={product.title}
+                      className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-800">{product.title}</p>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {(product.available_colors || []).map(c => (
+                        <span key={c} className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">{c}</span>
+                      ))}
+                      {(product.available_lengths || []).map(l => (
+                        <span key={l} className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">{l}</span>
+                      ))}
+                      {(product.available_sizes || []).map(s => (
+                        <span key={s} className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{s}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex-shrink-0 text-left">
+                    {inventoryData[product.id] && (
+                      <div className={`text-sm font-bold ${totalStock > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {totalStock} יח׳
+                      </div>
+                    )}
+                    <span className="text-gray-400 text-lg">{isOpen ? '▲' : '▼'}</span>
+                  </div>
+                </button>
+
+                {/* טבלת מלאי */}
+                {isOpen && (
+                  <div className="border-t px-4 pb-4 pt-3">
+                    {inventoryLoading && !inventoryData[product.id] ? (
+                      <p className="text-center text-gray-400 text-sm py-4">טוען...</p>
+                    ) : vars.length === 0 ? (
+                      <div className="text-center py-6 text-gray-400">
+                        <p className="text-sm">אין וריאנטים — עבור לעריכת המוצר ולחץ "צור מטריצת וריאנטים"</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm min-w-[300px]">
+                            <thead>
+                              <tr className="text-[10px] text-gray-500 font-bold border-b">
+                                {vars.some(v => v.size) && <th className="text-right pb-1 pr-2">מידה</th>}
+                                {vars.some(v => v.color) && <th className="text-right pb-1 pr-2">צבע</th>}
+                                {vars.some(v => v.length) && <th className="text-right pb-1 pr-2">אורך</th>}
+                                <th className="text-right pb-1 pr-2">במלאי</th>
+                                <th className="pb-1"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {vars.map(v => {
+                                const stock = parseInt(v.stock) || 0
+                                return (
+                                  <tr key={v.id} className="border-b border-gray-50">
+                                    {vars.some(x => x.size) && (
+                                      <td className="py-1.5 pr-2">
+                                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-medium">
+                                          {v.size || '—'}
+                                        </span>
+                                      </td>
+                                    )}
+                                    {vars.some(x => x.color) && (
+                                      <td className="py-1.5 pr-2">
+                                        <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded font-medium">
+                                          {v.color || '—'}
+                                        </span>
+                                      </td>
+                                    )}
+                                    {vars.some(x => x.length) && (
+                                      <td className="py-1.5 pr-2">
+                                        <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-medium">
+                                          {v.length || '—'}
+                                        </span>
+                                      </td>
+                                    )}
+                                    <td className="py-1.5 pr-2">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={v.stock ?? 0}
+                                        onChange={e => updateInventoryStock(product.id, v.id, e.target.value)}
+                                        className={`w-16 border rounded px-2 py-1 text-sm text-center font-bold ${
+                                          stock === 0 ? 'border-red-200 bg-red-50 text-red-600' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                        }`}
+                                      />
+                                    </td>
+                                    <td className="py-1.5 pl-1">
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                        stock === 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'
+                                      }`}>
+                                        {stock === 0 ? 'אזל' : 'יש'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="flex justify-between items-center mt-3 pt-2 border-t">
+                          <span className="text-xs text-gray-500">
+                            סה״כ: <span className="font-bold text-gray-700">{totalStock} יחידות</span>
+                          </span>
+                          <button
+                            type="button"
+                            disabled={inventorySaving}
+                            onClick={() => saveInventory(product.id)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-50"
+                          >
+                            {inventorySaving ? 'שומר...' : '💾 שמור מלאי'}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 

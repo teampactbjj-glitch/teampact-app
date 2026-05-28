@@ -599,11 +599,23 @@ function ShopTab({ profile, member, allAnnouncements }) {
   })
   const [orderingId, setOrderingId] = useState(null)
   const [selectedProductId, setSelectedProductId] = useState(null)  // איזה מוצר פתוח בדף פירוט
+  const [selectedProductVariants, setSelectedProductVariants] = useState([]) // וריאנטים של המוצר הנבחר
 
   useEffect(() => {
     if (!storageKey) return
     try { localStorage.setItem(storageKey, JSON.stringify([...ordered])) } catch {}
   }, [ordered, storageKey])
+
+  // טעינת וריאנטים (מלאי) כשפותחים מוצר
+  useEffect(() => {
+    if (!selectedProductId) { setSelectedProductVariants([]); return }
+    supabase
+      .from('product_variants')
+      .select('id, size, color, length, stock, active')
+      .eq('product_id', selectedProductId)
+      .eq('active', true)
+      .then(({ data }) => setSelectedProductVariants(data || []))
+  }, [selectedProductId])
 
   useEffect(() => {
     if (!profile?.id || products.length === 0) return
@@ -739,10 +751,10 @@ function ShopTab({ profile, member, allAnnouncements }) {
     return (
       <ProductDetail
         product={selectedProduct}
+        variants={selectedProductVariants}
         onBack={() => setSelectedProductId(null)}
         onOrder={async (product, option, size, color, length, componentSelections) => {
           await handleOrder(product, option, size, color, length, componentSelections)
-          // לאחר הזמנה/ביטול מוצלחים - נשארים בדף הפירוט (כדי שהמתאמן יראה את הסטטוס המתעדכן)
         }}
         alreadyOrdered={ordered.has(selectedProduct.id)}
         ordering={orderingId === selectedProduct.id}

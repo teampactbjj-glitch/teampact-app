@@ -247,6 +247,10 @@ export default function App() {
   if (profile?.role === 'trainer' && profile?.is_approved === false) {
     return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><PendingApprovalScreen /></>)
   }
+  // מזכירה — לפני בדיקת מאמן רגיל כדי שתקבל את הממשק שלה
+  if (profile?.role === 'trainer' && profile?.is_secretary && profile?.secretary_branch_id) {
+    return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><TrainerDashboard profile={profile} isAdmin={false} isSecretary={true} secretaryBranchId={profile.secretary_branch_id} /></>)
+  }
   if (profile?.role === 'trainer') return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} /></>)
   if (memberStatus === 'pending') return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><PendingApprovalScreen /></>)
   return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><AthleteDashboard profile={profile} /></>)

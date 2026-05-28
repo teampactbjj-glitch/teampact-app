@@ -69,8 +69,8 @@ function RegisterLinkCard() {
   )
 }
 
-export default function TrainerDashboard({ profile, isAdmin }) {
-  const [activeTab, setActiveTab]       = useState('schedule')
+export default function TrainerDashboard({ profile, isAdmin, isSecretary = false, secretaryBranchId = null }) {
+  const [activeTab, setActiveTab]       = useState(isSecretary ? 'athletes' : 'schedule')
   const [leadsCount, setLeadsCount]     = useState(0)
   const [ordersCount, setOrdersCount]   = useState(0)
   const [requestsCount, setRequestsCount] = useState(0)
@@ -245,7 +245,9 @@ export default function TrainerDashboard({ profile, isAdmin }) {
 
   // hash → tab (מאפשר ניווט מהתראת push)
   useEffect(() => {
-    const TAB_HASHES = ['schedule', 'athletes', 'reports', 'coaches', 'shop', 'announcements', 'profile']
+    const TAB_HASHES = isSecretary
+      ? ['athletes', 'announcements', 'profile']
+      : ['schedule', 'athletes', 'reports', 'coaches', 'shop', 'announcements', 'profile']
     function syncFromHash() {
       const h = (window.location.hash || '').replace('#', '')
       if (TAB_HASHES.includes(h)) setActiveTab(h)
@@ -407,11 +409,17 @@ export default function TrainerDashboard({ profile, isAdmin }) {
           <div>
             <div className="flex items-center gap-2 leading-none">
               <h1 className="font-black text-lg tracking-wide">TeamPact</h1>
-              {isAdmin && (
+              {isAdmin && !isSecretary && (
                 <span className="text-xs bg-yellow-400 text-yellow-900 font-semibold px-2 py-0.5 rounded-full">מנהל</span>
               )}
+              {isSecretary && (
+                <span className="text-xs bg-pink-400 text-pink-900 font-semibold px-2 py-0.5 rounded-full">מזכירה</span>
+              )}
             </div>
-            <p className="text-gray-300 text-xs mt-0.5">{isAdmin ? 'מנהל מערכת' : 'מאמן'}: <span className="font-bold text-white">{profile?.full_name}</span></p>
+            <p className="text-gray-300 text-xs mt-0.5">
+              {isSecretary ? 'מזכירה' : isAdmin ? 'מנהל מערכת' : 'מאמן'}:{' '}
+              <span className="font-bold text-white">{profile?.full_name}</span>
+            </p>
           </div>
         </div>
       </header>
@@ -430,15 +438,16 @@ export default function TrainerDashboard({ profile, isAdmin }) {
             <div className="space-y-6">
               <AthleteManagement
                 trainerId={profile?.id}
-                isAdmin={isAdmin}
+                isAdmin={isAdmin || isSecretary}
+                branchFilter={isSecretary ? secretaryBranchId : undefined}
                 hideSchedule
                 stackedLayout
-                registerLinkCard={<RegisterLinkCard />}
+                registerLinkCard={isSecretary ? null : <RegisterLinkCard />}
                 extraTop={
                   requestsCount > 0 ? (
                     <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
                       <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי מנוי ({requestsCount})</h3>
-                      <ProfileChangeRequests onChange={refreshCounts} />
+                      <ProfileChangeRequests onChange={refreshCounts} branchFilter={isSecretary ? secretaryBranchId : null} />
                     </div>
                   ) : null
                 }
@@ -470,6 +479,7 @@ export default function TrainerDashboard({ profile, isAdmin }) {
         onTabChange={setActiveTab}
         isTrainer={true}
         isAdmin={isAdmin}
+        isSecretary={isSecretary}
         leadsCount={leadsCount + athleteDeletionCount}
         ordersCount={ordersCount}
         pendingCount={requestsCount}

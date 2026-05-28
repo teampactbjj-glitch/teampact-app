@@ -5,7 +5,7 @@ import { getBeltLabel } from '../../lib/belts'
 
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
-export default function ProfileChangeRequests({ onChange }) {
+export default function ProfileChangeRequests({ onChange, branchFilter = null }) {
   const toast = useToast()
   const [requests, setRequests] = useState([])
   const [branchesMap, setBranchesMap] = useState({})
@@ -36,7 +36,17 @@ export default function ProfileChangeRequests({ onChange }) {
       ;(members || []).forEach(m => { mMap[m.id] = m })
     }
     setMembersMap(mMap)
-    setRequests(data || [])
+    // סינון לפי סניף (למזכירה שיש לה branchFilter)
+    const allRequests = data || []
+    const filtered = branchFilter
+      ? allRequests.filter(r => {
+          const m = mMap[r.athlete_id]
+          if (!m) return false
+          const bids = Array.isArray(m.branch_ids) && m.branch_ids.length > 0 ? m.branch_ids : (m.branch_id ? [m.branch_id] : [])
+          return bids.includes(branchFilter)
+        })
+      : allRequests
+    setRequests(filtered)
     setLoading(false)
   }
 

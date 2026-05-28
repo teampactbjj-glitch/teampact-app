@@ -1,5 +1,11 @@
-export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin = false, pendingCount = 0, leadsCount = 0, ordersCount = 0, announcementsCount = 0, scheduleCount = 0, coachesCount = 0 }) {
-  const tabs = isTrainer
+export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin = false, isSecretary = false, pendingCount = 0, leadsCount = 0, ordersCount = 0, announcementsCount = 0, scheduleCount = 0, coachesCount = 0 }) {
+  const tabs = isSecretary
+    ? [
+        { id: 'athletes',      icon: '👥', label: 'מתאמנים' },
+        { id: 'announcements', icon: '📢', label: 'הודעות' },
+        { id: 'profile',       icon: '👤', label: 'פרופיל' },
+      ]
+    : isTrainer
     ? [
         { id: 'schedule',      icon: '📅', label: 'לו״ז' },
         { id: 'athletes',      icon: '👥', label: 'מתאמנים' },
@@ -34,9 +40,9 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
         // חישוב מספר ההתראות לטאב הזה (לבניית aria-label תיאורי)
         let badgeCount = 0
         let badgeColor = null
-        if (tab.id === 'schedule' && isTrainer && scheduleCount > 0) { badgeCount = scheduleCount; badgeColor = 'red' }
-        else if (tab.id === 'shop' && isTrainer && ordersCount > 0) { badgeCount = ordersCount; badgeColor = 'red' }
-        else if (tab.id === 'athletes' && isTrainer && (leadsCount + pendingCount) > 0) { badgeCount = leadsCount + pendingCount; badgeColor = 'orange' }
+        if (tab.id === 'schedule' && isTrainer && !isSecretary && scheduleCount > 0) { badgeCount = scheduleCount; badgeColor = 'red' }
+        else if (tab.id === 'shop' && isTrainer && !isSecretary && ordersCount > 0) { badgeCount = ordersCount; badgeColor = 'red' }
+        else if (tab.id === 'athletes' && (isTrainer || isSecretary) && (leadsCount + pendingCount) > 0) { badgeCount = leadsCount + pendingCount; badgeColor = 'orange' }
         else if (tab.id === 'announcements' && announcementsCount > 0) { badgeCount = announcementsCount; badgeColor = 'red' }
         else if (tab.id === 'coaches' && isAdmin && coachesCount > 0) { badgeCount = coachesCount; badgeColor = 'orange' }
 

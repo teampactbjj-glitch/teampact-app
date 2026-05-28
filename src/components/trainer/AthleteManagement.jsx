@@ -153,9 +153,15 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
       return false
     }
 
-    setPendingAthletes((pendingData || []).filter(m => matchesAllowed(m) && matchesPendingCoach(m)))
-    setPendingDeletions((deletionData || []).filter(matchesAllowed))
-    setAthletes((data || []).filter(matchesAllowed))
+    // matchesBranch — מסנן לפי branchFilter (למזכירה: רק מתאמנים מסניפה)
+    const matchesBranch = (m) => {
+      if (!branchFilter) return true
+      const bids = m.branch_ids?.length ? m.branch_ids : (m.branch_id ? [m.branch_id] : [])
+      return bids.includes(branchFilter)
+    }
+    setPendingAthletes((pendingData || []).filter(m => matchesAllowed(m) && matchesPendingCoach(m) && matchesBranch(m)))
+    setPendingDeletions((deletionData || []).filter(m => matchesAllowed(m) && matchesBranch(m)))
+    setAthletes((data || []).filter(m => matchesAllowed(m) && matchesBranch(m)))
     setLoading(false)
   }
 

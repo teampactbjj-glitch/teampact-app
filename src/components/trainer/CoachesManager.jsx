@@ -28,6 +28,7 @@ export default function CoachesManager({ profile, onChange }) {
   const [replacing, setReplacing] = useState(null) // { fromCoach, toCoachId, scope: 'all'|'branch' }
   const [classCounts, setClassCounts] = useState({}) // { coach_id: count }
   const [phoneByUserId, setPhoneByUserId] = useState({}) // { user_id: phone }
+  const [secretaryByUserId, setSecretaryByUserId] = useState({}) // { user_id: { is_secretary, secretary_branch_id } }
 
   useEffect(() => { fetchAll() }, [])
 
@@ -56,10 +57,10 @@ export default function CoachesManager({ profile, onChange }) {
         .order('name'),
       supabase.from('branches').select('id, name').order('name'),
       supabase.from('classes').select('coach_id').is('deleted_at', null),
-      // טלפונים של כל המאמנים המאושרים — לקישור לפי user_id
+      // פרטי מאמנים מאושרים — טלפון + מזכיר/ה
       supabase
         .from('profiles')
-        .select('id, phone')
+        .select('id, phone, is_secretary, secretary_branch_id')
         .eq('role', 'trainer')
         .eq('is_approved', true),
     ])
@@ -73,10 +74,15 @@ export default function CoachesManager({ profile, onChange }) {
       counts[c.coach_id] = (counts[c.coach_id] || 0) + 1
     })
     setClassCounts(counts)
-    // מיפוי user_id → phone
+    // מיפוי user_id → phone + secretary
     const phones = {}
-    ;(trainerProfilesRes.data || []).forEach(p => { phones[p.id] = p.phone || '' })
+    const secMap = {}
+    ;(trainerProfilesRes.data || []).forEach(p => {
+      phones[p.id] = p.phone || ''
+      secMap[p.id] = { is_secretary: !!p.is_secretary, secretary_branch_id: p.secretary_branch_id || null }
+    })
     setPhoneByUserId(phones)
+    setSecretaryByUserId(secMap)
     setLoading(false)
     if (typeof onChange === 'function') onChange()
   }
@@ -91,7 +97,7 @@ export default function CoachesManager({ profile, onChange }) {
     const map = new Map()
     for (const c of coaches) {
       const key = c.name
-      if (!map.has(key)) map.set(key, { name: c.name, rows: [], totalClasses: 0, hasUser: false, userId: null, phone: '' })
+      if (!map.has(key)) map.set(key, { name: c.name, rows: [], totalClasses: 0, hasUser: false, userId: null, phone: '', isSecretary: false, secretaryBranchId: null })
       const g = map.get(key)
       g.rows.push(c)
       g.totalClasses += classCounts[c.id] || 0
@@ -99,6 +105,8 @@ export default function CoachesManager({ profile, onChange }) {
         g.hasUser = true
         if (!g.userId) g.userId = c.user_id
         if (!g.phone) g.phone = phoneByUserId[c.user_id] || ''
+        const sec = secretaryByUserId[c.user_id]
+        if (sec) { g.isSecretary = sec.is_secretary; g.secretaryBranchId = sec.secretary_branch_id }
       }
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'he'))
@@ -130,6 +138,24 @@ export default function CoachesManager({ profile, onChange }) {
       return
     }
     showMsg('ok', trimmed ? 'הטלפון עודכן' : 'הטלפון הוסר')
+    fetchAll()
+  }
+
+  // ---------- עדכון סטטוס מזכיר/ה ----------
+  async function setSecretaryStatus(userId, isSecretary, branchId) {
+    if (!userId) { showMsg('err', 'אין משתמש מקושר — לא ניתן לעדכן'); return }
+    if (isSecretary && !branchId) { showMsg('err', 'חובה לבחור סניף למזכיר/ה'); return }
+    setBusyId(`sec:${userId}`)
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        is_secretary: isSecretary,
+        secretary_branch_id: isSecretary ? branchId : null,
+      })
+      .eq('id', userId)
+    setBusyId(null)
+    if (error) { showMsg('err', error.message); return }
+    showMsg('ok', isSecretary ? '✅ הוגדר/ה כמזכיר/ה בהצלחה' : 'הוסרה הגדרת מזכיר/ה')
     fetchAll()
   }
 
@@ -478,6 +504,7 @@ export default function CoachesManager({ profile, onChange }) {
                 onRemoveBranch={(coachId) => deleteCoachRow(coachId)}
                 onStartReplaceAll={() => setReplacing({ fromGroup: group, toCoachId: '', scope: 'all' })}
                 onUpdatePhone={(newPhone) => updateCoachPhone(group.userId, newPhone)}
+                onSetSecretary={(isSec, branchId) => setSecretaryStatus(group.userId, isSec, branchId)}
               />
             ))}
           </div>
@@ -527,13 +554,14 @@ export default function CoachesManager({ profile, onChange }) {
 }
 
 // ---------- שורת קבוצת מאמן (מאוחד לפי שם) ----------
-function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAddBranch, onRemoveBranch, onStartReplaceAll, onUpdatePhone }) {
+function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAddBranch, onRemoveBranch, onStartReplaceAll, onUpdatePhone, onSetSecretary }) {
   const [renaming, setRenaming] = useState(false)
   const [newName, setNewName] = useState(group.name)
   const [adding, setAdding] = useState(false)
   const [newBranchId, setNewBranchId] = useState('')
   const [editingPhone, setEditingPhone] = useState(false)
   const [phoneDraft, setPhoneDraft] = useState(group.phone || '')
+  const [secBranchId, setSecBranchId] = useState(group.secretaryBranchId || '')
 
   const groupBusy = busyId === `group:${group.name}`
   const phoneBusy = busyId === `phone:${group.userId}`
@@ -650,6 +678,43 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
               >{group.phone ? 'ערוך' : '+ הוסף'}</button>
             </>
           )}
+        </div>
+      )}
+
+      {/* מזכיר/ה — רק אם המאמן מחובר */}
+      {group.hasUser && (
+        <div className="mb-2 border-t pt-2">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-500 shrink-0">🗂️ מזכיר/ה:</span>
+            {group.isSecretary ? (
+              <div className="flex-1 flex flex-wrap items-center gap-2">
+                <span className="bg-pink-100 text-pink-700 px-2 py-0.5 rounded font-bold text-[11px]">
+                  {branches.find(b => b.id === group.secretaryBranchId)?.name || 'סניף לא ידוע'}
+                </span>
+                <button
+                  onClick={() => onSetSecretary(false, null)}
+                  disabled={!!busyId}
+                  className="text-[11px] bg-red-50 text-red-600 hover:bg-red-100 px-2 py-0.5 rounded font-medium disabled:opacity-50"
+                >הסר הגדרה</button>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-wrap items-center gap-2">
+                <select
+                  className="border rounded-lg px-2 py-1 text-xs"
+                  value={secBranchId}
+                  onChange={e => setSecBranchId(e.target.value)}
+                >
+                  <option value="">בחר סניף</option>
+                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+                <button
+                  onClick={() => { if (secBranchId) onSetSecretary(true, secBranchId) }}
+                  disabled={!secBranchId || !!busyId}
+                  className="text-[11px] bg-pink-50 text-pink-700 hover:bg-pink-100 px-2 py-0.5 rounded font-bold disabled:opacity-40"
+                >הגדר כמזכיר/ה</button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

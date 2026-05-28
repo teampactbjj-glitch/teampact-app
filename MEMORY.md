@@ -1,31 +1,38 @@
 # MEMORY - TeamPact App
 
-## 🚨 Session 25.05.2026 — Supabase Egress Crisis Round 2
+## ✅ Session 25.05.2026 — מיגרציה מלאה ל-Cloudinary (COMPLETED)
 
-### מצב דחוף
-- קיבלנו מייל נוסף מ-Supabase: **11.71 GB מתוך 5.5 GB** — חריגה של 213%
-- **Deadline: 27 מאי 2026** — שירות יחסם ויחזיר שגיאות 402
+### הבעיה שטופלה
+- Supabase egress: **11.71 GB מתוך 5.5 GB** — חריגה של 213%, Deadline 27.05.2026
+- דודי שדרג ל-Supabase Pro (חודש אחד) למנוע חסימה
 
-### למה התיקון של מאי 9 לא עבד מספיק
-- `cacheControl: '31536000'` עוזר לדפדפן לא לטעון שוב — אבל כל משתמש חדש/מכשיר חדש עדיין מוריד מהשרת
-- תמונות הודעות ישנות לא הועלו מחדש — אין להן cache header
-- Supabase מודד כל ה-bandwidth מה-CDN, גם cache hits
+### פתרון קבוע שבוצע — Cloudinary
+כל העלאות התמונות הועברו מ-Supabase Storage ל-**Cloudinary** (free tier, 25GB/חודש, ללא egress):
 
-### תיקונים שבוצעו ב-25.05.2026
-- **`loading="lazy"`** נוסף לכל `<img>` בממשק המתאמן:
-  - `AthleteDashboard.jsx` (שורות 567, 762)
-  - `ProductDetail.jsx` (שורה 126)
-- **דחיסת תמונה לפני upload** נוסף לשני הקבצים:
-  - `AnnouncementsManager.jsx` — פונקציה `compressImage()` לפני upload (max 1200px, 82% quality → JPEG)
-  - `ShopManager.jsx` — אותה פונקציה
-- קומיט מוכן לדחיפה: `"perf: add lazy loading to images + compress before upload"`
+**קבצים ששונו:**
+- `src/lib/cloudinary.js` — ספרייה חדשה (cloud: `ds09n9hlm`, preset: `teampact_unsigned`)
+- `src/components/trainer/AnnouncementsManager.jsx` — `uploadImage()` עכשיו מעלה ל-Cloudinary
+- `src/components/trainer/ShopManager.jsx` — אותו שינוי
+- `src/components/athlete/AthleteDashboard.jsx` — `loading="lazy"` לכל תמונות
+- `src/components/athlete/ProductDetail.jsx` — `loading="lazy"`
 
-### ⚠️ מה דודי חייב לעשות עכשיו (לא ניתן לעשות אוטומטית)
-1. **PUSH** — תריץ `rm -f .git/HEAD.lock && git commit -m "..." && git push origin main` (ראה בתשובה)
-2. **שדרג ל-Supabase Pro** OR המתן לראות אם Supabase מקבל את הצמצום — אבל **Pro הוא הפתרון היחיד המובטח ל-27 מאי**
+**מיגרציה של תמונות קיימות:**
+- סקריפט: `scripts/migrate-images-to-cloudinary.mjs`
+- תוצאה: **7/7 תמונות הועברו בהצלחה ל-Cloudinary**, אפס כשלונות
+- אחרי המיגרציה: אפס URLs של Supabase Storage ב-DB
+
+**קומיטים:**
+- `5a53c18` — lazy loading + compress
+- `178e52b` — Cloudinary migration (הקוד + הסקריפט)
+
+### מצב נוכחי
+- ✅ תמונות חדשות → Cloudinary בלבד
+- ✅ תמונות ישנות → הועברו ל-Cloudinary
+- ✅ Supabase Storage — לא בשימוש יותר
+- ⚠️ Supabase Pro פעיל עד סוף החודש (ניתן לבטל אחרי 1 ביוני)
 
 ### My last pending task
-דחיפת הקומיט — נחסמה ע"י git lock file. דודי צריך להריץ ידנית. הקוד עצמו מוכן בקבצים.
+הכל הושלם. אין משימות פתוחות. מחודש הבא אפס egress על תמונות.
 
 ---
 

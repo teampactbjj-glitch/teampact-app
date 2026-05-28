@@ -143,18 +143,25 @@ export default function CoachesManager({ profile, onChange }) {
 
   // ---------- עדכון סטטוס מזכיר/ה ----------
   async function setSecretaryStatus(userId, isSecretary, branchId) {
+    console.log('[secretary] setSecretaryStatus called', { userId, isSecretary, branchId })
     if (!userId) { showMsg('err', 'אין משתמש מקושר — לא ניתן לעדכן'); return }
     if (isSecretary && !branchId) { showMsg('err', 'חובה לבחור סניף למזכיר/ה'); return }
     setBusyId(`sec:${userId}`)
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .update({
         is_secretary: isSecretary,
         secretary_branch_id: isSecretary ? branchId : null,
       })
       .eq('id', userId)
+      .select('id, is_secretary, secretary_branch_id')
+    console.log('[secretary] update result', { data, error })
     setBusyId(null)
     if (error) { showMsg('err', error.message); return }
+    if (!data || data.length === 0) {
+      showMsg('err', 'לא עודכן — ייתכן בעיית הרשאות (RLS). פנה למפתח.')
+      return
+    }
     showMsg('ok', isSecretary ? '✅ הוגדר/ה כמזכיר/ה בהצלחה' : 'הוסרה הגדרת מזכיר/ה')
     fetchAll()
   }

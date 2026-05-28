@@ -80,6 +80,8 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   const [inventoryExpanded, setInventoryExpanded] = useState(null) // product id שפתוח
   const [inventoryLoading, setInventoryLoading] = useState(false)
   const [inventorySaving, setInventorySaving] = useState(false)
+  const [localSetup, setLocalSetup] = useState({})
+  // { [productId]: { colors:[], lengths:[], sizes:[], newSize:'' } }
 
   // בדיקה בעת טעינה ראשונית - האם יש טיוטה לא שמורה של מוצר חדש?
   useEffect(() => {
@@ -198,20 +200,43 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   }
 
   // ─── ניהול מלאי ───────────────────────────────────────────────
-  async function loadInventory(productId) {
-    if (inventoryData[productId]) {
-      // כבר טעון - פשוט פתח/סגור
-      setInventoryExpanded(prev => prev === productId ? null : productId)
-      return
+
+  function getSetup(product) {
+    return localSetup[product.id] || {
+      colors: product.available_colors || [],
+      lengths: product.available_lengths || [],
+      sizes: product.available_sizes || [],
+      newSize: '',
     }
+  }
+
+  function patchSetup(productId, patch) {
+    setLocalSetup(prev => ({
+      ...prev,
+      [productId]: { ...(prev[productId] || {}), ...patch }
+    }))
+  }
+
+  async function loadInventory(product) {
+    const pid = product.id
+    // פתח/סגור toggle
+    if (inventoryExpanded === pid) { setInventoryExpanded(null); return }
+    setInventoryExpanded(pid)
+    // אתחל setup מקומי אם עוד לא הוגדר
+    if (!localSetup[pid]) {
+      patchSetup(pid, {
+        colors: product.available_colors || [],
+        lengths: product.available_lengths || [],
+        sizes: product.available_sizes || [],
+        newSize: '',
+      })
+    }
+    if (inventoryData[pid]) return  // כבר טעון
     setInventoryLoading(true)
-    setInventoryExpanded(productId)
     const { data } = await supabase
-      .from('product_variants')
-      .select('*')
-      .eq('product_id', productId)
-      .order('created_at', { ascending: true })
-    setInventoryData(prev => ({ ...prev, [productId]: data || [] }))
+      .from('product_variants').select('*')
+      .eq('product_id', pid).order('created_at', { ascending: true })
+    setInventoryData(prev => ({ ...prev, [pid]: data || [] }))
     setInventoryLoading(false)
   }
 
@@ -224,6 +249,54 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     }))
   }
 
+  async function generateInventoryMatrix(product) {
+    const setup = getSetup(product)
+    const sizes = setup.sizes.length ? setup.sizes : [null]
+    const colors = setup.colors.length ? setup.colors : [null]
+    const lengths = setup.lengths.length ? setup.lengths : [null]
+
+    setInventoryLoading(true)
+
+    // עדכון המוצר עצמו (has_variants + available_*)
+    await supabase.from('announcements').update({
+      has_variants: true,
+      available_colors: setup.colors,
+      available_lengths: setup.lengths,
+      available_sizes: setup.sizes,
+    }).eq('id', product.id)
+
+    // טעינת וריאנטים קיימים
+    const { data: existing } = await supabase
+      .from('product_variants').select('*').eq('product_id', product.id)
+
+    // יצירת שילובים חסרים בלבד
+    const toInsert = []
+    for (const size of sizes) {
+      for (const color of colors) {
+        for (const length of lengths) {
+          const exists = (existing || []).find(v =>
+            (v.size || null) === size &&
+            (v.color || null) === color &&
+            (v.length || null) === length
+          )
+          if (!exists) toInsert.push({ product_id: product.id, size, color, length, stock: 0, active: true })
+        }
+      }
+    }
+    if (toInsert.length) await supabase.from('product_variants').insert(toInsert)
+
+    // טעינה מחדש
+    const { data } = await supabase
+      .from('product_variants').select('*')
+      .eq('product_id', product.id).order('created_at', { ascending: true })
+    setInventoryData(prev => ({ ...prev, [product.id]: data || [] }))
+    setProducts(prev => prev.map(p => p.id === product.id
+      ? { ...p, has_variants: true, available_colors: setup.colors, available_lengths: setup.lengths, available_sizes: setup.sizes }
+      : p))
+    setInventoryLoading(false)
+    toast.success(toInsert.length ? `נוצרו ${toInsert.length} שילובים חדשים ✓` : 'הטבלה עדכנית ✓')
+  }
+
   async function saveInventory(productId) {
     const vars = inventoryData[productId] || []
     if (!vars.length) return
@@ -231,14 +304,12 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     let hasError = false
     for (const v of vars) {
       const { error } = await supabase
-        .from('product_variants')
-        .update({ stock: parseInt(v.stock) || 0 })
-        .eq('id', v.id)
+        .from('product_variants').update({ stock: parseInt(v.stock) || 0 }).eq('id', v.id)
       if (error) { hasError = true; break }
     }
     setInventorySaving(false)
     if (hasError) toast.error('שגיאה בשמירת המלאי')
-    else toast.success('המלאי עודכן בהצלחה ✓')
+    else toast.success('המלאי עודכן ✓')
   }
 
   async function deleteProduct(id) {
@@ -552,118 +623,214 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       {/* ─── טאב מלאי ─── */}
       {tab === 'inventory' && (
         <div className="space-y-3">
-          <p className="text-xs text-gray-500 text-center">לחץ על מוצר כדי לראות ולעדכן את המלאי שלו</p>
-          {products.filter(p => p.has_variants).length === 0 && (
+          <p className="text-xs text-gray-500 text-center bg-blue-50 rounded-lg px-3 py-2">
+            לחץ על מוצר → הגדר צבעים/אורך/מידות → "צור טבלה" → מלא כמויות → שמור
+          </p>
+          {products.length === 0 && (
             <div className="text-center py-10 text-gray-400">
               <div className="text-3xl mb-2">📦</div>
-              <p>אין מוצרים עם וריאנטים עדיין</p>
-              <p className="text-xs mt-1">עבור למוצרים וסמן "למוצר יש מידות / צבעים"</p>
+              <p>אין מוצרים עדיין</p>
             </div>
           )}
-          {products.filter(p => p.has_variants).map(product => {
+          {products.map(product => {
             const isOpen = inventoryExpanded === product.id
             const vars = inventoryData[product.id] || []
             const totalStock = vars.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
+            const setup = getSetup(product)
+            const hasVars = vars.length > 0
+
             return (
               <div key={product.id} className="bg-white border rounded-xl shadow-sm overflow-hidden">
-                {/* כותרת מוצר */}
-                <button
-                  type="button"
-                  onClick={() => loadInventory(product.id)}
-                  className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition text-right"
-                >
+                {/* ─ כותרת מוצר ─ */}
+                <button type="button" onClick={() => loadInventory(product)}
+                  className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 transition text-right">
                   {product.image_url && (
                     <img src={product.image_url} alt={product.title}
-                      className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                      className="w-11 h-11 rounded-lg object-cover flex-shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-gray-800">{product.title}</p>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {(product.available_colors || []).map(c => (
-                        <span key={c} className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">{c}</span>
-                      ))}
-                      {(product.available_lengths || []).map(l => (
-                        <span key={l} className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">{l}</span>
-                      ))}
-                      {(product.available_sizes || []).map(s => (
-                        <span key={s} className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{s}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex-shrink-0 text-left">
-                    {inventoryData[product.id] && (
-                      <div className={`text-sm font-bold ${totalStock > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {totalStock} יח׳
-                      </div>
+                    <p className="font-bold text-gray-800 text-sm">{product.title}</p>
+                    {hasVars && (
+                      <p className={`text-xs font-medium mt-0.5 ${totalStock > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {totalStock > 0 ? `✓ ${totalStock} יחידות במלאי` : '⚠️ כל המלאי אזל'}
+                      </p>
                     )}
-                    <span className="text-gray-400 text-lg">{isOpen ? '▲' : '▼'}</span>
+                    {!hasVars && inventoryData[product.id] && (
+                      <p className="text-xs text-amber-600">טרם הוגדר מלאי — פתח והגדר</p>
+                    )}
                   </div>
+                  <span className="text-gray-400 text-base flex-shrink-0">{isOpen ? '▲' : '▼'}</span>
                 </button>
 
-                {/* טבלת מלאי */}
+                {/* ─ תוכן מורחב ─ */}
                 {isOpen && (
-                  <div className="border-t px-4 pb-4 pt-3">
-                    {inventoryLoading && !inventoryData[product.id] ? (
-                      <p className="text-center text-gray-400 text-sm py-4">טוען...</p>
-                    ) : vars.length === 0 ? (
-                      <div className="text-center py-6 text-gray-400">
-                        <p className="text-sm">אין וריאנטים — עבור לעריכת המוצר ולחץ "צור מטריצת וריאנטים"</p>
+                  <div className="border-t px-4 pb-5 pt-4 space-y-4">
+
+                    {/* הגדרת שילובים */}
+                    <div className="bg-gray-50 rounded-xl p-3 space-y-3">
+                      <p className="text-xs font-bold text-gray-700">שלב 1 — הגדר את השילובים:</p>
+
+                      {/* צבעים */}
+                      <div>
+                        <label className="text-xs text-gray-600 block mb-1.5">🎨 צבעים (בחר כל הצבעים הקיימים)</label>
+                        <div className="flex gap-2 flex-wrap">
+                          {['שחור', 'לבן'].map(color => {
+                            const sel = setup.colors.includes(color)
+                            return (
+                              <button key={color} type="button"
+                                onClick={() => patchSetup(product.id, {
+                                  colors: sel
+                                    ? setup.colors.filter(c => c !== color)
+                                    : [...setup.colors, color]
+                                })}
+                                className={`px-4 py-1.5 rounded-full border-2 text-sm font-bold transition ${
+                                  sel ? 'border-purple-500 bg-purple-500 text-white' : 'border-gray-300 bg-white text-gray-600'
+                                }`}>
+                                {color}
+                              </button>
+                            )
+                          })}
+                          {/* צבע מותאם אישית */}
+                          <input className="border rounded-full px-3 py-1 text-xs w-28"
+                            placeholder="+ צבע אחר"
+                            onKeyDown={e => {
+                              if (['Enter', ','].includes(e.key)) {
+                                e.preventDefault()
+                                const v = e.target.value.trim()
+                                if (v && !setup.colors.includes(v)) patchSetup(product.id, { colors: [...setup.colors, v] })
+                                e.target.value = ''
+                              }
+                            }} />
+                        </div>
+                        {setup.colors.filter(c => !['שחור','לבן'].includes(c)).map(c => (
+                          <span key={c} className="inline-flex items-center gap-1 mt-1 mr-1 bg-purple-100 text-purple-700 rounded-full px-2 py-0.5 text-xs">
+                            {c}
+                            <button type="button" onClick={() => patchSetup(product.id, { colors: setup.colors.filter(x => x !== c) })}>×</button>
+                          </span>
+                        ))}
                       </div>
-                    ) : (
-                      <>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm min-w-[300px]">
-                            <thead>
-                              <tr className="text-[10px] text-gray-500 font-bold border-b">
-                                {vars.some(v => v.size) && <th className="text-right pb-1 pr-2">מידה</th>}
-                                {vars.some(v => v.color) && <th className="text-right pb-1 pr-2">צבע</th>}
-                                {vars.some(v => v.length) && <th className="text-right pb-1 pr-2">אורך</th>}
-                                <th className="text-right pb-1 pr-2">במלאי</th>
-                                <th className="pb-1"></th>
+
+                      {/* אורך */}
+                      <div>
+                        <label className="text-xs text-gray-600 block mb-1.5">📐 אורך (רק אם רלוונטי)</label>
+                        <div className="flex gap-2">
+                          {['ארוך', 'קצר'].map(len => {
+                            const sel = setup.lengths.includes(len)
+                            return (
+                              <button key={len} type="button"
+                                onClick={() => patchSetup(product.id, {
+                                  lengths: sel
+                                    ? setup.lengths.filter(l => l !== len)
+                                    : [...setup.lengths, len]
+                                })}
+                                className={`flex-1 py-1.5 rounded-lg border-2 text-sm font-bold transition ${
+                                  sel ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-gray-300 bg-white text-gray-600'
+                                }`}>
+                                {len}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {setup.lengths.length === 0 && (
+                          <p className="text-[10px] text-gray-400 mt-1">לא נבחר אורך — לא יופיע בטבלה</p>
+                        )}
+                      </div>
+
+                      {/* מידות */}
+                      <div>
+                        <label className="text-xs text-gray-600 block mb-1.5">📏 מידות (הקלד + Enter)</label>
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {setup.sizes.map(s => (
+                            <span key={s} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 rounded-full px-2 py-0.5 text-xs font-medium">
+                              {s}
+                              <button type="button"
+                                onClick={() => patchSetup(product.id, { sizes: setup.sizes.filter(x => x !== s) })}>×</button>
+                            </span>
+                          ))}
+                        </div>
+                        <input className="w-full border rounded-lg px-3 py-1.5 text-sm"
+                          placeholder="לדוגמה: XS ואז Enter, אחר כך S, M, L..."
+                          value={setup.newSize || ''}
+                          onChange={e => patchSetup(product.id, { newSize: e.target.value })}
+                          onKeyDown={e => {
+                            if (['Enter', ',', ' '].includes(e.key)) {
+                              e.preventDefault()
+                              const v = (setup.newSize || '').trim()
+                              if (v && !setup.sizes.includes(v)) patchSetup(product.id, { sizes: [...setup.sizes, v], newSize: '' })
+                              else patchSetup(product.id, { newSize: '' })
+                            }
+                          }}
+                          onBlur={e => {
+                            const v = e.target.value.trim()
+                            if (v && !setup.sizes.includes(v)) patchSetup(product.id, { sizes: [...setup.sizes, v], newSize: '' })
+                          }} />
+                      </div>
+
+                      <button type="button"
+                        disabled={inventoryLoading}
+                        onClick={() => generateInventoryMatrix(product)}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-bold disabled:opacity-50">
+                        {inventoryLoading ? 'יוצר...' : '🔄 שלב 2 — צור / עדכן טבלת מלאי'}
+                      </button>
+                    </div>
+
+                    {/* טבלת מלאי */}
+                    {hasVars && (
+                      <div>
+                        <p className="text-xs font-bold text-gray-700 mb-2">שלב 3 — מלא כמויות ושמור:</p>
+                        <div className="overflow-x-auto rounded-xl border">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-50">
+                              <tr className="text-[11px] text-gray-500 font-bold">
+                                {vars.some(v => v.color) && <th className="text-right py-2 px-3">צבע</th>}
+                                {vars.some(v => v.length) && <th className="text-right py-2 px-3">אורך</th>}
+                                {vars.some(v => v.size) && <th className="text-right py-2 px-3">מידה</th>}
+                                <th className="text-right py-2 px-3">כמות במלאי</th>
+                                <th className="py-2 px-2"></th>
                               </tr>
                             </thead>
                             <tbody>
-                              {vars.map(v => {
+                              {vars.map((v, idx) => {
                                 const stock = parseInt(v.stock) || 0
                                 return (
-                                  <tr key={v.id} className="border-b border-gray-50">
-                                    {vars.some(x => x.size) && (
-                                      <td className="py-1.5 pr-2">
-                                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-medium">
-                                          {v.size || '—'}
-                                        </span>
-                                      </td>
-                                    )}
+                                  <tr key={v.id} className={`border-t ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                                     {vars.some(x => x.color) && (
-                                      <td className="py-1.5 pr-2">
-                                        <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded font-medium">
+                                      <td className="py-2 px-3">
+                                        <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
                                           {v.color || '—'}
                                         </span>
                                       </td>
                                     )}
                                     {vars.some(x => x.length) && (
-                                      <td className="py-1.5 pr-2">
-                                        <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-medium">
+                                      <td className="py-2 px-3">
+                                        <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
                                           {v.length || '—'}
                                         </span>
                                       </td>
                                     )}
-                                    <td className="py-1.5 pr-2">
-                                      <input
-                                        type="number"
-                                        min="0"
+                                    {vars.some(x => x.size) && (
+                                      <td className="py-2 px-3">
+                                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold">
+                                          {v.size || '—'}
+                                        </span>
+                                      </td>
+                                    )}
+                                    <td className="py-2 px-3">
+                                      <input type="number" min="0"
                                         value={v.stock ?? 0}
                                         onChange={e => updateInventoryStock(product.id, v.id, e.target.value)}
-                                        className={`w-16 border rounded px-2 py-1 text-sm text-center font-bold ${
-                                          stock === 0 ? 'border-red-200 bg-red-50 text-red-600' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                        className={`w-20 border-2 rounded-lg px-2 py-1 text-sm text-center font-bold ${
+                                          stock === 0
+                                            ? 'border-red-200 bg-red-50 text-red-600'
+                                            : 'border-emerald-300 bg-emerald-50 text-emerald-700'
                                         }`}
                                       />
                                     </td>
-                                    <td className="py-1.5 pl-1">
-                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                    <td className="py-2 px-2">
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
                                         stock === 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'
                                       }`}>
-                                        {stock === 0 ? 'אזל' : 'יש'}
+                                        {stock === 0 ? 'אזל' : `יש ${stock}`}
                                       </span>
                                     </td>
                                   </tr>
@@ -672,20 +839,24 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                             </tbody>
                           </table>
                         </div>
-                        <div className="flex justify-between items-center mt-3 pt-2 border-t">
+                        <div className="flex justify-between items-center mt-3">
                           <span className="text-xs text-gray-500">
-                            סה״כ: <span className="font-bold text-gray-700">{totalStock} יחידות</span>
+                            סה״כ: <strong className={totalStock > 0 ? 'text-emerald-600' : 'text-red-500'}>
+                              {totalStock} יחידות
+                            </strong>
                           </span>
-                          <button
-                            type="button"
-                            disabled={inventorySaving}
+                          <button type="button" disabled={inventorySaving}
                             onClick={() => saveInventory(product.id)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-50"
-                          >
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2 rounded-xl disabled:opacity-50">
                             {inventorySaving ? 'שומר...' : '💾 שמור מלאי'}
                           </button>
                         </div>
-                      </>
+                      </div>
+                    )}
+                    {!hasVars && inventoryData[product.id] !== undefined && !inventoryLoading && (
+                      <p className="text-center text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
+                        הגדר שילובים למעלה ולחץ "צור טבלה"
+                      </p>
                     )}
                   </div>
                 )}

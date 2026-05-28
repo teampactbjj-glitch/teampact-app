@@ -683,41 +683,38 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
 
       {/* מזכיר/ה — רק אם המאמן מחובר */}
       {group.hasUser && (
-        <div className="mb-2 border-t pt-2">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-gray-500 shrink-0">🗂️ מזכיר/ה:</span>
-            {group.isSecretary ? (
-              <div className="flex-1 flex flex-wrap items-center gap-2">
-                <span style={{ background: '#7c3aed', color: '#fff' }} className="px-2 py-0.5 rounded font-bold text-[11px]">
-                  🗂 מזכיר/ה — {branches.find(b => b.id === group.secretaryBranchId)?.name || 'סניף לא ידוע'}
-                </span>
-                <button
-                  onClick={() => onSetSecretary(false, null)}
-                  disabled={!!busyId}
-                  style={{ background: '#dc2626', color: '#fff', border: 'none' }}
-                  className="text-xs px-3 py-1 rounded-lg font-bold disabled:opacity-50"
-                >🗑 הסר הגדרה</button>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-wrap items-center gap-2">
-                <select
-                  style={{ background: '#fff', color: '#111', border: '1px solid #d1d5db' }}
-                  className="rounded-lg px-2 py-1 text-xs"
-                  value={secBranchId}
-                  onChange={e => setSecBranchId(e.target.value)}
-                >
-                  <option value="">בחר סניף</option>
-                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-                <button
-                  onClick={() => { if (secBranchId) onSetSecretary(true, secBranchId) }}
-                  disabled={!secBranchId || !!busyId}
-                  style={{ background: '#7c3aed', color: '#fff', border: 'none', opacity: (!secBranchId || !!busyId) ? 0.4 : 1 }}
-                  className="text-xs px-3 py-1 rounded-lg font-bold"
-                >הגדר כמזכיר/ה 🗂</button>
-              </div>
-            )}
-          </div>
+        <div className="mb-2 border-t border-gray-200 pt-2 mt-1">
+          <p className="text-[11px] text-gray-400 mb-1.5 font-medium">הרשאות מזכיר/ה</p>
+          {group.isSecretary ? (
+            <div className="flex items-center justify-between gap-2 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+              <span className="text-xs font-bold text-purple-800">
+                🗂 מזכיר/ה — {branches.find(b => b.id === group.secretaryBranchId)?.name || 'סניף לא ידוע'}
+              </span>
+              <button
+                onClick={() => onSetSecretary(false, null)}
+                disabled={!!busyId}
+                className="text-xs bg-red-600 hover:bg-red-700 active:bg-red-800 text-white px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-50 cursor-pointer"
+              >הסר</button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <select
+                className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                value={secBranchId}
+                onChange={e => setSecBranchId(e.target.value)}
+              >
+                <option value="">— בחר סניף —</option>
+                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <button
+                onClick={() => { if (secBranchId) onSetSecretary(true, secBranchId) }}
+                disabled={!secBranchId || !!busyId}
+                className="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {busyId ? '...' : 'הגדר כמזכיר/ה'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

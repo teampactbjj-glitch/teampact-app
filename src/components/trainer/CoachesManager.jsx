@@ -694,8 +694,8 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
                 <button
                   onClick={() => onSetSecretary(false, null)}
                   disabled={!!busyId}
-                  className="text-[11px] bg-red-50 text-red-600 hover:bg-red-100 px-2 py-0.5 rounded font-medium disabled:opacity-50"
-                >הסר הגדרה</button>
+                  className="text-xs bg-red-600 text-white hover:bg-red-700 px-3 py-1 rounded-lg font-bold disabled:opacity-50"
+                >🗑 הסר הגדרה</button>
               </div>
             ) : (
               <div className="flex-1 flex flex-wrap items-center gap-2">
@@ -710,8 +710,8 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
                 <button
                   onClick={() => { if (secBranchId) onSetSecretary(true, secBranchId) }}
                   disabled={!secBranchId || !!busyId}
-                  className="text-[11px] bg-pink-50 text-pink-700 hover:bg-pink-100 px-2 py-0.5 rounded font-bold disabled:opacity-40"
-                >הגדר כמזכיר/ה</button>
+                  className="text-xs bg-pink-600 text-white hover:bg-pink-700 px-3 py-1 rounded-lg font-bold disabled:opacity-40"
+                >✅ הגדר כמזכיר/ה</button>
               </div>
             )}
           </div>

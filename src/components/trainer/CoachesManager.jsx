@@ -569,6 +569,7 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
   const [editingPhone, setEditingPhone] = useState(false)
   const [phoneDraft, setPhoneDraft] = useState(group.phone || '')
   const [secBranchId, setSecBranchId] = useState(group.secretaryBranchId || '')
+  const [secBusy, setSecBusy] = useState(false)
 
   const groupBusy = busyId === `group:${group.name}`
   const phoneBusy = busyId === `phone:${group.userId}`
@@ -698,27 +699,32 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
                 🗂 מזכיר/ה — {branches.find(b => b.id === group.secretaryBranchId)?.name || 'סניף לא ידוע'}
               </span>
               <button
-                onClick={() => onSetSecretary(false, null)}
-                disabled={!!busyId}
-                className="text-xs bg-red-600 hover:bg-red-700 active:bg-red-800 text-white px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-50 cursor-pointer"
-              >הסר</button>
+                onClick={async () => { setSecBusy(true); await onSetSecretary(false, null); setSecBusy(false) }}
+                disabled={secBusy}
+                className="text-xs bg-red-600 hover:bg-red-700 active:bg-red-800 text-white px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-50"
+              >{secBusy ? '...' : 'הסר'}</button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <select
                 className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400"
                 value={secBranchId}
-                onChange={e => setSecBranchId(e.target.value)}
+                onChange={e => { console.log('[secretary] branch selected:', e.target.value); setSecBranchId(e.target.value) }}
               >
                 <option value="">— בחר סניף —</option>
                 {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
               <button
-                onClick={() => { if (secBranchId) onSetSecretary(true, secBranchId) }}
-                disabled={!secBranchId || !!busyId}
-                className="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                onClick={async () => {
+                  if (!secBranchId) return
+                  setSecBusy(true)
+                  await onSetSecretary(true, secBranchId)
+                  setSecBusy(false)
+                }}
+                disabled={!secBranchId || secBusy}
+                className="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {busyId ? '...' : 'הגדר כמזכיר/ה'}
+                {secBusy ? '...' : 'הגדר כמזכיר/ה'}
               </button>
             </div>
           )}

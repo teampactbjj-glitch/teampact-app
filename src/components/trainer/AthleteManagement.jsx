@@ -60,7 +60,7 @@ function endOfMonthDate() {
   return last.toISOString().split('T')[0]
 }
 
-export default function AthleteManagement({ trainerId, isAdmin, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null, stackedLayout = false, extraTop = null }) {
+export default function AthleteManagement({ trainerId, isAdmin, isSecretary = false, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null, stackedLayout = false, extraTop = null }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [athletes, setAthletes] = useState([])
@@ -473,7 +473,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-800">ניהול מתאמנים</h2>
-        {/* הוספה/ייבוא — מנהל בלבד. מאמן רגיל = קריאה בלבד */}
+        {/* הוספה/ייבוא — מנהל ומזכירה. מאמן רגיל = קריאה בלבד */}
         {isAdmin && (
           <div className="flex gap-2 flex-wrap">
             <ImportAthletes onImported={fetchAthletes} isAdmin={isAdmin} />
@@ -829,8 +829,8 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
               <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="חיפוש לפי שם, אימייל..."
                 value={search} onChange={e => setSearch(e.target.value)} />
             )}
-            {/* שורת chips לסינון לפי סניף */}
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+            {/* שורת chips לסינון לפי סניף — נסתר למזכירה (יש לה סניף אחד קבוע) */}
+            <div className={`flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 ${isSecretary ? 'hidden' : ''}`} style={{ scrollbarWidth: 'none' }}>
               <style>{`.branch-chips::-webkit-scrollbar { display: none }`}</style>
               <button type="button" onClick={() => setSelectedBranch('all')}
                 className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
@@ -866,7 +866,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
               )}
             </div>
 
-            {/* סרגל בחירה מרובה — רק למנהל, כי הפעולה היחידה היא מחיקה (Bug 1.3) */}
+            {/* סרגל בחירה מרובה — מנהל ומזכירה */}
             {isAdmin && !loading && finalList.length > 0 && (() => {
               const visibleIds = finalList.map(a => a.id)
               const allSelected = visibleIds.every(id => selectedIds.has(id))
@@ -924,7 +924,7 @@ export default function AthleteManagement({ trainerId, isAdmin, branchFilter = n
                   return (
                     <li key={a.id} className={`px-4 py-3 flex items-center justify-between gap-3 ${checked ? 'bg-blue-50' : ''}`}>
                       <div className="flex items-center gap-3 min-w-0">
-                        {/* תיבת בחירה — רק למנהל (Bug 1.3) */}
+                        {/* תיבת בחירה — מנהל ומזכירה */}
                         {isAdmin && (
                           <input
                             type="checkbox"

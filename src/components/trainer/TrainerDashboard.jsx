@@ -439,6 +439,7 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
               <AthleteManagement
                 trainerId={profile?.id}
                 isAdmin={isAdmin || isSecretary}
+                isSecretary={isSecretary}
                 branchFilter={isSecretary ? secretaryBranchId : undefined}
                 hideSchedule
                 stackedLayout

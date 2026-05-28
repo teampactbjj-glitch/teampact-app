@@ -1,10 +1,21 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
 export default function TrainerProfile({ profile, isAdmin }) {
   const [fullName, setFullName] = useState(profile?.full_name || '')
   const [nameSaving, setNameSaving] = useState(false)
   const [nameMsg, setNameMsg] = useState(null)
+  const [hasPendingName, setHasPendingName] = useState(false)
+
+  useEffect(() => {
+    if (!profile?.id) return
+    supabase.from('profile_change_requests')
+      .select('id')
+      .eq('athlete_id', profile.id)
+      .eq('change_type', 'name')
+      .eq('status', 'pending')
+      .then(({ data }) => setHasPendingName((data || []).length > 0))
+  }, [profile?.id])
 
   const [phone, setPhone] = useState(profile?.phone || '')
   const [phoneSaving, setPhoneSaving] = useState(false)
@@ -17,12 +28,21 @@ export default function TrainerProfile({ profile, isAdmin }) {
 
   async function saveName() {
     setNameMsg(null)
-    if (!fullName.trim()) { setNameMsg({ type: 'err', text: 'שם לא יכול להיות ריק' }); return }
+    const trimmed = fullName.trim()
+    if (!trimmed) { setNameMsg({ type: 'err', text: 'שם לא יכול להיות ריק' }); return }
+    if (trimmed === (profile?.full_name || '').trim()) { setNameMsg({ type: 'err', text: 'השם זהה לשם הנוכחי' }); return }
     setNameSaving(true)
-    const { error } = await supabase.from('profiles').update({ full_name: fullName.trim() }).eq('id', profile.id)
+    const { error } = await supabase.from('profile_change_requests').insert({
+      athlete_id: profile.id,
+      athlete_name: profile.full_name || profile.email,
+      change_type: 'name',
+      current_value: profile.full_name || '',
+      requested_value: trimmed,
+    })
     setNameSaving(false)
     if (error) { setNameMsg({ type: 'err', text: error.message }); return }
-    setNameMsg({ type: 'ok', text: 'השם עודכן — רענן את הדף' })
+    setHasPendingName(true)
+    setNameMsg({ type: 'ok', text: 'הבקשה נשלחה — ממתין לאישור מנהל' })
   }
 
   async function savePhone() {
@@ -78,20 +98,26 @@ export default function TrainerProfile({ profile, isAdmin }) {
       {/* שינוי שם */}
       <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
         <h3 className="font-bold text-gray-800 text-sm">שם מלא</h3>
-        <input
-          className="w-full border rounded-lg px-3 py-2 text-sm"
-          value={fullName}
-          onChange={e => setFullName(e.target.value)}
-          placeholder="שם מלא"
-        />
-        <button onClick={saveName} disabled={nameSaving}
-          className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
-          {nameSaving ? 'שומר...' : 'שמור שם'}
-        </button>
-        {nameMsg && (
-          <p className={`text-xs ${nameMsg.type === 'ok' ? 'text-green-600' : 'text-red-500'}`}>
-            {nameMsg.text}
-          </p>
+        {hasPendingName ? (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">יש בקשת שינוי שם ממתינה לאישור מנהל</p>
+        ) : (
+          <>
+            <input
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              value={fullName}
+              onChange={e => setFullName(e.target.value)}
+              placeholder="שם מלא"
+            />
+            <button onClick={saveName} disabled={nameSaving}
+              className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+              {nameSaving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
+            </button>
+            {nameMsg && (
+              <p className={`text-xs ${nameMsg.type === 'ok' ? 'text-green-600' : 'text-red-500'}`}>
+                {nameMsg.text}
+              </p>
+            )}
+          </>
         )}
       </div>
 

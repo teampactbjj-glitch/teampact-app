@@ -53,7 +53,18 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
   async function approve(req) {
     setProcessingId(req.id)
     let memberError = null
-    if (req.change_type === 'email') {
+    if (req.change_type === 'name') {
+      const newName = req.requested_value
+      // עדכון profiles
+      const { error: profErr } = await supabase.from('profiles').update({ full_name: newName }).eq('id', req.athlete_id)
+      if (profErr) { memberError = profErr }
+      // עדכון members (אם קיים)
+      if (!profErr) {
+        await supabase.from('members').update({ full_name: newName }).eq('id', req.athlete_id)
+        // עדכון coaches (אם קיים)
+        await supabase.from('coaches').update({ name: newName }).eq('user_id', req.athlete_id)
+      }
+    } else if (req.change_type === 'email') {
       const { error } = await supabase.from('members').update({ email: req.requested_value }).eq('id', req.athlete_id)
       memberError = error
     } else if (req.change_type === 'subscription') {
@@ -170,6 +181,7 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
             <div className="flex-1">
               <p className="font-semibold text-gray-800">{displayName}</p>
               <p className="text-sm text-gray-600 mt-1">
+                {req.change_type === 'name' && '✏️ שינוי שם מלא'}
                 {req.change_type === 'email' && '📧 שינוי מייל'}
                 {req.change_type === 'subscription' && '🎫 שינוי מנוי'}
                 {req.change_type === 'belt' && '🥋 בקשת אישור דרגה'}
@@ -187,7 +199,13 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
                   {req.note && <p className="text-gray-600">סיבה: {req.note}</p>}
                 </div>
               )}
-              {!isBelt && req.change_type !== 'membership_freeze' && req.change_type !== 'membership_cancel' && (
+              {req.change_type === 'name' && (
+                <div className="mt-2 text-xs bg-blue-50 border border-blue-200 rounded-lg p-2.5 space-y-1">
+                  <p>שם נוכחי: <span className="line-through text-gray-500">{req.current_value}</span></p>
+                  <p>שם מבוקש: <span className="font-bold text-blue-800">{req.requested_value}</span></p>
+                </div>
+              )}
+              {!isBelt && req.change_type !== 'membership_freeze' && req.change_type !== 'membership_cancel' && req.change_type !== 'name' && (
                 <div className="text-xs text-gray-500 mt-2 space-y-1">
                   <p>מ: <span className="line-through">
                     {req.change_type === 'subscription' ? (SUB_LABELS[req.current_value] || req.current_value) : req.current_value}

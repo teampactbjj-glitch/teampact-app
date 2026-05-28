@@ -804,6 +804,7 @@ function SettingsTab({ profile, member }) {
   const [pendingRequests, setPendingRequests] = useState([])
   // פרטים אישיים
   const [newEmail, setNewEmail] = useState('')
+  const [newName, setNewName] = useState('')
   // אבטחה
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -953,6 +954,21 @@ function SettingsTab({ profile, member }) {
     setNewPassword(''); setConfirmPassword('')
   }
 
+  async function submitNameChange() {
+    const trimmed = newName.trim()
+    if (!trimmed) { toast.error('הזן שם חדש'); return }
+    if (trimmed === athleteName) { toast.error('השם זהה לשם הנוכחי'); return }
+    setSaving(true)
+    const { error } = await supabase.from('profile_change_requests').insert({
+      athlete_id: profile.id, athlete_name: athleteName,
+      change_type: 'name', current_value: athleteName, requested_value: trimmed,
+    })
+    setSaving(false)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    toast.success('בקשת שינוי השם נשלחה למנהל')
+    setNewName(''); loadPending()
+  }
+
   async function submitEmailChange() {
     if (!newEmail || newEmail === profile.email) { toast.error('הזן כתובת מייל חדשה'); return }
     setSaving(true)
@@ -1038,6 +1054,7 @@ function SettingsTab({ profile, member }) {
     setBeltNote(''); setPriorAcademy(''); loadPending()
   }
 
+  const hasPendingName = pendingRequests.some(r => r.change_type === 'name')
   const hasPendingEmail = pendingRequests.some(r => r.change_type === 'email')
   const hasPendingSub = pendingRequests.some(r => r.change_type === 'subscription')
   const hasPendingBelt = pendingRequests.some(r => r.change_type === 'belt')
@@ -1159,7 +1176,22 @@ function SettingsTab({ profile, member }) {
                 <span className="text-sm text-gray-800 font-medium">{member?.phone || '—'}</span>
               </div>
             </div>
-            <p className="text-xs text-gray-400 px-1">לשינוי שם או טלפון — פנה למאמן</p>
+            <div className="space-y-2">
+              <p className="text-xs text-gray-400 px-1">שינוי שם מלא</p>
+              {hasPendingName ? (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">יש בקשת שינוי שם ממתינה לאישור מנהל</p>
+              ) : (
+                <div className="space-y-2">
+                  <input value={newName} onChange={e => setNewName(e.target.value)}
+                    placeholder="הזן שם מלא חדש" className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm" />
+                  <button onClick={submitNameChange} disabled={saving}
+                    className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                    {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
+                  </button>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 px-1">לשינוי טלפון — פנה למאמן</p>
             <div className="space-y-2">
               <p className="text-xs text-gray-400 px-1">שינוי כתובת מייל</p>
               {hasPendingEmail ? (

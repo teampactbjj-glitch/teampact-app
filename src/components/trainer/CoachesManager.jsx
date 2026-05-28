@@ -143,7 +143,6 @@ export default function CoachesManager({ profile, onChange }) {
 
   // ---------- עדכון סטטוס מזכיר/ה ----------
   async function setSecretaryStatus(userId, isSecretary, branchId) {
-    console.log('[secretary] setSecretaryStatus called', { userId, isSecretary, branchId })
     if (!userId) { showMsg('err', 'אין משתמש מקושר — לא ניתן לעדכן'); return }
     if (isSecretary && !branchId) { showMsg('err', 'חובה לבחור סניף למזכיר/ה'); return }
     setBusyId(`sec:${userId}`)
@@ -155,7 +154,6 @@ export default function CoachesManager({ profile, onChange }) {
       })
       .eq('id', userId)
       .select('id, is_secretary, secretary_branch_id')
-    console.log('[secretary] update result', { data, error })
     setBusyId(null)
     if (error) { showMsg('err', error.message); return }
     if (!data || data.length === 0) {
@@ -709,7 +707,7 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
               <select
                 className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400"
                 value={secBranchId}
-                onChange={e => { console.log('[secretary] branch selected:', e.target.value); setSecBranchId(e.target.value) }}
+                onChange={e => setSecBranchId(e.target.value)}
               >
                 <option value="">— בחר סניף —</option>
                 {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}

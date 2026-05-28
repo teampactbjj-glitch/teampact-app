@@ -276,6 +276,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                       name: c.name || '',
                       sizes: Array.isArray(c.sizes) ? c.sizes.filter(Boolean) : [],
                       colors: Array.isArray(c.colors) ? c.colors.filter(Boolean) : [],
+                      lengths: Array.isArray(c.lengths) ? c.lengths.filter(Boolean) : [],
                     }))
                 : [],
             }))
@@ -665,7 +666,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                           onClick={() => setForm(p => ({
                             ...p,
                             purchase_options: p.purchase_options.map((o, i) => i === idx
-                              ? { ...o, components: [...(o.components || []), { name: '', sizes: [], colors: [] }] }
+                              ? { ...o, components: [...(o.components || []), { name: '', sizes: [], colors: [], lengths: [] }] }
                               : o),
                           }))}>
                           + הוסף רכיב
@@ -983,12 +984,16 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                             <button
                               key={len}
                               type="button"
-                              onClick={() => setForm(p => ({
-                                ...p,
-                                available_lengths: isSelected
-                                  ? p.available_lengths.filter(l => l !== len)
-                                  : [...p.available_lengths, len]
-                              }))}
+                              onClick={() => {
+                                const newLengths = isSelected
+                                  ? form.available_lengths.filter(l => l !== len)
+                                  : [...form.available_lengths, len]
+                                setForm(p => ({ ...p, available_lengths: newLengths }))
+                                // הסרה מיידית מהטבלה אם הורדו האורך
+                                if (isSelected) {
+                                  setVariants(prev => prev.filter(v => (v.length || null) !== len))
+                                }
+                              }}
                               className={`flex-1 py-1.5 rounded-lg border-2 text-xs font-bold transition ${
                                 isSelected
                                   ? 'border-indigo-500 bg-indigo-500 text-white'
@@ -1003,9 +1008,14 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                     </div>
 
                     <button type="button" onClick={generateVariantsFromMatrix}
-                      className="w-full bg-blue-600 text-white py-1.5 rounded-lg text-xs">
-                      🔄 צור מטריצת וריאנטים (מידה × צבע × אורך)
+                      className="w-full bg-blue-600 text-white py-1.5 rounded-lg text-xs font-bold">
+                      🔄 צור / עדכן מטריצת וריאנטים (מידה × צבע × אורך)
                     </button>
+                    {variants.length > 0 && (
+                      <p className="text-[10px] text-blue-600 text-center">
+                        שינית מידה/צבע/אורך? לחץ כפתור ↑ לעדכון הטבלה
+                      </p>
+                    )}
 
                     {/* טבלת וריאנטים */}
                     {variants.length > 0 && (

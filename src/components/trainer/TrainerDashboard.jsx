@@ -334,7 +334,7 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
 
   async function refreshCounts() {
     const lastSeen = (lastSeenKey && typeof window !== 'undefined' ? window.localStorage.getItem(lastSeenKey) : '') || ''
-    const [{ count: leads }, { count: orders }, { count: requests }, { data: latest }, { count: unread }] = await Promise.all([
+    const [{ count: leads }, { count: orders }, { count: allRequests }, { data: latest }, { count: unread }] = await Promise.all([
       supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'pending').is('deleted_at', null),
       supabase.from('product_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
@@ -343,26 +343,39 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
     ])
     setLeadsCount(leads || 0)
     setOrdersCount(orders || 0)
-    setRequestsCount(requests || 0)
     setLatestAnnouncementAt(latest?.[0]?.created_at || '')
     setAnnouncementsCount(unread || 0)
 
     // שינויי לו״ז שמחכים לאישור המנהל (שיעור חדש שמאמן הוסיף + בקשות מחיקה)
     if (isAdmin) {
-      // .is('deleted_at', null) מחויב — אחרת שיעורים שנדחו (soft-delete) ימשיכו להיספר
-      // והבאדג' על טאב הלו"ז יראה מספר שכבר לא רלוונטי.
-      const [addsRes, delsRes, athDelRes, coachReqRes] = await Promise.all([
+      const [addsRes, delsRes, athDelRes, coachReqRes, trainerIdsRes] = await Promise.all([
         supabase.from('classes').select('id', { count: 'exact', head: true }).eq('status', 'pending').is('deleted_at', null),
         supabase.from('classes').select('id', { count: 'exact', head: true }).not('deletion_requested_at', 'is', null).is('deleted_at', null),
         supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'pending_deletion').is('deleted_at', null),
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'trainer').eq('is_approved', false),
+        // כל מאמנים — כדי לסנן בקשות שינוי שם שמגיעות מהם
+        supabase.from('profiles').select('id').eq('role', 'trainer'),
       ])
       const adds = addsRes.error ? 0 : (addsRes.count || 0)
       const dels = delsRes.error ? 0 : (delsRes.count || 0)
       setScheduleCount(adds + dels)
       setAthleteDeletionCount(athDelRes.error ? 0 : (athDelRes.count || 0))
-      setPendingCoachesCount(coachReqRes.error ? 0 : (coachReqRes.count || 0))
+
+      // ספירת בקשות שינוי שם ממאמנים (יופיעו בטאב מאמנים, לא מתאמנים)
+      const trainerIds = (trainerIdsRes.data || []).map(p => p.id)
+      let trainerNameCount = 0
+      if (trainerIds.length > 0) {
+        const { count: tnc } = await supabase.from('profile_change_requests')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending')
+          .eq('change_type', 'name')
+          .in('athlete_id', trainerIds)
+        trainerNameCount = tnc || 0
+      }
+      setRequestsCount(Math.max(0, (allRequests || 0) - trainerNameCount))
+      setPendingCoachesCount((coachReqRes.error ? 0 : (coachReqRes.count || 0)) + trainerNameCount)
     } else {
+      setRequestsCount(allRequests || 0)
       setScheduleCount(0)
       setAthleteDeletionCount(0)
       setPendingCoachesCount(0)

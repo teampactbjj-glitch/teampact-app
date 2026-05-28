@@ -29,6 +29,7 @@ export default function CoachesManager({ profile, onChange }) {
   const [classCounts, setClassCounts] = useState({}) // { coach_id: count }
   const [phoneByUserId, setPhoneByUserId] = useState({}) // { user_id: phone }
   const [secretaryByUserId, setSecretaryByUserId] = useState({}) // { user_id: { is_secretary, secretary_branch_id } }
+  const [nameChangeRequests, setNameChangeRequests] = useState([]) // בקשות שינוי שם ממאמנים
 
   useEffect(() => { fetchAll() }, [])
 
@@ -44,7 +45,7 @@ export default function CoachesManager({ profile, onChange }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [pendingRes, coachesRes, branchesRes, classesRes, trainerProfilesRes] = await Promise.all([
+    const [pendingRes, coachesRes, branchesRes, classesRes, trainerProfilesRes, nameChangesRes] = await Promise.all([
       supabase
         .from('profiles')
         .select('id, full_name, email, phone, requested_branch_id, requested_branch_ids, created_at')
@@ -63,6 +64,8 @@ export default function CoachesManager({ profile, onChange }) {
         .select('id, phone, is_secretary, secretary_branch_id')
         .eq('role', 'trainer')
         .eq('is_approved', true),
+      // בקשות שינוי שם ממאמנים
+      supabase.from('profile_change_requests').select('*').eq('change_type', 'name').eq('status', 'pending'),
     ])
     setPendingTrainers(pendingRes.data || [])
     setCoaches(coachesRes.data || [])
@@ -83,6 +86,13 @@ export default function CoachesManager({ profile, onChange }) {
     })
     setPhoneByUserId(phones)
     setSecretaryByUserId(secMap)
+    // בקשות שינוי שם — מסנן רק לפי מאמנים (pending + approved)
+    const allTrainerIds = new Set([
+      ...(pendingRes.data || []).map(p => p.id),
+      ...(trainerProfilesRes.data || []).map(p => p.id),
+      ...(coachesRes.data || []).map(c => c.user_id).filter(Boolean),
+    ])
+    setNameChangeRequests((nameChangesRes.data || []).filter(r => allTrainerIds.has(r.athlete_id)))
     setLoading(false)
     if (typeof onChange === 'function') onChange()
   }
@@ -161,6 +171,29 @@ export default function CoachesManager({ profile, onChange }) {
       return
     }
     showMsg('ok', isSecretary ? '✅ הוגדר/ה כמזכיר/ה בהצלחה' : 'הוסרה הגדרת מזכיר/ה')
+    fetchAll()
+  }
+
+  // ---------- אישור / דחיית בקשת שינוי שם מאמן ----------
+  async function approveNameChange(req) {
+    setBusyId(req.id)
+    const newName = req.requested_value
+    const { error: profErr } = await supabase.from('profiles').update({ full_name: newName }).eq('id', req.athlete_id)
+    if (profErr) { showMsg('err', profErr.message); setBusyId(null); return }
+    await supabase.from('coaches').update({ name: newName }).eq('user_id', req.athlete_id)
+    const { error: reqErr } = await supabase.from('profile_change_requests').update({ status: 'approved' }).eq('id', req.id)
+    if (reqErr) { showMsg('err', reqErr.message); setBusyId(null); return }
+    showMsg('ok', `✅ השם עודכן ל-${newName}`)
+    setBusyId(null)
+    fetchAll()
+  }
+
+  async function rejectNameChange(reqId) {
+    setBusyId(reqId)
+    const { error } = await supabase.from('profile_change_requests').update({ status: 'rejected' }).eq('id', reqId)
+    setBusyId(null)
+    if (error) { showMsg('err', error.message); return }
+    showMsg('ok', 'הבקשה נדחתה')
     fetchAll()
   }
 
@@ -438,6 +471,40 @@ export default function CoachesManager({ profile, onChange }) {
           </div>
         )}
       </section>
+
+      {/* בקשות שינוי שם ממאמנים */}
+      {nameChangeRequests.length > 0 && (
+        <section className="bg-white rounded-2xl shadow-sm border p-4">
+          <h2 className="font-bold text-gray-800 text-base flex items-center gap-2 mb-3">
+            <span>✏️</span>
+            בקשות שינוי שם
+            <span className="bg-blue-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+              {nameChangeRequests.length}
+            </span>
+          </h2>
+          <div className="space-y-2">
+            {nameChangeRequests.map(req => (
+              <div key={req.id} className="border border-blue-200 bg-blue-50 rounded-xl p-3">
+                <p className="font-semibold text-gray-800 text-sm">{req.athlete_name || req.current_value}</p>
+                <div className="text-xs text-gray-600 mt-1 space-y-0.5">
+                  <p>שם נוכחי: <span className="line-through text-gray-500">{req.current_value}</span></p>
+                  <p>שם מבוקש: <span className="font-bold text-blue-800">{req.requested_value}</span></p>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => approveNameChange(req)} disabled={!!busyId}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+                    {busyId === req.id ? '...' : '✓ אשר'}
+                  </button>
+                  <button onClick={() => rejectNameChange(req.id)} disabled={!!busyId}
+                    className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg text-sm font-semibold hover:bg-red-100">
+                    ✗ דחה
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* קישור הרשמה למאמן */}
       <section className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl p-4 shadow-md">

@@ -46,7 +46,12 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
           return bids.includes(branchFilter)
         })
       : allRequests
-    setRequests(filtered)
+    // בקשות שינוי שם ממאמנים מנוהלות בטאב מאמנים (CoachesManager) — מסנן אותן החוצה
+    // זיהוי: אם athlete_id לא קיים ב-members → זה מאמן ולא מתאמן
+    const withoutTrainerNameChanges = filtered.filter(r =>
+      !(r.change_type === 'name' && !mMap[r.athlete_id])
+    )
+    setRequests(withoutTrainerNameChanges)
     setLoading(false)
   }
 

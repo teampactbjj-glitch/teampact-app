@@ -611,7 +611,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
     if (!selectedProductId) { setSelectedProductVariants([]); return }
     supabase
       .from('product_variants')
-      .select('id, size, color, length, stock, active')
+      .select('id, size, color, length, component_name, stock, active')
       .eq('product_id', selectedProductId)
       .eq('active', true)
       .then(({ data }) => setSelectedProductVariants(data || []))

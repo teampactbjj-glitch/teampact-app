@@ -135,17 +135,19 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
     onOrder(product, selectedOption, selectedSize, selectedColor, selectedLength, null)
   }
 
-  // עדכון בחירה ברכיב עם cascade reset (בחירת מידה מאפסת צבע+אורך, בחירת צבע מאפסת אורך)
+  // עדכון בחירה ברכיב — לחיצה חוזרת מבטלת, cascade reset בין שדות
   function updateComponentSelection(index, field, value) {
     setComponentSelections(prev => {
       const next = [...prev]
       const curr = next[index] || {}
       if (field === 'size') {
-        next[index] = { ...curr, size: value, color: null, length: null }
+        const newVal = curr.size === value ? null : value
+        next[index] = { ...curr, size: newVal, color: null, length: null }
       } else if (field === 'color') {
-        next[index] = { ...curr, color: value, length: null }
+        const newVal = curr.color === value ? null : value
+        next[index] = { ...curr, color: newVal, length: null }
       } else {
-        next[index] = { ...curr, [field]: value }
+        next[index] = { ...curr, [field]: curr[field] === value ? null : value }
       }
       return next
     })
@@ -242,7 +244,7 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
                   aria-pressed={isSelected}
                   aria-label={`מידה ${size}${!inStock ? ' - אזל המלאי' : ''}`}
                   disabled={!inStock}
-                  onClick={() => { setSelectedSize(size); setSelectedColor(null); setSelectedLength(null); setValidationError('') }}
+                  onClick={() => { setSelectedSize(isSelected ? null : size); setSelectedColor(null); setSelectedLength(null); setValidationError('') }}
                   className={`min-w-[52px] py-2 px-3 rounded-xl border-2 text-sm font-bold transition relative ${
                     !inStock
                       ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
@@ -279,7 +281,7 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
                   aria-pressed={isSelected}
                   aria-label={`צבע ${color}${!inStock ? ' - אזל' : ''}`}
                   disabled={!inStock}
-                  onClick={() => { setSelectedColor(color); setSelectedLength(null); setValidationError('') }}
+                  onClick={() => { setSelectedColor(isSelected ? null : color); setSelectedLength(null); setValidationError('') }}
                   className={`py-2 px-4 rounded-xl border-2 text-sm font-bold transition ${
                     !inStock
                       ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
@@ -316,7 +318,7 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
                   aria-pressed={isSelected}
                   aria-label={`אורך ${len}${!inStock ? ' - אזל' : ''}`}
                   disabled={!inStock}
-                  onClick={() => { setSelectedLength(len); setValidationError('') }}
+                  onClick={() => { setSelectedLength(isSelected ? null : len); setValidationError('') }}
                   className={`py-2 px-6 rounded-xl border-2 text-sm font-bold transition ${
                     !inStock
                       ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'

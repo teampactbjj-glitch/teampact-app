@@ -201,37 +201,77 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
   // ─── ניהול מלאי ───────────────────────────────────────────────
 
-  function getSetup(product) {
-    return localSetup[product.id] || {
-      colors: product.available_colors || [],
-      lengths: product.available_lengths || [],
-      sizes: product.available_sizes || [],
-      newSize: '',
+  // מחלץ שמות פריטים ייחודיים מה-purchase_options
+  // מחזיר [null] למוצר פשוט, או ['מכנס','ראשגארד'] למוצר עם חבילות
+  function getProductComponents(product) {
+    const names = new Set()
+    if (Array.isArray(product.purchase_options)) {
+      for (const opt of product.purchase_options) {
+        if (Array.isArray(opt.components)) {
+          for (const comp of opt.components) {
+            if (comp && comp.name) names.add(comp.name)
+          }
+        }
+      }
     }
+    return names.size > 0 ? [...names] : [null]
   }
 
-  function patchSetup(productId, patch) {
+  const COMP_KEY_DEFAULT = '__default__'
+
+  function getComponentSetup(productId, compName) {
+    const key = compName || COMP_KEY_DEFAULT
+    return ((localSetup[productId] || {})[key]) || { colors: [], lengths: [], sizes: [], newSize: '' }
+  }
+
+  function patchComponentSetup(productId, compName, patch) {
+    const key = compName || COMP_KEY_DEFAULT
     setLocalSetup(prev => ({
       ...prev,
-      [productId]: { ...(prev[productId] || {}), ...patch }
+      [productId]: {
+        ...(prev[productId] || {}),
+        [key]: { ...((prev[productId] || {})[key] || {}), ...patch }
+      }
     }))
   }
 
   async function loadInventory(product) {
     const pid = product.id
-    // פתח/סגור toggle
     if (inventoryExpanded === pid) { setInventoryExpanded(null); return }
     setInventoryExpanded(pid)
-    // אתחל setup מקומי אם עוד לא הוגדר
+
+    // אתחל setup לכל פריט אם עוד לא הוגדר
     if (!localSetup[pid]) {
-      patchSetup(pid, {
-        colors: product.available_colors || [],
-        lengths: product.available_lengths || [],
-        sizes: product.available_sizes || [],
-        newSize: '',
-      })
+      const comps = getProductComponents(product)
+      const setup = {}
+      for (const comp of comps) {
+        const key = comp || COMP_KEY_DEFAULT
+        if (comp === null) {
+          setup[key] = {
+            colors: product.available_colors || [],
+            lengths: product.available_lengths || [],
+            sizes: product.available_sizes || [],
+            newSize: '',
+          }
+        } else {
+          // מחפש נתוני הפריט ב-purchase_options
+          let compData = null
+          for (const opt of (product.purchase_options || [])) {
+            const found = (opt.components || []).find(c => c && c.name === comp)
+            if (found) { compData = found; break }
+          }
+          setup[key] = {
+            colors: compData?.colors || [],
+            lengths: compData?.lengths || [],
+            sizes: compData?.sizes || [],
+            newSize: '',
+          }
+        }
+      }
+      setLocalSetup(prev => ({ ...prev, [pid]: setup }))
     }
-    if (inventoryData[pid]) return  // כבר טעון
+
+    if (inventoryData[pid]) return
     setInventoryLoading(true)
     const { data } = await supabase
       .from('product_variants').select('*')
@@ -249,25 +289,23 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     }))
   }
 
-  async function generateInventoryMatrix(product) {
-    const setup = getSetup(product)
+  async function generateInventoryMatrix(product, compName) {
+    // compName = null למוצר פשוט, 'מכנס'/'ראשגארד' לפריט ספציפי בחבילה
+    const setup = getComponentSetup(product.id, compName)
     const sizes = setup.sizes.length ? setup.sizes : [null]
     const colors = setup.colors.length ? setup.colors : [null]
     const lengths = setup.lengths.length ? setup.lengths : [null]
 
     setInventoryLoading(true)
 
-    // עדכון המוצר עצמו (has_variants + available_*)
-    await supabase.from('announcements').update({
-      has_variants: true,
-      available_colors: setup.colors,
-      available_lengths: setup.lengths,
-      available_sizes: setup.sizes,
-    }).eq('id', product.id)
+    // עדכון has_variants במוצר
+    await supabase.from('announcements').update({ has_variants: true }).eq('id', product.id)
 
-    // טעינת וריאנטים קיימים
-    const { data: existing } = await supabase
-      .from('product_variants').select('*').eq('product_id', product.id)
+    // טעינת וריאנטים קיימים לפריט הזה בלבד
+    let existingQuery = supabase.from('product_variants').select('*').eq('product_id', product.id)
+    if (compName === null) existingQuery = existingQuery.is('component_name', null)
+    else existingQuery = existingQuery.eq('component_name', compName)
+    const { data: existing } = await existingQuery
 
     // יצירת שילובים חסרים בלבד
     const toInsert = []
@@ -279,20 +317,23 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
             (v.color || null) === color &&
             (v.length || null) === length
           )
-          if (!exists) toInsert.push({ product_id: product.id, size, color, length, stock: 0, active: true })
+          if (!exists) toInsert.push({
+            product_id: product.id,
+            component_name: compName || null,
+            size, color, length,
+            stock: 0, active: true,
+          })
         }
       }
     }
     if (toInsert.length) await supabase.from('product_variants').insert(toInsert)
 
-    // טעינה מחדש
+    // טעינה מחדש של כל הוריאנטים למוצר
     const { data } = await supabase
       .from('product_variants').select('*')
       .eq('product_id', product.id).order('created_at', { ascending: true })
     setInventoryData(prev => ({ ...prev, [product.id]: data || [] }))
-    setProducts(prev => prev.map(p => p.id === product.id
-      ? { ...p, has_variants: true, available_colors: setup.colors, available_lengths: setup.lengths, available_sizes: setup.sizes }
-      : p))
+    setProducts(prev => prev.map(p => p.id === product.id ? { ...p, has_variants: true } : p))
     setInventoryLoading(false)
     toast.success(toInsert.length ? `נוצרו ${toInsert.length} שילובים חדשים ✓` : 'הטבלה עדכנית ✓')
   }
@@ -624,7 +665,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       {tab === 'inventory' && (
         <div className="space-y-3">
           <p className="text-xs text-gray-500 text-center bg-blue-50 rounded-lg px-3 py-2">
-            לחץ על מוצר → הגדר צבעים/אורך/מידות → "צור טבלה" → מלא כמויות → שמור
+            לחץ על מוצר → לכל פריט: הגדר צבעים/אורך/מידות → "צור טבלה" → מלא כמויות → שמור
           </p>
           {products.length === 0 && (
             <div className="text-center py-10 text-gray-400">
@@ -634,10 +675,11 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
           )}
           {products.map(product => {
             const isOpen = inventoryExpanded === product.id
-            const vars = inventoryData[product.id] || []
-            const totalStock = vars.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
-            const setup = getSetup(product)
-            const hasVars = vars.length > 0
+            const allVars = inventoryData[product.id] || []
+            const totalStock = allVars.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
+            const hasAnyVars = allVars.length > 0
+            const comps = getProductComponents(product) // [null] או ['מכנס','ראשגארד']
+            const isMultiComp = comps.length > 1 || comps[0] !== null
 
             return (
               <div key={product.id} className="bg-white border rounded-xl shadow-sm overflow-hidden">
@@ -650,13 +692,18 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-gray-800 text-sm">{product.title}</p>
-                    {hasVars && (
+                    {hasAnyVars && (
                       <p className={`text-xs font-medium mt-0.5 ${totalStock > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                         {totalStock > 0 ? `✓ ${totalStock} יחידות במלאי` : '⚠️ כל המלאי אזל'}
                       </p>
                     )}
-                    {!hasVars && inventoryData[product.id] && (
+                    {!hasAnyVars && inventoryData[product.id] !== undefined && (
                       <p className="text-xs text-amber-600">טרם הוגדר מלאי — פתח והגדר</p>
+                    )}
+                    {isMultiComp && (
+                      <p className="text-[10px] text-blue-500 mt-0.5">
+                        פריטים: {comps.filter(Boolean).join(' · ')}
+                      </p>
                     )}
                   </div>
                   <span className="text-gray-400 text-base flex-shrink-0">{isOpen ? '▲' : '▼'}</span>
@@ -664,199 +711,230 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
                 {/* ─ תוכן מורחב ─ */}
                 {isOpen && (
-                  <div className="border-t px-4 pb-5 pt-4 space-y-4">
-
-                    {/* הגדרת שילובים */}
-                    <div className="bg-gray-50 rounded-xl p-3 space-y-3">
-                      <p className="text-xs font-bold text-gray-700">שלב 1 — הגדר את השילובים:</p>
-
-                      {/* צבעים */}
-                      <div>
-                        <label className="text-xs text-gray-600 block mb-1.5">🎨 צבעים (בחר כל הצבעים הקיימים)</label>
-                        <div className="flex gap-2 flex-wrap">
-                          {['שחור', 'לבן'].map(color => {
-                            const sel = setup.colors.includes(color)
-                            return (
-                              <button key={color} type="button"
-                                onClick={() => patchSetup(product.id, {
-                                  colors: sel
-                                    ? setup.colors.filter(c => c !== color)
-                                    : [...setup.colors, color]
-                                })}
-                                className={`px-4 py-1.5 rounded-full border-2 text-sm font-bold transition ${
-                                  sel ? 'border-purple-500 bg-purple-500 text-white' : 'border-gray-300 bg-white text-gray-600'
-                                }`}>
-                                {color}
-                              </button>
-                            )
-                          })}
-                          {/* צבע מותאם אישית */}
-                          <input className="border rounded-full px-3 py-1 text-xs w-28"
-                            placeholder="+ צבע אחר"
-                            onKeyDown={e => {
-                              if (['Enter', ','].includes(e.key)) {
-                                e.preventDefault()
-                                const v = e.target.value.trim()
-                                if (v && !setup.colors.includes(v)) patchSetup(product.id, { colors: [...setup.colors, v] })
-                                e.target.value = ''
-                              }
-                            }} />
-                        </div>
-                        {setup.colors.filter(c => !['שחור','לבן'].includes(c)).map(c => (
-                          <span key={c} className="inline-flex items-center gap-1 mt-1 mr-1 bg-purple-100 text-purple-700 rounded-full px-2 py-0.5 text-xs">
-                            {c}
-                            <button type="button" onClick={() => patchSetup(product.id, { colors: setup.colors.filter(x => x !== c) })}>×</button>
-                          </span>
-                        ))}
-                      </div>
-
-                      {/* אורך */}
-                      <div>
-                        <label className="text-xs text-gray-600 block mb-1.5">📐 אורך (רק אם רלוונטי)</label>
-                        <div className="flex gap-2">
-                          {['ארוך', 'קצר'].map(len => {
-                            const sel = setup.lengths.includes(len)
-                            return (
-                              <button key={len} type="button"
-                                onClick={() => patchSetup(product.id, {
-                                  lengths: sel
-                                    ? setup.lengths.filter(l => l !== len)
-                                    : [...setup.lengths, len]
-                                })}
-                                className={`flex-1 py-1.5 rounded-lg border-2 text-sm font-bold transition ${
-                                  sel ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-gray-300 bg-white text-gray-600'
-                                }`}>
-                                {len}
-                              </button>
-                            )
-                          })}
-                        </div>
-                        {setup.lengths.length === 0 && (
-                          <p className="text-[10px] text-gray-400 mt-1">לא נבחר אורך — לא יופיע בטבלה</p>
-                        )}
-                      </div>
-
-                      {/* מידות */}
-                      <div>
-                        <label className="text-xs text-gray-600 block mb-1.5">📏 מידות (הקלד + Enter)</label>
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {setup.sizes.map(s => (
-                            <span key={s} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 rounded-full px-2 py-0.5 text-xs font-medium">
-                              {s}
-                              <button type="button"
-                                onClick={() => patchSetup(product.id, { sizes: setup.sizes.filter(x => x !== s) })}>×</button>
-                            </span>
-                          ))}
-                        </div>
-                        <input className="w-full border rounded-lg px-3 py-1.5 text-sm"
-                          placeholder="לדוגמה: XS ואז Enter, אחר כך S, M, L..."
-                          value={setup.newSize || ''}
-                          onChange={e => patchSetup(product.id, { newSize: e.target.value })}
-                          onKeyDown={e => {
-                            if (['Enter', ',', ' '].includes(e.key)) {
-                              e.preventDefault()
-                              const v = (setup.newSize || '').trim()
-                              if (v && !setup.sizes.includes(v)) patchSetup(product.id, { sizes: [...setup.sizes, v], newSize: '' })
-                              else patchSetup(product.id, { newSize: '' })
-                            }
-                          }}
-                          onBlur={e => {
-                            const v = e.target.value.trim()
-                            if (v && !setup.sizes.includes(v)) patchSetup(product.id, { sizes: [...setup.sizes, v], newSize: '' })
-                          }} />
-                      </div>
-
-                      <button type="button"
-                        disabled={inventoryLoading}
-                        onClick={() => generateInventoryMatrix(product)}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-bold disabled:opacity-50">
-                        {inventoryLoading ? 'יוצר...' : '🔄 שלב 2 — צור / עדכן טבלת מלאי'}
-                      </button>
-                    </div>
-
-                    {/* טבלת מלאי */}
-                    {hasVars && (
-                      <div>
-                        <p className="text-xs font-bold text-gray-700 mb-2">שלב 3 — מלא כמויות ושמור:</p>
-                        <div className="overflow-x-auto rounded-xl border">
-                          <table className="w-full text-sm">
-                            <thead className="bg-gray-50">
-                              <tr className="text-[11px] text-gray-500 font-bold">
-                                {vars.some(v => v.color) && <th className="text-right py-2 px-3">צבע</th>}
-                                {vars.some(v => v.length) && <th className="text-right py-2 px-3">אורך</th>}
-                                {vars.some(v => v.size) && <th className="text-right py-2 px-3">מידה</th>}
-                                <th className="text-right py-2 px-3">כמות במלאי</th>
-                                <th className="py-2 px-2"></th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {vars.map((v, idx) => {
-                                const stock = parseInt(v.stock) || 0
-                                return (
-                                  <tr key={v.id} className={`border-t ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                                    {vars.some(x => x.color) && (
-                                      <td className="py-2 px-3">
-                                        <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
-                                          {v.color || '—'}
-                                        </span>
-                                      </td>
-                                    )}
-                                    {vars.some(x => x.length) && (
-                                      <td className="py-2 px-3">
-                                        <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
-                                          {v.length || '—'}
-                                        </span>
-                                      </td>
-                                    )}
-                                    {vars.some(x => x.size) && (
-                                      <td className="py-2 px-3">
-                                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold">
-                                          {v.size || '—'}
-                                        </span>
-                                      </td>
-                                    )}
-                                    <td className="py-2 px-3">
-                                      <input type="number" min="0"
-                                        value={v.stock ?? 0}
-                                        onChange={e => updateInventoryStock(product.id, v.id, e.target.value)}
-                                        className={`w-20 border-2 rounded-lg px-2 py-1 text-sm text-center font-bold ${
-                                          stock === 0
-                                            ? 'border-red-200 bg-red-50 text-red-600'
-                                            : 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                                        }`}
-                                      />
-                                    </td>
-                                    <td className="py-2 px-2">
-                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
-                                        stock === 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'
-                                      }`}>
-                                        {stock === 0 ? 'אזל' : `יש ${stock}`}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                        <div className="flex justify-between items-center mt-3">
-                          <span className="text-xs text-gray-500">
-                            סה״כ: <strong className={totalStock > 0 ? 'text-emerald-600' : 'text-red-500'}>
-                              {totalStock} יחידות
-                            </strong>
-                          </span>
-                          <button type="button" disabled={inventorySaving}
-                            onClick={() => saveInventory(product.id)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2 rounded-xl disabled:opacity-50">
-                            {inventorySaving ? 'שומר...' : '💾 שמור מלאי'}
-                          </button>
-                        </div>
-                      </div>
+                  <div className="border-t px-4 pb-5 pt-4 space-y-5">
+                    {inventoryLoading && (
+                      <p className="text-center text-sm text-gray-400 py-2">טוען...</p>
                     )}
-                    {!hasVars && inventoryData[product.id] !== undefined && !inventoryLoading && (
-                      <p className="text-center text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
-                        הגדר שילובים למעלה ולחץ "צור טבלה"
-                      </p>
+
+                    {/* סעיף לכל פריט (מכנס / ראשגארד / __default__) */}
+                    {comps.map((compName) => {
+                      const setup = getComponentSetup(product.id, compName)
+                      const compVars = allVars.filter(v => (v.component_name || null) === compName)
+                      const compStock = compVars.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
+                      const hasCompVars = compVars.length > 0
+
+                      return (
+                        <div key={compName || '__default__'}
+                          className={isMultiComp ? 'border-2 border-blue-100 rounded-xl p-3 space-y-3 bg-blue-50/30' : 'space-y-3'}>
+
+                          {/* כותרת פריט (רק כשיש כמה פריטים) */}
+                          {isMultiComp && compName && (
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-bold text-sm text-gray-800">📦 {compName}</h4>
+                              {hasCompVars && (
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                                  compStock > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-500'
+                                }`}>
+                                  {compStock > 0 ? `${compStock} יח'` : 'אזל'}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* הגדרת שילובים */}
+                          <div className="bg-gray-50 rounded-xl p-3 space-y-3">
+                            <p className="text-xs font-bold text-gray-700">
+                              {isMultiComp && compName
+                                ? `שלב 1 — הגדר שילובים עבור "${compName}":`
+                                : 'שלב 1 — הגדר את השילובים:'}
+                            </p>
+
+                            {/* צבעים */}
+                            <div>
+                              <label className="text-xs text-gray-600 block mb-1.5">🎨 צבעים</label>
+                              <div className="flex gap-2 flex-wrap">
+                                {['שחור', 'לבן'].map(color => {
+                                  const sel = setup.colors.includes(color)
+                                  return (
+                                    <button key={color} type="button"
+                                      onClick={() => patchComponentSetup(product.id, compName, {
+                                        colors: sel ? setup.colors.filter(c => c !== color) : [...setup.colors, color]
+                                      })}
+                                      className={`px-4 py-1.5 rounded-full border-2 text-sm font-bold transition ${
+                                        sel ? 'border-purple-500 bg-purple-500 text-white' : 'border-gray-300 bg-white text-gray-600'
+                                      }`}>
+                                      {color}
+                                    </button>
+                                  )
+                                })}
+                                <input className="border rounded-full px-3 py-1 text-xs w-28"
+                                  placeholder="+ צבע אחר"
+                                  onKeyDown={e => {
+                                    if (['Enter', ','].includes(e.key)) {
+                                      e.preventDefault()
+                                      const v = e.target.value.trim()
+                                      if (v && !setup.colors.includes(v)) patchComponentSetup(product.id, compName, { colors: [...setup.colors, v] })
+                                      e.target.value = ''
+                                    }
+                                  }} />
+                              </div>
+                              {setup.colors.filter(c => !['שחור','לבן'].includes(c)).map(c => (
+                                <span key={c} className="inline-flex items-center gap-1 mt-1 mr-1 bg-purple-100 text-purple-700 rounded-full px-2 py-0.5 text-xs">
+                                  {c}
+                                  <button type="button" onClick={() => patchComponentSetup(product.id, compName, { colors: setup.colors.filter(x => x !== c) })}>×</button>
+                                </span>
+                              ))}
+                            </div>
+
+                            {/* אורך */}
+                            <div>
+                              <label className="text-xs text-gray-600 block mb-1.5">📐 אורך (רק אם רלוונטי)</label>
+                              <div className="flex gap-2">
+                                {['ארוך', 'קצר'].map(len => {
+                                  const sel = setup.lengths.includes(len)
+                                  return (
+                                    <button key={len} type="button"
+                                      onClick={() => patchComponentSetup(product.id, compName, {
+                                        lengths: sel ? setup.lengths.filter(l => l !== len) : [...setup.lengths, len]
+                                      })}
+                                      className={`flex-1 py-1.5 rounded-lg border-2 text-sm font-bold transition ${
+                                        sel ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-gray-300 bg-white text-gray-600'
+                                      }`}>
+                                      {len}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                              {setup.lengths.length === 0 && (
+                                <p className="text-[10px] text-gray-400 mt-1">לא נבחר אורך — לא יופיע בטבלה</p>
+                              )}
+                            </div>
+
+                            {/* מידות */}
+                            <div>
+                              <label className="text-xs text-gray-600 block mb-1.5">📏 מידות (הקלד + Enter)</label>
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                {setup.sizes.map(s => (
+                                  <span key={s} className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 rounded-full px-2 py-0.5 text-xs font-medium">
+                                    {s}
+                                    <button type="button"
+                                      onClick={() => patchComponentSetup(product.id, compName, { sizes: setup.sizes.filter(x => x !== s) })}>×</button>
+                                  </span>
+                                ))}
+                              </div>
+                              <input className="w-full border rounded-lg px-3 py-1.5 text-sm"
+                                placeholder="לדוגמה: A0 → Enter, A1 → Enter..."
+                                value={setup.newSize || ''}
+                                onChange={e => patchComponentSetup(product.id, compName, { newSize: e.target.value })}
+                                onKeyDown={e => {
+                                  if (['Enter', ',', ' '].includes(e.key)) {
+                                    e.preventDefault()
+                                    const v = (setup.newSize || '').trim()
+                                    if (v && !setup.sizes.includes(v)) patchComponentSetup(product.id, compName, { sizes: [...setup.sizes, v], newSize: '' })
+                                    else patchComponentSetup(product.id, compName, { newSize: '' })
+                                  }
+                                }}
+                                onBlur={e => {
+                                  const v = e.target.value.trim()
+                                  if (v && !setup.sizes.includes(v)) patchComponentSetup(product.id, compName, { sizes: [...setup.sizes, v], newSize: '' })
+                                }} />
+                            </div>
+
+                            <button type="button"
+                              disabled={inventoryLoading}
+                              onClick={() => generateInventoryMatrix(product, compName)}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-bold disabled:opacity-50">
+                              {inventoryLoading ? 'יוצר...' : `🔄 צור / עדכן טבלת מלאי${isMultiComp && compName ? ` — ${compName}` : ''}`}
+                            </button>
+                          </div>
+
+                          {/* טבלת מלאי לפריט */}
+                          {hasCompVars && (
+                            <div>
+                              <p className="text-xs font-bold text-gray-700 mb-2">
+                                {isMultiComp && compName ? `מלאי — ${compName}:` : 'שלב 2 — מלא כמויות:'}
+                              </p>
+                              <div className="overflow-x-auto rounded-xl border">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-gray-50">
+                                    <tr className="text-[11px] text-gray-500 font-bold">
+                                      {compVars.some(v => v.color) && <th className="text-right py-2 px-3">צבע</th>}
+                                      {compVars.some(v => v.length) && <th className="text-right py-2 px-3">אורך</th>}
+                                      {compVars.some(v => v.size) && <th className="text-right py-2 px-3">מידה</th>}
+                                      <th className="text-right py-2 px-3">כמות</th>
+                                      <th className="py-2 px-2"></th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {compVars.map((v, idx) => {
+                                      const stock = parseInt(v.stock) || 0
+                                      return (
+                                        <tr key={v.id} className={`border-t ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                          {compVars.some(x => x.color) && (
+                                            <td className="py-2 px-3">
+                                              <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+                                                {v.color || '—'}
+                                              </span>
+                                            </td>
+                                          )}
+                                          {compVars.some(x => x.length) && (
+                                            <td className="py-2 px-3">
+                                              <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
+                                                {v.length || '—'}
+                                              </span>
+                                            </td>
+                                          )}
+                                          {compVars.some(x => x.size) && (
+                                            <td className="py-2 px-3">
+                                              <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold">
+                                                {v.size || '—'}
+                                              </span>
+                                            </td>
+                                          )}
+                                          <td className="py-2 px-3">
+                                            <input type="number" min="0"
+                                              value={v.stock ?? 0}
+                                              onChange={e => updateInventoryStock(product.id, v.id, e.target.value)}
+                                              className={`w-20 border-2 rounded-lg px-2 py-1 text-sm text-center font-bold ${
+                                                stock === 0
+                                                  ? 'border-red-200 bg-red-50 text-red-600'
+                                                  : 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                              }`}
+                                            />
+                                          </td>
+                                          <td className="py-2 px-2">
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                                              stock === 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'
+                                            }`}>
+                                              {stock === 0 ? 'אזל' : `יש ${stock}`}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {/* כפתור שמירה אחד לכל המוצר */}
+                    {hasAnyVars && (
+                      <div className="flex justify-between items-center pt-2 border-t">
+                        <span className="text-xs text-gray-500">
+                          סה״כ מלאי: <strong className={totalStock > 0 ? 'text-emerald-600' : 'text-red-500'}>
+                            {totalStock} יחידות
+                          </strong>
+                        </span>
+                        <button type="button" disabled={inventorySaving}
+                          onClick={() => saveInventory(product.id)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2 rounded-xl disabled:opacity-50">
+                          {inventorySaving ? 'שומר...' : '💾 שמור מלאי'}
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}

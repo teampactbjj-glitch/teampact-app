@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import * as XLSX from 'xlsx'
 import { supabase } from '../../lib/supabase'
 import { useToast, useConfirm } from '../a11y'
 import { uploadToCloudinary } from '../../lib/cloudinary'
@@ -373,6 +374,65 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     else toast.success('המלאי עודכן ✓')
   }
 
+  const [exportingExcel, setExportingExcel] = useState(false)
+
+  async function exportInventoryToExcel() {
+    setExportingExcel(true)
+    try {
+      // שליפת כל הוריאנטים עם שם המוצר
+      const { data: vars, error } = await supabase
+        .from('product_variants')
+        .select('product_id, component_name, color, length, size, stock, active')
+        .eq('active', true)
+        .order('product_id')
+
+      if (error || !vars?.length) {
+        toast.error('לא נמצאו נתוני מלאי')
+        return
+      }
+
+      // מפה של product_id → שם מוצר (משתמשים ב-products שכבר טעינו)
+      const productMap = {}
+      for (const p of products) productMap[p.id] = p.title
+
+      // בניית שורות לאקסל
+      const rows = vars.map(v => ({
+        'מוצר':    productMap[v.product_id] || v.product_id,
+        'רכיב':    v.component_name || '—',
+        'צבע':     v.color         || '—',
+        'אורך':    v.length        || '—',
+        'מידה':    v.size          || '—',
+        'מלאי':    parseInt(v.stock) || 0,
+        'סטטוס':   (parseInt(v.stock) || 0) > 0 ? 'יש במלאי' : 'אזל',
+      }))
+
+      // יצירת workbook
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(rows, { skipHeader: false })
+
+      // רוחב עמודות
+      ws['!cols'] = [
+        { wch: 30 }, // מוצר
+        { wch: 20 }, // רכיב
+        { wch: 10 }, // צבע
+        { wch: 8  }, // אורך
+        { wch: 8  }, // מידה
+        { wch: 8  }, // מלאי
+        { wch: 12 }, // סטטוס
+      ]
+
+      XLSX.utils.book_append_sheet(wb, ws, 'מלאי')
+
+      const date = new Date().toLocaleDateString('he-IL').replace(/\//g, '-')
+      XLSX.writeFile(wb, `מלאי-TeamPact-${date}.xlsx`)
+      toast.success('קובץ Excel הורד ✓')
+    } catch (e) {
+      toast.error('שגיאה ביצוא')
+    } finally {
+      setExportingExcel(false)
+    }
+  }
+
   async function deleteProduct(id) {
     // אבחון מלא: מחזירים את הרשומה שנמחקה. אם לא חזרה רשומה - המחיקה לא עברה (בד"כ RLS).
     const { data, error } = await supabase.from('announcements').delete().eq('id', id).select()
@@ -718,9 +778,19 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       {/* ─── טאב מלאי ─── */}
       {tab === 'inventory' && (
         <div className="space-y-3">
-          <p className="text-xs text-gray-500 text-center bg-blue-50 rounded-lg px-3 py-2">
-            לחץ על מוצר → בחר פריט → בחר צבע ואורך → מלא כמויות → שמור
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-gray-500 bg-blue-50 rounded-lg px-3 py-2 flex-1 text-center">
+              לחץ על מוצר → בחר פריט → בחר צבע ואורך → מלא כמויות → שמור
+            </p>
+            <button
+              type="button"
+              onClick={exportInventoryToExcel}
+              disabled={exportingExcel}
+              className="flex-shrink-0 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-50 transition whitespace-nowrap"
+            >
+              {exportingExcel ? '⏳ מייצא...' : '📊 יצא לאקסל'}
+            </button>
+          </div>
           {products.length === 0 && (
             <div className="text-center py-10 text-gray-400">
               <div className="text-3xl mb-2">📦</div>

@@ -20,35 +20,40 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
 
   function getCompVars(compName) {
     if (compName === null) {
-      // מוצר פשוט — וריאנטים ללא component_name
-      return variants.filter(v => v.component_name == null)
+      // מוצר פשוט — מנסה קודם וריאנטים ללא component_name
+      const nullVars = variants.filter(v => v.component_name == null)
+      // אם אין → fallback לכל הוריאנטים (וריאנטים שנוצרו בטאב מלאי עם שם פריט)
+      return nullVars.length > 0 ? nullVars : variants
     }
     return variants.filter(v => (v.component_name || null) === compName)
   }
 
-  const sizeHasStock = (size, compName = null) => {
-    const cv = getCompVars(compName)
-    if (cv.length === 0) return true  // אין נתון → זמין
-    return cv.some(v => v.size === size && (v.stock || 0) > 0)
-  }
-
-  const colorHasStock = (color, forSize = null, compName = null) => {
+  // בדיקת זמינות צבע (ללא סינון מידה — צבע הוא הבחירה הראשונה)
+  const colorHasStock = (color, compName = null) => {
     const cv = getCompVars(compName)
     if (cv.length === 0) return true
-    return cv.some(v =>
-      v.color === color &&
-      (!forSize || v.size === forSize) &&
-      (v.stock || 0) > 0
-    )
+    return cv.some(v => v.color === color && (v.stock || 0) > 0)
   }
 
-  const lengthHasStock = (len, forSize = null, forColor = null, compName = null) => {
+  // בדיקת זמינות אורך — מסונן לפי צבע שנבחר
+  const lengthHasStock = (len, forColor = null, compName = null) => {
     const cv = getCompVars(compName)
     if (cv.length === 0) return true
     return cv.some(v =>
       v.length === len &&
-      (!forSize || v.size === forSize) &&
       (!forColor || v.color === forColor) &&
+      (v.stock || 0) > 0
+    )
+  }
+
+  // בדיקת זמינות מידה — מסוננת לפי צבע + אורך שנבחרו
+  const sizeHasStock = (size, forColor = null, forLength = null, compName = null) => {
+    const cv = getCompVars(compName)
+    if (cv.length === 0) return true
+    return cv.some(v =>
+      v.size === size &&
+      (!forColor || v.color === forColor) &&
+      (!forLength || v.length === forLength) &&
       (v.stock || 0) > 0
     )
   }
@@ -236,72 +241,29 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
         </div>
       )}
 
-      {/* בחירת מידה/צבע ברמת המוצר - רק אם אין רכיבים באפשרות הנבחרת */}
-      {!hasComponents && hasSizes && (
-        <div role="group" aria-labelledby="size-heading">
-          <div className="flex items-center justify-between mb-2">
-            <h3 id="size-heading" className="font-bold text-sm text-gray-800">📏 בחר מידה</h3>
-            {selectedSize && (
-              <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedSize}</span>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {sizes.map(size => {
-              const isSelected = selectedSize === size
-              const inStock = sizeHasStock(size)
-              return (
-                <button
-                  key={size}
-                  type="button"
-                  aria-pressed={isSelected}
-                  aria-label={`מידה ${size}${!inStock ? ' - אזל המלאי' : ''}`}
-                  disabled={!inStock}
-                  onClick={() => { setSelectedSize(isSelected ? null : size); setSelectedColor(null); setSelectedLength(null); setValidationError('') }}
-                  className={`min-w-[52px] py-2 px-3 rounded-xl border-2 text-sm font-bold transition relative ${
-                    !inStock
-                      ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                      : isSelected
-                        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
-                  }`}
-                >
-                  {size}
-                  {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      {/* סדר בחירה: צבע ← אורך ← מידה (מסוננת לפי הבחירות) */}
 
+      {/* 1. צבע — ראשון */}
       {!hasComponents && hasColors && (
         <div role="group" aria-labelledby="color-heading">
           <div className="flex items-center justify-between mb-2">
             <h3 id="color-heading" className="font-bold text-sm text-gray-800">🎨 בחר צבע</h3>
-            {selectedColor && (
-              <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedColor}</span>
-            )}
+            {selectedColor && <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedColor}</span>}
           </div>
           <div className="flex flex-wrap gap-2">
             {colors.map(color => {
               const isSelected = selectedColor === color
-              const inStock = colorHasStock(color, selectedSize)
+              const inStock = colorHasStock(color)
               return (
-                <button
-                  key={color}
-                  type="button"
-                  aria-pressed={isSelected}
+                <button key={color} type="button" aria-pressed={isSelected}
                   aria-label={`צבע ${color}${!inStock ? ' - אזל' : ''}`}
                   disabled={!inStock}
-                  onClick={() => { setSelectedColor(isSelected ? null : color); setSelectedLength(null); setValidationError('') }}
-                  className={`py-2 px-4 rounded-xl border-2 text-sm font-bold transition ${
-                    !inStock
-                      ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                      : isSelected
-                        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
-                  }`}
-                >
+                  onClick={() => { setSelectedColor(isSelected ? null : color); setSelectedLength(null); setSelectedSize(null); setValidationError('') }}
+                  className={`py-2 px-5 rounded-xl border-2 text-sm font-bold transition ${
+                    !inStock ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                    : isSelected ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                  }`}>
                   {color}
                   {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
                 </button>
@@ -311,40 +273,69 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
         </div>
       )}
 
+      {/* 2. אורך — שני, מסונן לפי צבע */}
       {!hasComponents && hasLengths && (
         <div role="group" aria-labelledby="length-heading">
           <div className="flex items-center justify-between mb-2">
-            <h3 id="length-heading" className="font-bold text-sm text-gray-800">📐 בחר אורך</h3>
-            {selectedLength && (
-              <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedLength}</span>
-            )}
+            <h3 id="length-heading" className="font-bold text-sm text-gray-800">📐 ארוך / קצר</h3>
+            {selectedLength && <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedLength}</span>}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-2">
             {lengths.map(len => {
               const isSelected = selectedLength === len
-              const inStock = lengthHasStock(len, selectedSize, selectedColor)
+              const inStock = lengthHasStock(len, selectedColor)
               return (
-                <button
-                  key={len}
-                  type="button"
-                  aria-pressed={isSelected}
+                <button key={len} type="button" aria-pressed={isSelected}
                   aria-label={`אורך ${len}${!inStock ? ' - אזל' : ''}`}
                   disabled={!inStock}
-                  onClick={() => { setSelectedLength(isSelected ? null : len); setValidationError('') }}
-                  className={`py-2 px-6 rounded-xl border-2 text-sm font-bold transition ${
-                    !inStock
-                      ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                      : isSelected
-                        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
-                  }`}
-                >
+                  onClick={() => { setSelectedLength(isSelected ? null : len); setSelectedSize(null); setValidationError('') }}
+                  className={`flex-1 py-2 rounded-xl border-2 text-sm font-bold transition ${
+                    !inStock ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                    : isSelected ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                  }`}>
                   {len}
                   {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
                 </button>
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* 3. מידות — אחרון, מסוננות לפי צבע + אורך */}
+      {!hasComponents && hasSizes && (
+        <div role="group" aria-labelledby="size-heading">
+          <div className="flex items-center justify-between mb-2">
+            <h3 id="size-heading" className="font-bold text-sm text-gray-800">📏 בחר מידה</h3>
+            {selectedSize && <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedSize}</span>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {sizes.map(size => {
+              const isSelected = selectedSize === size
+              const inStock = sizeHasStock(size, selectedColor, selectedLength)
+              return (
+                <button key={size} type="button" aria-pressed={isSelected}
+                  aria-label={`מידה ${size}${!inStock ? ' - אזל' : ''}`}
+                  disabled={!inStock}
+                  onClick={() => { setSelectedSize(isSelected ? null : size); setValidationError('') }}
+                  className={`min-w-[52px] py-2 px-3 rounded-xl border-2 text-sm font-bold transition relative ${
+                    !inStock ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                    : isSelected ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                  }`}>
+                  {size}
+                  {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+                </button>
+              )
+            })}
+          </div>
+          {(hasColors && !selectedColor) && (
+            <p className="text-xs text-gray-400 mt-1.5">בחר צבע תחילה לסינון המידות</p>
+          )}
+          {(hasLengths && selectedColor && !selectedLength) && (
+            <p className="text-xs text-gray-400 mt-1.5">בחר ארוך/קצר לסינון המידות</p>
+          )}
         </div>
       )}
 
@@ -382,7 +373,7 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
                     <div className="flex flex-wrap gap-1.5">
                       {compSizes.map(size => {
                         const isSelected = sel.size === size
-                        const inStock = sizeHasStock(size, cName)
+                        const inStock = sizeHasStock(size, sel.color, sel.length, cName)
                         return (
                           <button
                             key={size}
@@ -417,7 +408,7 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
                     <div className="flex flex-wrap gap-1.5">
                       {compColors.map(color => {
                         const isSelected = sel.color === color
-                        const inStock = colorHasStock(color, sel.size, cName)
+                        const inStock = colorHasStock(color, cName)
                         return (
                           <button
                             key={color}
@@ -452,7 +443,7 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
                     <div className="flex flex-wrap gap-1.5">
                       {compLengths.map(len => {
                         const isSelected = sel.length === len
-                        const inStock = lengthHasStock(len, sel.size, sel.color, cName)
+                        const inStock = lengthHasStock(len, sel.color, cName)
                         return (
                           <button
                             key={len}

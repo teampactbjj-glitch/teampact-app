@@ -15,31 +15,43 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
   // variants = מערך וריאנטים מה-DB עם stock. אם ריק = אין מידע מלאי, מציגים הכל
   const hasVariantData = variants.length > 0
 
-  // פונקציות עזר לבדיקת מלאי — תומכות בסינון לפי שם פריט (component_name)
-  // compName=null = בדוק את כל הוריאנטים (מוצר פשוט) או מסנן לפי component_name ספציפי
-  const sizeHasStock = (size, compName = null) =>
-    !hasVariantData || variants.some(v =>
-      v.size === size &&
-      (compName === null ? (v.component_name == null) : (v.component_name || null) === compName) &&
-      (v.stock || 0) > 0
-    )
+  // פונקציות עזר לבדיקת מלאי — מודעות לפריט (component_name)
+  // אם אין וריאנטים לאותו פריט → מציגים הכל כזמין (אין נתון מלאי)
 
-  const colorHasStock = (color, forSize = null, compName = null) =>
-    !hasVariantData || variants.some(v =>
+  function getCompVars(compName) {
+    if (compName === null) {
+      // מוצר פשוט — וריאנטים ללא component_name
+      return variants.filter(v => v.component_name == null)
+    }
+    return variants.filter(v => (v.component_name || null) === compName)
+  }
+
+  const sizeHasStock = (size, compName = null) => {
+    const cv = getCompVars(compName)
+    if (cv.length === 0) return true  // אין נתון → זמין
+    return cv.some(v => v.size === size && (v.stock || 0) > 0)
+  }
+
+  const colorHasStock = (color, forSize = null, compName = null) => {
+    const cv = getCompVars(compName)
+    if (cv.length === 0) return true
+    return cv.some(v =>
       v.color === color &&
       (!forSize || v.size === forSize) &&
-      (compName === null ? (v.component_name == null) : (v.component_name || null) === compName) &&
       (v.stock || 0) > 0
     )
+  }
 
-  const lengthHasStock = (len, forSize = null, forColor = null, compName = null) =>
-    !hasVariantData || variants.some(v =>
+  const lengthHasStock = (len, forSize = null, forColor = null, compName = null) => {
+    const cv = getCompVars(compName)
+    if (cv.length === 0) return true
+    return cv.some(v =>
       v.length === len &&
       (!forSize || v.size === forSize) &&
       (!forColor || v.color === forColor) &&
-      (compName === null ? (v.component_name == null) : (v.component_name || null) === compName) &&
       (v.stock || 0) > 0
     )
+  }
   const options = Array.isArray(product.purchase_options)
     ? product.purchase_options.filter(o => o && (o.name || o.price != null))
     : []
@@ -340,11 +352,20 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
       {hasComponents && (
         <div className="space-y-4">
           {optionComponents.map((comp, idx) => {
-            const compSizes = Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
-            const compColors = Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
-            const compLengths = Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
+            const cName = comp.name || null
+            const cVars = getCompVars(cName)
+            const hasCV = cVars.length > 0
+            // אם יש וריאנטים מהמלאי — שולף מהם; אחרת — הגדרה ידנית מהחבילה
+            const compSizes = hasCV
+              ? [...new Set(cVars.map(v => v.size).filter(Boolean))]
+              : Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
+            const compColors = hasCV
+              ? [...new Set(cVars.map(v => v.color).filter(Boolean))]
+              : Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
+            const compLengths = hasCV
+              ? [...new Set(cVars.map(v => v.length).filter(Boolean))]
+              : Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
             const sel = componentSelections[idx] || {}
-            const cName = comp.name || null  // שם הפריט לסינון מלאי
             return (
               <div key={idx} className="bg-gradient-to-br from-blue-50 to-emerald-50 border border-blue-200 rounded-xl p-3 space-y-3">
                 <h3 className="font-bold text-sm text-gray-800 flex items-center gap-2">

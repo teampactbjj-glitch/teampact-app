@@ -574,8 +574,14 @@ function AnnouncementsTab({ announcements, profile, member }) {
                   {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
                   {item.price != null && <p className="text-sm font-bold text-emerald-600 mt-2">₪{item.price}</p>}
                   <button onClick={() => handleOrder(item)} disabled={orderingId === item.id}
-                    className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${ordered.has(item.id) ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
-                    {orderingId === item.id ? '...' : ordered.has(item.id) ? '✓ הוזמן — יתקבל באימון (לחץ לביטול)' : 'לפרטים ורכישה'}
+                    className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${
+                      orderedDone.has(item.id) ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                      : ordered.has(item.id) ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
+                    {orderingId === item.id ? '...'
+                      : orderedDone.has(item.id) ? '✅ ההזמנה הושלמה'
+                      : ordered.has(item.id) ? '⏳ ממתין לאישור (לחץ לביטול)'
+                      : 'לפרטים ורכישה'}
                   </button>
                 </div>
               </div>
@@ -599,7 +605,8 @@ function ShopTab({ profile, member, allAnnouncements }) {
   })
   const [orderingId, setOrderingId] = useState(null)
   const [selectedProductId, setSelectedProductId] = useState(null)  // איזה מוצר פתוח בדף פירוט
-  const [selectedProductVariants, setSelectedProductVariants] = useState([]) // וריאנטים של המוצר הנבחר
+  const [selectedProductVariants, setSelectedProductVariants] = useState([])
+  const [orderedDone, setOrderedDone] = useState(new Set())  // הזמנות שהמנהל סיים // וריאנטים של המוצר הנבחר
 
   useEffect(() => {
     if (!storageKey) return
@@ -623,14 +630,23 @@ function ShopTab({ profile, member, allAnnouncements }) {
       .select('product_name, status')
       .eq('athlete_id', profile.id)
       .then(({ data }) => {
-        const pendingNames = new Set((data || []).filter(r => r.status !== 'done').map(r => r.product_name))
-        const ids = products.filter(p => pendingNames.has(p.title)).map(p => p.id)
-        setOrdered(new Set(ids))
+        const pendingNames = new Set((data || []).filter(r => r.status === 'pending').map(r => r.product_name))
+        const doneNames   = new Set((data || []).filter(r => r.status === 'done').map(r => r.product_name))
+        const pendingIds = products.filter(p => pendingNames.has(p.title)).map(p => p.id)
+        const doneIds    = products.filter(p => doneNames.has(p.title)).map(p => p.id)
+        setOrdered(new Set(pendingIds))
+        setOrderedDone(new Set(doneIds))
       })
   }, [profile?.id, products.length])
 
   // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם אפשרות/מידה/צבע/אורך/רכיבים)
   async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null, selectedLength = null, componentSelections = null) {
+    // הזמנה שהמנהל כבר סיים — לא ניתן לביטול
+    if (orderedDone.has(item.id)) {
+      await confirm({ title: 'ההזמנה הושלמה', message: 'ההזמנה כבר טופלה על ידי המאמן ולא ניתנת לביטול.', confirmText: 'הבנתי', danger: false })
+      return
+    }
+    // הזמנה ממתינה — מאפשר ביטול
     if (ordered.has(item.id)) {
       const ok = await confirm({ title: 'ביטול הזמנה', message: `לבטל את ההזמנה של "${item.title}"?`, confirmText: 'בטל הזמנה', danger: true })
       if (!ok) return
@@ -648,6 +664,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
     // בונים את payload - שומרים את האפשרות, המידה והצבע
     const payload = {
       product_name: item.title,
+      product_id: item.id || null,
       athlete_id: profile?.id || null,
       athlete_name: athleteName,
       status: 'pending',

@@ -528,6 +528,40 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   async function markDone(order) {
     const table = order._source === 'request' ? 'product_requests' : 'product_orders'
     await supabase.from(table).update({ status: 'done' }).eq('id', order.id)
+
+    // ניכוי מלאי — רק אם יש product_id ונתוני בחירה
+    if (order.product_id && order._source === 'request') {
+      try {
+        let q = supabase.from('product_variants')
+          .select('id, stock')
+          .eq('product_id', order.product_id)
+          .is('component_name', null)  // מוצר פשוט
+
+        // התאמת קוורי לפי מה שנבחר
+        if (order.selected_size)   q = q.eq('size', order.selected_size)
+        else                       q = q.is('size', null)
+        if (order.selected_color)  q = q.eq('color', order.selected_color)
+        else                       q = q.is('color', null)
+        if (order.selected_length) q = q.eq('length', order.selected_length)
+        else                       q = q.is('length', null)
+
+        const { data: varRows } = await q
+        if (varRows && varRows.length > 0) {
+          const v = varRows[0]
+          const newStock = Math.max(0, (parseInt(v.stock) || 0) - 1)
+          await supabase.from('product_variants').update({ stock: newStock }).eq('id', v.id)
+          // עדכון state המלאי המקומי אם הטאב פתוח
+          setInventoryData(prev => {
+            const pid = order.product_id
+            if (!prev[pid]) return prev
+            return { ...prev, [pid]: prev[pid].map(x => x.id === v.id ? { ...x, stock: newStock } : x) }
+          })
+        }
+      } catch (e) {
+        console.warn('stock deduction failed', e)
+      }
+    }
+
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'done' } : o))
     const pending = orders.filter(o => o.id !== order.id && o.status === 'pending').length
     onOrdersChange?.(pending)

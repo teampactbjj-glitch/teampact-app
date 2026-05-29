@@ -152,19 +152,21 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
     onOrder(product, selectedOption, selectedSize, selectedColor, selectedLength, null)
   }
 
-  // עדכון בחירה ברכיב — לחיצה חוזרת מבטלת, cascade reset בין שדות
+  // עדכון בחירה ברכיב — סדר: צבע → אורך → מידה
+  // cascade: צבע מאפס ארוך+מידה; ארוך מאפס מידה; מידה ללא אפוס
   function updateComponentSelection(index, field, value) {
     setComponentSelections(prev => {
       const next = [...prev]
       const curr = next[index] || {}
-      if (field === 'size') {
-        const newVal = curr.size === value ? null : value
-        next[index] = { ...curr, size: newVal, color: null, length: null }
-      } else if (field === 'color') {
+      if (field === 'color') {
         const newVal = curr.color === value ? null : value
-        next[index] = { ...curr, color: newVal, length: null }
-      } else {
-        next[index] = { ...curr, [field]: curr[field] === value ? null : value }
+        next[index] = { ...curr, color: newVal, length: null, size: null }
+      } else if (field === 'length') {
+        const newVal = curr.length === value ? null : value
+        next[index] = { ...curr, length: newVal, size: null }
+      } else { // field === 'size'
+        const newVal = curr.size === value ? null : value
+        next[index] = { ...curr, size: newVal }
       }
       return next
     })
@@ -339,142 +341,7 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
         </div>
       )}
 
-      {/* בחירת מידה/צבע/אורך פר-רכיב — עם בדיקת מלאי לפי component_name */}
-      {hasComponents && (
-        <div className="space-y-4">
-          {optionComponents.map((comp, idx) => {
-            const cName = comp.name || null
-            const cVars = getCompVars(cName)
-            const hasCV = cVars.length > 0
-            // אם יש וריאנטים מהמלאי — שולף מהם; אחרת — הגדרה ידנית מהחבילה
-            const compSizes = hasCV
-              ? [...new Set(cVars.map(v => v.size).filter(Boolean))]
-              : Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
-            const compColors = hasCV
-              ? [...new Set(cVars.map(v => v.color).filter(Boolean))]
-              : Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
-            const compLengths = hasCV
-              ? [...new Set(cVars.map(v => v.length).filter(Boolean))]
-              : Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
-            const sel = componentSelections[idx] || {}
-            return (
-              <div key={idx} className="bg-gradient-to-br from-blue-50 to-emerald-50 border border-blue-200 rounded-xl p-3 space-y-3">
-                <h3 className="font-bold text-sm text-gray-800 flex items-center gap-2">
-                  <span className="bg-blue-600 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">{idx + 1}</span>
-                  {comp.name}
-                </h3>
-                {/* מידה לרכיב */}
-                {compSizes.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-bold text-gray-700">📏 מידה</span>
-                      {sel.size && <span className="text-xs text-emerald-600 font-bold">{sel.size}</span>}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {compSizes.map(size => {
-                        const isSelected = sel.size === size
-                        const inStock = sizeHasStock(size, sel.color, sel.length, cName)
-                        return (
-                          <button
-                            key={size}
-                            type="button"
-                            aria-pressed={isSelected}
-                            aria-label={`${comp.name} מידה ${size}${!inStock ? ' - אזל' : ''}`}
-                            disabled={!inStock}
-                            onClick={() => updateComponentSelection(idx, 'size', size)}
-                            className={`min-w-[44px] py-1.5 px-2.5 rounded-lg border-2 text-xs font-bold transition relative ${
-                              !inStock
-                                ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                                : isSelected
-                                  ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
-                            }`}
-                          >
-                            {size}
-                            {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-                {/* צבע לרכיב */}
-                {compColors.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-bold text-gray-700">🎨 צבע</span>
-                      {sel.color && <span className="text-xs text-emerald-600 font-bold">{sel.color}</span>}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {compColors.map(color => {
-                        const isSelected = sel.color === color
-                        const inStock = colorHasStock(color, cName)
-                        return (
-                          <button
-                            key={color}
-                            type="button"
-                            aria-pressed={isSelected}
-                            aria-label={`${comp.name} צבע ${color}${!inStock ? ' - אזל' : ''}`}
-                            disabled={!inStock}
-                            onClick={() => updateComponentSelection(idx, 'color', color)}
-                            className={`py-1.5 px-3 rounded-lg border-2 text-xs font-bold transition ${
-                              !inStock
-                                ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                                : isSelected
-                                  ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
-                            }`}
-                          >
-                            {color}
-                            {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-                {/* אורך לרכיב */}
-                {compLengths.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-bold text-gray-700">📐 אורך</span>
-                      {sel.length && <span className="text-xs text-emerald-600 font-bold">{sel.length}</span>}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {compLengths.map(len => {
-                        const isSelected = sel.length === len
-                        const inStock = lengthHasStock(len, sel.color, cName)
-                        return (
-                          <button
-                            key={len}
-                            type="button"
-                            aria-pressed={isSelected}
-                            aria-label={`${comp.name} אורך ${len}${!inStock ? ' - אזל' : ''}`}
-                            disabled={!inStock}
-                            onClick={() => updateComponentSelection(idx, 'length', len)}
-                            className={`py-1.5 px-4 rounded-lg border-2 text-xs font-bold transition ${
-                              !inStock
-                                ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                                : isSelected
-                                  ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
-                            }`}
-                          >
-                            {len}
-                            {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* אפשרויות רכישה */}
+      {/* אפשרויות רכישה — קודם לבחור חבילה, ואז יופיעו שדות הרכיבים */}
       {hasOptions && (
         <div role="group" aria-labelledby="purchase-option-heading">
           <h3 id="purchase-option-heading" className="font-bold text-sm text-gray-800 mb-2">💰 בחר אפשרות רכישה</h3>
@@ -526,6 +393,173 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* בחירת צבע/אורך/מידה פר-רכיב — מופיע רק לאחר בחירת אפשרות רכישה */}
+      {hasComponents && (
+        <div className="space-y-4">
+          {optionComponents.map((comp, idx) => {
+            const cName = comp.name || null
+            const cVars = getCompVars(cName)
+            const hasCV = cVars.length > 0
+            const sel = componentSelections[idx] || {}
+
+            // צבעים — כל הצבעים הזמינים לרכיב זה (ללא סינון)
+            const compColors = hasCV
+              ? [...new Set(cVars.map(v => v.color).filter(Boolean))]
+              : Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
+
+            // אורכים — מסוננים לפי צבע שנבחר
+            const lengthVars = (hasCV && sel.color)
+              ? cVars.filter(v => v.color === sel.color)
+              : cVars
+            const compLengths = hasCV
+              ? [...new Set(lengthVars.map(v => v.length).filter(Boolean))]
+              : Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
+
+            // מידות — מסוננות לפי צבע + אורך שנבחרו
+            const sizeVars = hasCV
+              ? cVars.filter(v =>
+                  (!sel.color || v.color === sel.color) &&
+                  (!sel.length || v.length === sel.length)
+                )
+              : cVars
+            const compSizes = hasCV
+              ? [...new Set(sizeVars.map(v => v.size).filter(Boolean))]
+              : Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
+
+            const needsColor = compColors.length > 0
+            const needsLength = compLengths.length > 0
+            const showSizes = compSizes.length > 0 && (!needsColor || sel.color) && (!needsLength || sel.length)
+
+            return (
+              <div key={idx} className="bg-gradient-to-br from-blue-50 to-emerald-50 border border-blue-200 rounded-xl p-3 space-y-3">
+                <h3 className="font-bold text-sm text-gray-800 flex items-center gap-2">
+                  <span className="bg-blue-600 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">{idx + 1}</span>
+                  {comp.name}
+                </h3>
+
+                {/* שלב 1: צבע */}
+                {compColors.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-gray-700">🎨 צבע</span>
+                      {sel.color && <span className="text-xs text-emerald-600 font-bold">{sel.color}</span>}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {compColors.map(color => {
+                        const isSelected = sel.color === color
+                        const inStock = colorHasStock(color, cName)
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            aria-pressed={isSelected}
+                            aria-label={`${comp.name} צבע ${color}${!inStock ? ' - אזל' : ''}`}
+                            disabled={!inStock}
+                            onClick={() => updateComponentSelection(idx, 'color', color)}
+                            className={`py-1.5 px-3 rounded-lg border-2 text-xs font-bold transition ${
+                              !inStock
+                                ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                                : isSelected
+                                  ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                            }`}
+                          >
+                            {color}
+                            {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* שלב 2: אורך (מסונן לפי צבע) */}
+                {compLengths.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-gray-700">📐 אורך</span>
+                      {sel.length && <span className="text-xs text-emerald-600 font-bold">{sel.length}</span>}
+                    </div>
+                    {needsColor && !sel.color ? (
+                      <p className="text-xs text-gray-400">בחר צבע תחילה לסינון האורך</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {compLengths.map(len => {
+                          const isSelected = sel.length === len
+                          const inStock = lengthHasStock(len, sel.color, cName)
+                          return (
+                            <button
+                              key={len}
+                              type="button"
+                              aria-pressed={isSelected}
+                              aria-label={`${comp.name} אורך ${len}${!inStock ? ' - אזל' : ''}`}
+                              disabled={!inStock}
+                              onClick={() => updateComponentSelection(idx, 'length', len)}
+                              className={`py-1.5 px-4 rounded-lg border-2 text-xs font-bold transition ${
+                                !inStock
+                                  ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                                  : isSelected
+                                    ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                              }`}
+                            >
+                              {len}
+                              {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* שלב 3: מידה (מסוננת לפי צבע + אורך) */}
+                {compSizes.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-gray-700">📏 מידה</span>
+                      {sel.size && <span className="text-xs text-emerald-600 font-bold">{sel.size}</span>}
+                    </div>
+                    {needsColor && !sel.color ? (
+                      <p className="text-xs text-gray-400">בחר צבע תחילה לסינון המידות</p>
+                    ) : needsLength && !sel.length ? (
+                      <p className="text-xs text-gray-400">בחר ארוך/קצר לסינון המידות</p>
+                    ) : showSizes ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {compSizes.map(size => {
+                          const isSelected = sel.size === size
+                          const inStock = sizeHasStock(size, sel.color, sel.length, cName)
+                          return (
+                            <button
+                              key={size}
+                              type="button"
+                              aria-pressed={isSelected}
+                              aria-label={`${comp.name} מידה ${size}${!inStock ? ' - אזל' : ''}`}
+                              disabled={!inStock}
+                              onClick={() => updateComponentSelection(idx, 'size', size)}
+                              className={`min-w-[44px] py-1.5 px-2.5 rounded-lg border-2 text-xs font-bold transition relative ${
+                                !inStock
+                                  ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                                  : isSelected
+                                    ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                              }`}
+                            >
+                              {size}
+                              {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 

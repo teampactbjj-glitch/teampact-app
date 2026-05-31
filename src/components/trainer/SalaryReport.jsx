@@ -527,8 +527,8 @@ export default function SalaryReport({ isAdmin }) {
 
       {!loading && !error && (
         <>
-          {/* ── ניכוי מתנס לפי סניף ── */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
+          {/* ── ניכוי מתנס לפי סניף — רק כשרואים את כולם ── */}
+          {branchFilter === 'all' && <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
             <div className="font-black text-gray-800 mb-3">🏢 ניכוי מתנס לפי סניף</div>
             <div className="flex flex-wrap gap-3">
               {branches.map(branch => {
@@ -563,7 +563,7 @@ export default function SalaryReport({ isAdmin }) {
                 )
               })}
             </div>
-          </div>
+          </div>}
 
           {/* ── סיכום שכר + ייצוא כולל ── */}
           <div className="grid grid-cols-3 gap-3">

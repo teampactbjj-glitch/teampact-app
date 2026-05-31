@@ -633,7 +633,8 @@ function ShopTab({ profile, member, allAnnouncements }) {
       .eq('athlete_id', profile.id)
       .then(({ data }) => {
         const rows = data || []
-        const pendingRows = rows.filter(r => r.status === 'pending')
+        // pending = כל מה שלא done/cancelled (כולל null מהזמנות ישנות)
+        const pendingRows = rows.filter(r => !r.status || r.status === 'pending')
         const doneNames   = new Set(rows.filter(r => r.status === 'done').map(r => r.product_name))
         const pendingIds = products.filter(p => pendingRows.some(r => r.product_name === p.title)).map(p => p.id)
         const doneIds    = products.filter(p => doneNames.has(p.title)).map(p => p.id)
@@ -651,7 +652,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
 
   // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם אפשרות/מידה/צבע/אורך/רכיבים)
   // כשeditRequestId קיים — עדכון רשומה קיימת במקום יצירת חדשה
-  async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null, selectedLength = null, componentSelections = null, editRequestId = null) {
+  async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null, selectedLength = null, componentSelections = null, quantity = 1, editRequestId = null) {
     // הזמנה שהמנהל כבר סיים — לא ניתן לביטול
     if (orderedDone.has(item.id)) {
       await confirm({ title: 'ההזמנה הושלמה', message: 'ההזמנה כבר טופלה על ידי המאמן ולא ניתנת לביטול.', confirmText: 'הבנתי', danger: false })
@@ -666,11 +667,12 @@ function ShopTab({ profile, member, allAnnouncements }) {
       if (reqId) {
         await supabase.from('product_requests').update({ status: 'cancelled' }).eq('id', reqId)
       } else {
+        // fallback: עדכן לפי שם (כולל הזמנות ישנות עם status=null)
         await supabase.from('product_requests')
           .update({ status: 'cancelled' })
           .eq('athlete_id', profile?.id)
           .eq('product_name', item.title)
-          .eq('status', 'pending')
+          .or('status.eq.pending,status.is.null')
       }
       setOrdered(prev => { const n = new Set(prev); n.delete(item.id); return n })
       setOrderedRequestsMap(prev => { const n = {...prev}; delete n[item.id]; return n })
@@ -719,13 +721,13 @@ function ShopTab({ profile, member, allAnnouncements }) {
     }
     if (selectedOption?.note) noteParts.push(selectedOption.note)
     if (noteParts.length) payload.notes = noteParts.join(' · ')
+    // כמות
+    if (quantity && quantity > 1) payload.quantity = quantity
     // מחיר
-    if (selectedOption?.price != null) {
-      payload.unit_price = selectedOption.price
-      payload.total_price = selectedOption.price
-    } else if (item.price != null) {
-      payload.unit_price = item.price
-      payload.total_price = item.price
+    const unitPrice = selectedOption?.price != null ? selectedOption.price : (item.price ?? null)
+    if (unitPrice != null) {
+      payload.unit_price = unitPrice
+      payload.total_price = unitPrice * (quantity || 1)
     }
     // עדכון או הוספה
     let error
@@ -809,9 +811,10 @@ function ShopTab({ profile, member, allAnnouncements }) {
         product={selectedProduct}
         variants={selectedProductVariants}
         onBack={() => { setSelectedProductId(null); setEditMode(false) }}
-        onOrder={async (product, option, size, color, length, componentSelections) => {
-          await handleOrder(product, option, size, color, length, componentSelections, editReqId)
+        onOrder={async (product, option, size, color, length, componentSelections, qty) => {
+          await handleOrder(product, option, size, color, length, componentSelections, qty ?? 1, editReqId)
         }}
+        onEdit={() => setEditMode(true)}
         alreadyOrdered={!editMode && ordered.has(selectedProduct.id)}
         ordering={orderingId === selectedProduct.id}
         editMode={editMode}
@@ -863,7 +866,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
                       <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">✅ ההזמנה הושלמה</span>
                     ) : isPending ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full flex-1">⏳ ממתין לאישור מנהל</span>
+                        <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-full flex-1">✓ הוזמן — יתקבל באימון הבא</span>
                         <button
                           type="button"
                           onClick={() => { setEditMode(true); setSelectedProductId(item.id) }}

@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react'
  *   alreadyOrdered - בולאני: האם המוצר כבר הוזמן
  *   ordering       - בולאני: האם כרגע בתהליך הזמנה (לבטל כפתור)
  */
-export default function ProductDetail({ product, variants = [], onBack, onOrder, alreadyOrdered, ordering, editMode = false }) {
+export default function ProductDetail({ product, variants = [], onBack, onOrder, onEdit, alreadyOrdered, ordering, editMode = false }) {
   // variants = מערך וריאנטים מה-DB עם stock. אם ריק = אין מידע מלאי, מציגים הכל
   const hasVariantData = variants.length > 0
 
@@ -73,9 +73,10 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
   const [selectedOption, setSelectedOption] = useState(
     hasOptions ? (options.find(o => o.is_featured) || options[0]) : null
   )
-  const [selectedSize, setSelectedSize] = useState(null)    // חובה לבחור אם hasSizes
-  const [selectedColor, setSelectedColor] = useState(null)  // חובה לבחור אם hasColors
-  const [selectedLength, setSelectedLength] = useState(null) // חובה לבחור אם hasLengths
+  const [selectedSize, setSelectedSize] = useState(null)
+  const [selectedColor, setSelectedColor] = useState(null)
+  const [selectedLength, setSelectedLength] = useState(null)
+  const [quantity, setQuantity] = useState(1)
   const [validationError, setValidationError] = useState('')
 
   // רכיבי וריאציה של האפשרות הנבחרת (למשל: תיק + חליפה → רכיב אחד; תיק + סט נו-גי → שני רכיבים)
@@ -102,15 +103,50 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
     : []
 
   const displayPrice = selectedOption?.price ?? product.price
+  const displayTotal = displayPrice != null ? displayPrice * quantity : null
+
+  // חישוב מלאי לוריאנט הנבחר (לבדיקת כמות מקסימלית)
+  function getSelectedVariantStock() {
+    if (!hasVariantData) return Infinity
+    const cv = getCompVars(null)
+    if (cv.length === 0) return Infinity
+
+    if (!hasSizes && !hasColors && !hasLengths) {
+      // מוצר ללא בחירות מידה/צבע/אורך — אם יש אפשרות נבחרת (למשל: blueberry/mango)
+      // נסה להתאים לפי שם האפשרות לשדה color או size של הוריאנט
+      if (selectedOption?.name) {
+        const optName = selectedOption.name.toLowerCase().trim()
+        const matched = cv.filter(v =>
+          (v.color && v.color.toLowerCase().trim() === optName) ||
+          (v.size  && v.size.toLowerCase().trim()  === optName)
+        )
+        if (matched.length > 0) {
+          return matched.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
+        }
+      }
+      // אין התאמה לאפשרות — סכום כל הוריאנטים (מוצר פשוט ללא אפשרויות)
+      return cv.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
+    }
+
+    // מוצר עם בחירות מידה/צבע/אורך — מצא את הוריאנט המדויק
+    const match = cv.find(v =>
+      (!selectedSize   || v.size   === selectedSize) &&
+      (!selectedColor  || v.color  === selectedColor) &&
+      (!selectedLength || v.length === selectedLength)
+    )
+    return match ? (parseInt(match.stock) || 0) : 0
+  }
+  // חישוב תמיד — גם למוצר פשוט ללא מידות/צבעים (וריאנט יחיד)
+  const variantStock = !hasComponents ? getSelectedVariantStock() : Infinity
+  const maxQty = variantStock === Infinity ? 99 : variantStock
+  const outOfStock = hasVariantData && maxQty === 0 && !alreadyOrdered && !editMode
 
   // בדיקת תקינות לפני שליחה - חובה לבחור מידה/צבע אם המוצר מצריך
   function handleOrderClick() {
-    // אם כבר הוזמן - לחיצה = ביטול (לא צריך בדיקת מידה)
     if (alreadyOrdered) {
-      onOrder(product, selectedOption, null, null, null, null)
+      onOrder(product, selectedOption, null, null, null, null, quantity)
       return
     }
-    // אם יש רכיבים באפשרות - בדיקה פר-רכיב
     if (hasComponents) {
       for (let i = 0; i < optionComponents.length; i++) {
         const comp = optionComponents[i]
@@ -118,38 +154,20 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
         const compSizes = Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
         const compColors = Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
         const compLengths = Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
-        if (compSizes.length && !sel.size) {
-          setValidationError(`יש לבחור מידה עבור "${comp.name}"`)
-          return
-        }
-        if (compColors.length && !sel.color) {
-          setValidationError(`יש לבחור צבע עבור "${comp.name}"`)
-          return
-        }
-        if (compLengths.length && !sel.length) {
-          setValidationError(`יש לבחור אורך (ארוך/קצר) עבור "${comp.name}"`)
-          return
-        }
+        if (compSizes.length && !sel.size) { setValidationError(`יש לבחור מידה עבור "${comp.name}"`); return }
+        if (compColors.length && !sel.color) { setValidationError(`יש לבחור צבע עבור "${comp.name}"`); return }
+        if (compLengths.length && !sel.length) { setValidationError(`יש לבחור אורך (ארוך/קצר) עבור "${comp.name}"`); return }
       }
       setValidationError('')
-      onOrder(product, selectedOption, null, null, null, componentSelections)
+      onOrder(product, selectedOption, null, null, null, componentSelections, quantity)
       return
     }
-    // זרימה רגילה - מידה/צבע/אורך ברמת המוצר
-    if (hasSizes && !selectedSize) {
-      setValidationError('יש לבחור מידה')
-      return
-    }
-    if (hasColors && !selectedColor) {
-      setValidationError('יש לבחור צבע')
-      return
-    }
-    if (hasLengths && !selectedLength) {
-      setValidationError('יש לבחור אורך (ארוך / קצר)')
-      return
-    }
+    if (hasSizes && !selectedSize) { setValidationError('יש לבחור מידה'); return }
+    if (hasColors && !selectedColor) { setValidationError('יש לבחור צבע'); return }
+    if (hasLengths && !selectedLength) { setValidationError('יש לבחור אורך (ארוך / קצר)'); return }
+    if (quantity > maxQty && maxQty !== Infinity) { setValidationError(`המלאי הזמין: ${maxQty} יחידות`); return }
     setValidationError('')
-    onOrder(product, selectedOption, selectedSize, selectedColor, selectedLength, null)
+    onOrder(product, selectedOption, selectedSize, selectedColor, selectedLength, null, quantity)
   }
 
   // עדכון בחירה ברכיב — סדר: צבע → אורך → מידה
@@ -606,33 +624,84 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
           </div>
         )}
 
+        {/* בחירת כמות — רק כשלא הוזמן עדיין */}
+        {!alreadyOrdered && (
+          <div className="flex items-center justify-between gap-3 mb-3 bg-gray-50 rounded-xl px-3 py-2">
+            <span className="text-sm text-gray-700 font-medium">כמות</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                disabled={quantity <= 1}
+                className="w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold text-lg flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 transition"
+              >−</button>
+              <span className="w-8 text-center font-bold text-gray-900">{quantity}</span>
+              <button
+                type="button"
+                onClick={() => setQuantity(q => Math.min(maxQty, q + 1))}
+                disabled={quantity >= maxQty}
+                className="w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold text-lg flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 transition"
+              >+</button>
+            </div>
+            {maxQty !== Infinity && maxQty > 0 && (
+              <span className="text-xs text-gray-400">מלאי: {maxQty}</span>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-3 mb-2">
           <div className="text-sm text-gray-600">סה"כ לתשלום</div>
-          {displayPrice != null && (
-            <div className="text-2xl font-bold text-emerald-600">₪{displayPrice}</div>
+          {displayTotal != null && (
+            <div className="text-2xl font-bold text-emerald-600">
+              ₪{displayTotal}
+              {quantity > 1 && <span className="text-sm font-normal text-gray-400 mr-1">(₪{displayPrice} × {quantity})</span>}
+            </div>
           )}
         </div>
-        <button
-          onClick={handleOrderClick}
-          disabled={ordering}
-          className={`w-full py-3 rounded-xl text-sm font-bold transition disabled:opacity-50 ${
-            editMode
-              ? 'bg-blue-600 text-white hover:bg-blue-700'
-              : alreadyOrdered
-              ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              : 'bg-emerald-600 text-white hover:bg-emerald-700'
-          }`}
-        >
-          {ordering
-            ? '...'
-            : editMode
-            ? '💾 שמור שינויים'
-            : alreadyOrdered
-            ? '✓ הוזמן — יתקבל באימון (לחץ לביטול)'
-            : hasOptions && selectedOption
-            ? `הזמן "${selectedOption.name}" ב־₪${selectedOption.price}`
-            : 'הזמן עכשיו'}
-        </button>
+
+        {outOfStock ? (
+          <div className="w-full py-3 rounded-xl text-sm font-bold text-center bg-gray-100 text-gray-400">
+            ❌ אזל מהמלאי
+          </div>
+        ) : editMode ? (
+          <button
+            onClick={handleOrderClick}
+            disabled={ordering}
+            className="w-full py-3 rounded-xl text-sm font-bold transition disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {ordering ? '...' : '💾 שמור שינויים'}
+          </button>
+        ) : alreadyOrdered ? (
+          <div className="flex gap-2">
+            {onEdit && (
+              <button
+                onClick={onEdit}
+                className="flex-1 py-3 rounded-xl text-sm font-bold transition bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100"
+              >
+                ✏️ ערוך הזמנה
+              </button>
+            )}
+            <button
+              onClick={handleOrderClick}
+              disabled={ordering}
+              className="flex-1 py-3 rounded-xl text-sm font-bold transition disabled:opacity-50 bg-gray-200 text-gray-700 hover:bg-gray-300"
+            >
+              {ordering ? '...' : '🗑 בטל הזמנה'}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleOrderClick}
+            disabled={ordering}
+            className="w-full py-3 rounded-xl text-sm font-bold transition disabled:opacity-50 bg-emerald-600 text-white hover:bg-emerald-700"
+          >
+            {ordering
+              ? '...'
+              : hasOptions && selectedOption
+              ? `הזמן "${selectedOption.name}" — ₪${displayTotal ?? selectedOption.price}`
+              : `הזמן עכשיו${displayTotal != null ? ` — ₪${displayTotal}` : ''}`}
+          </button>
+        )}
         <p className="text-[11px] text-gray-400 text-center mt-2">
           ההזמנה תישלח למאמן · התשלום יתבצע באימון הקרוב
         </p>

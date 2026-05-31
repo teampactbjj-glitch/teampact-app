@@ -449,6 +449,16 @@ export default function SalaryReport({ isAdmin }) {
   const grandCoachSalary = salaryData.reduce((s, c) => s + c.totalSalary, 0)
   const activeCoaches    = salaryData.filter(c => c.totalAthletes > 0).length
 
+  // נוכחויות מסוננות לפי סניף — לתצוגה בלבד
+  const filteredCheckinsCount = useMemo(() => {
+    if (branchFilter === 'all') return checkins.length
+    const classById = new Map(classes.map(c => [c.id, c]))
+    return checkins.filter(chk => {
+      const cls = classById.get(chk.class_id)
+      return cls?.branch_id === branchFilter
+    }).length
+  }, [checkins, classes, branchFilter])
+
   // סניפים להצגה בחלק הרווחיות
   const profitBranches = branchFilter === 'all'
     ? branches
@@ -559,7 +569,7 @@ export default function SalaryReport({ isAdmin }) {
           <div className="grid grid-cols-3 gap-3">
             <StatCard label="סה״כ שכר מאמנים" value={fmt(grandCoachSalary)} tone="red" />
             <StatCard label="מאמנים פעילים"   value={activeCoaches}         tone="blue" />
-            <StatCard label="נוכחויות"         value={checkins.length}       tone="purple" />
+            <StatCard label="נוכחויות"         value={filteredCheckinsCount} tone="purple" />
           </div>
 
           {salaryData.length > 0 && (

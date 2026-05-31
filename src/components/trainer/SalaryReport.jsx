@@ -115,7 +115,7 @@ export default function SalaryReport({ isAdmin }) {
 
         supabase.from('classes').select('id, coach_id, branch_id').is('deleted_at', null),
 
-        supabase.from('members').select('id, full_name, subscription_type').eq('active', true),
+        supabase.from('members').select('id, full_name, subscription_type, branch_id').eq('active', true),
 
         supabase.from('branches').select('id, name, platform_cut').order('name'),
 
@@ -163,8 +163,6 @@ export default function SalaryReport({ isAdmin }) {
     const coachBranchAthleteCheckins = new Map()
     // סה"כ נוכחויות מתאמן בחודש
     const athleteTotalCheckins = new Map()
-    // הכנסות לפי סניף (מבוססות על מנויים שהגיעו)
-    const revenueByBranch = new Map()   // branch_id → Set<athlete_id>
 
     for (const chk of checkins) {
       const cls = classById.get(chk.class_id)
@@ -183,22 +181,17 @@ export default function SalaryReport({ isAdmin }) {
       // סה"כ מתאמן
       athleteTotalCheckins.set(chk.athlete_id,
         (athleteTotalCheckins.get(chk.athlete_id) || 0) + 1)
-
-      // מתאמנים ייחודיים לפי סניף (לחישוב הכנסות)
-      if (!revenueByBranch.has(branch_id))
-        revenueByBranch.set(branch_id, new Set())
-      revenueByBranch.get(branch_id).add(chk.athlete_id)
     }
 
-    // הכנסות גולמיות לפי סניף (מנוי × מתאמנים ייחודיים שהגיעו)
+    // הכנסות גולמיות לפי סניף — כלל המנויים הפעילים (גם מי שלא הגיע)
+    // members.branch_id מגדיר לאיזה סניף שייך המתאמן
     const revenueMap = new Map()
-    for (const [branchId, athleteSet] of revenueByBranch) {
-      let rev = 0
-      for (const aid of athleteSet) {
-        const m = memberById.get(aid)
-        rev += SUB_PRICE[m?.subscription_type] || 0
-      }
-      revenueMap.set(branchId, rev)
+    for (const m of members) {
+      if (!m.subscription_type) continue
+      const price    = SUB_PRICE[m.subscription_type] || 0
+      const branchId = m.branch_id
+      if (!branchId) continue
+      revenueMap.set(branchId, (revenueMap.get(branchId) || 0) + price)
     }
 
     // חישוב שכר לכל מאמן

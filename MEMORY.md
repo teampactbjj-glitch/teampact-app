@@ -1,5 +1,49 @@
 # MEMORY - TeamPact App
 
+## ✅ Session 29.05.2026 — מלאי + בחירת רכיבים + Excel export (COMPLETED)
+
+### מה נבנה
+
+**1. שינוי סדר בחירת רכיבים (ProductDetail.jsx)**
+- **לפני:** Size → Color → Length
+- **אחרי:** Color → Length → Size (עם סינון קסקדי — אורך מסוננת לפי צבע, מידה מסוננת לפי שניהם)
+- "בחר אפשרות רכישה" (purchase options) עכשיו מופיעה **לפני** בחירת הרכיבים
+- `updateComponentSelection` תוקן: בחירת צבע → מאפס length+size, בחירת אורך → מאפס size בלבד
+
+**2. תיקון מסד הנתונים (SQL ב-Supabase)**
+- `purchase_options` JSONB לכל 5 האפשרויות של TeamPact נו-גי — תוקנו להכיל `lengths`, `components` תקינים
+- שמות רכיבים ב-`product_variants`: "סט 1 - ראשגארד" → "ראשגארד" (אחידות)
+- נמחקו variants עם `component_name=null` שלא שייכים לאף אפשרות
+
+**3. ממשק ניהול מלאי חדש (ShopManager.jsx)**
+- **לפני:** זרימה ארוכה של configure → generate matrix → fill table
+- **אחרי:** לחיצה על tab רכיב → כפתורי צבע → כפתורי אורך → גריד מידות → שמירה
+- `getCompDef(product, compName)` — קורא הגדרות רכיב מ-`purchase_options` JSONB
+- `invFilter` state — מנהל צבע/אורך נבחרים לכל מוצר
+
+**4. יצוא Excel**
+- כפתור "📊 יצא לאקסל" בטאב מלאי
+- עמודות: מוצר | רכיב | צבע | אורך | מידה | מלאי | סטטוס
+- שימוש ב-SheetJS (`xlsx@0.18.5` שכבר היה ב-package.json)
+
+### קבצים שנגעו
+| קובץ | מה שונה |
+|---|---|
+| `src/components/athlete/ProductDetail.jsx` | סדר Color→Length→Size + options לפני components |
+| `src/components/trainer/ShopManager.jsx` | UI מלאי חדש + Excel export + `invFilter` + `getCompDef` |
+
+### קומיטים
+| קומיט | תיאור |
+|---|---|
+| `1a705f0` | fix: component selection order Color→Length→Size + options before components |
+| `17d6d66` | feat: redesign inventory UI — color→length→size grid |
+| `8a30bb4` | feat: יצוא מלאי לאקסל מטאב מלאי |
+
+### My last pending task
+הכל הושלם ואושר. דודי עדיין ממלא מלאי בפועל — הנתונים יזנו בהדרגה דרך ה-UI החדש.
+
+---
+
 ## ✅ Session 25.05.2026 — מיגרציה מלאה ל-Cloudinary (COMPLETED)
 
 ### הבעיה שטופלה

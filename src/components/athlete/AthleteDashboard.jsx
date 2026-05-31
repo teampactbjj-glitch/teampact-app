@@ -606,7 +606,9 @@ function ShopTab({ profile, member, allAnnouncements }) {
   const [orderingId, setOrderingId] = useState(null)
   const [selectedProductId, setSelectedProductId] = useState(null)  // איזה מוצר פתוח בדף פירוט
   const [selectedProductVariants, setSelectedProductVariants] = useState([])
-  const [orderedDone, setOrderedDone] = useState(new Set())  // הזמנות שהמנהל סיים // וריאנטים של המוצר הנבחר
+  const [orderedDone, setOrderedDone] = useState(new Set())  // הזמנות שהמנהל סיים
+  const [orderedRequestsMap, setOrderedRequestsMap] = useState({})  // product_id → רשומת הזמנה מלאה
+  const [editMode, setEditMode] = useState(false)  // האם פותחים ProductDetail לעריכה
 
   useEffect(() => {
     if (!storageKey) return
@@ -627,27 +629,36 @@ function ShopTab({ profile, member, allAnnouncements }) {
   useEffect(() => {
     if (!profile?.id || products.length === 0) return
     supabase.from('product_requests')
-      .select('product_name, status')
+      .select('*')
       .eq('athlete_id', profile.id)
       .then(({ data }) => {
-        const pendingNames = new Set((data || []).filter(r => r.status === 'pending').map(r => r.product_name))
-        const doneNames   = new Set((data || []).filter(r => r.status === 'done').map(r => r.product_name))
-        const pendingIds = products.filter(p => pendingNames.has(p.title)).map(p => p.id)
+        const rows = data || []
+        const pendingRows = rows.filter(r => r.status === 'pending')
+        const doneNames   = new Set(rows.filter(r => r.status === 'done').map(r => r.product_name))
+        const pendingIds = products.filter(p => pendingRows.some(r => r.product_name === p.title)).map(p => p.id)
         const doneIds    = products.filter(p => doneNames.has(p.title)).map(p => p.id)
+        // בנה map: product_id → רשומת הזמנה ממתינה
+        const reqMap = {}
+        for (const row of pendingRows) {
+          const product = products.find(p => p.title === row.product_name)
+          if (product) reqMap[product.id] = row
+        }
         setOrdered(new Set(pendingIds))
         setOrderedDone(new Set(doneIds))
+        setOrderedRequestsMap(reqMap)
       })
   }, [profile?.id, products.length])
 
   // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם אפשרות/מידה/צבע/אורך/רכיבים)
-  async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null, selectedLength = null, componentSelections = null) {
+  // כשeditRequestId קיים — עדכון רשומה קיימת במקום יצירת חדשה
+  async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null, selectedLength = null, componentSelections = null, editRequestId = null) {
     // הזמנה שהמנהל כבר סיים — לא ניתן לביטול
     if (orderedDone.has(item.id)) {
       await confirm({ title: 'ההזמנה הושלמה', message: 'ההזמנה כבר טופלה על ידי המאמן ולא ניתנת לביטול.', confirmText: 'הבנתי', danger: false })
       return
     }
-    // הזמנה ממתינה — מאפשר ביטול
-    if (ordered.has(item.id)) {
+    // הזמנה ממתינה שנפתחה לצפייה (לא עריכה) — מאפשר ביטול
+    if (ordered.has(item.id) && !editRequestId) {
       const ok = await confirm({ title: 'ביטול הזמנה', message: `לבטל את ההזמנה של "${item.title}"?`, confirmText: 'בטל הזמנה', danger: true })
       if (!ok) return
       setOrderingId(item.id)
@@ -657,6 +668,7 @@ function ShopTab({ profile, member, allAnnouncements }) {
         .eq('product_name', item.title)
         .eq('status', 'pending')
       setOrdered(prev => { const n = new Set(prev); n.delete(item.id); return n })
+      setOrderedRequestsMap(prev => { const n = {...prev}; delete n[item.id]; return n })
       setOrderingId(null)
       return
     }
@@ -709,10 +721,30 @@ function ShopTab({ profile, member, allAnnouncements }) {
       payload.unit_price = item.price
       payload.total_price = item.price
     }
-    const { error } = await supabase.from('product_requests').insert(payload)
+    // עדכון או הוספה
+    let error
+    if (editRequestId) {
+      // עדכון רשומה קיימת
+      const { error: updErr } = await supabase.from('product_requests')
+        .update(payload)
+        .eq('id', editRequestId)
+      error = updErr
+      if (!error) {
+        setOrderedRequestsMap(prev => ({ ...prev, [item.id]: { ...prev[item.id], ...payload, id: editRequestId } }))
+        setEditMode(false)
+        setSelectedProductId(null)
+        toast.success('ההזמנה עודכנה!')
+        setOrderingId(null)
+        return
+      }
+    } else {
+      const { error: insErr } = await supabase.from('product_requests').insert(payload)
+      error = insErr
+    }
     if (error) { console.error('order error:', error); toast.error('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
     else {
       setOrdered(prev => new Set([...prev, item.id]))
+      setOrderedRequestsMap(prev => ({ ...prev, [item.id]: { ...payload } }))
       // בניית גוף התראה מפורט - כולל מידה, צבע, אפשרות, רכיבים ומחיר
       const bodyParts = [`${athleteName} הזמין: ${item.title}`]
       if (selectedOption?.name) bodyParts.push(`אפשרות: ${selectedOption.name}`)
@@ -765,16 +797,18 @@ function ShopTab({ profile, member, allAnnouncements }) {
   // אם יש מוצר נבחר - מציגים את דף הפירוט במקום רשימת המוצרים
   const selectedProduct = selectedProductId ? products.find(p => p.id === selectedProductId) : null
   if (selectedProduct) {
+    const editReqId = editMode ? orderedRequestsMap[selectedProduct.id]?.id : null
     return (
       <ProductDetail
         product={selectedProduct}
         variants={selectedProductVariants}
-        onBack={() => setSelectedProductId(null)}
+        onBack={() => { setSelectedProductId(null); setEditMode(false) }}
         onOrder={async (product, option, size, color, length, componentSelections) => {
-          await handleOrder(product, option, size, color, length, componentSelections)
+          await handleOrder(product, option, size, color, length, componentSelections, editReqId)
         }}
-        alreadyOrdered={ordered.has(selectedProduct.id)}
+        alreadyOrdered={!editMode && ordered.has(selectedProduct.id)}
         ordering={orderingId === selectedProduct.id}
+        editMode={editMode}
       />
     )
   }
@@ -806,12 +840,25 @@ function ShopTab({ profile, member, allAnnouncements }) {
                     {item.price != null && <span className="text-lg font-bold text-emerald-600 flex-shrink-0">₪{item.price}</span>}
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-2">
-                    {ordered.has(item.id) ? (
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">✓ הוזמן</span>
+                    {orderedDone.has(item.id) ? (
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">✅ הושלמה</span>
+                    ) : ordered.has(item.id) ? (
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">⏳ ממתין לאישור</span>
                     ) : (
                       <span className="text-xs text-emerald-600">לחץ לפרטים ורכישה ←</span>
                     )}
-                    <span className="text-xs text-gray-400">→</span>
+                    {ordered.has(item.id) && !orderedDone.has(item.id) && (
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setEditMode(true); setSelectedProductId(item.id) }}
+                        className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1 rounded-lg font-medium hover:bg-blue-100 transition"
+                      >
+                        ✏️ ערוך
+                      </button>
+                    )}
+                    {!ordered.has(item.id) && !orderedDone.has(item.id) && (
+                      <span className="text-xs text-gray-400">→</span>
+                    )}
                   </div>
                 </div>
               </button>

@@ -7,6 +7,8 @@ import ProfileChangeRequests from './ProfileChangeRequests'
 import ShopManager from './ShopManager'
 import ReportsManager from './ReportsManager'
 import CoachesManager from './CoachesManager'
+import SalaryReport from './SalaryReport'
+import BranchSettings from './BranchSettings'
 import TrainerProfile from './TrainerProfile'
 import BottomNav from '../BottomNav'
 import InstallBanner from '../InstallBanner'
@@ -476,6 +478,14 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
 
           {activeTab === 'coaches' && isAdmin && (
             <CoachesManager profile={profile} onChange={refreshCounts} />
+          )}
+
+          {activeTab === 'salary' && isAdmin && (
+            <SalaryReport isAdmin={isAdmin} />
+          )}
+
+          {activeTab === 'branchsettings' && isAdmin && (
+            <BranchSettings isAdmin={isAdmin} />
           )}
 
           {activeTab === 'shop' && (

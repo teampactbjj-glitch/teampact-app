@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react'
  *   alreadyOrdered - בולאני: האם המוצר כבר הוזמן
  *   ordering       - בולאני: האם כרגע בתהליך הזמנה (לבטל כפתור)
  */
-export default function ProductDetail({ product, variants = [], onBack, onOrder, alreadyOrdered, ordering }) {
+export default function ProductDetail({ product, variants = [], onBack, onOrder, alreadyOrdered, ordering, editMode = false }) {
   // variants = מערך וריאנטים מה-DB עם stock. אם ריק = אין מידע מלאי, מציגים הכל
   const hasVariantData = variants.length > 0
 
@@ -184,7 +184,9 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
         >
           →
         </button>
-        <span className="font-bold text-gray-800 truncate flex-1">{product.title}</span>
+        <span className="font-bold text-gray-800 truncate flex-1">
+          {editMode ? `✏️ עריכת הזמנה — ${product.title}` : product.title}
+        </span>
       </div>
 
       {/* תמונה */}
@@ -614,13 +616,17 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
           onClick={handleOrderClick}
           disabled={ordering}
           className={`w-full py-3 rounded-xl text-sm font-bold transition disabled:opacity-50 ${
-            alreadyOrdered
+            editMode
+              ? 'bg-blue-600 text-white hover:bg-blue-700'
+              : alreadyOrdered
               ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               : 'bg-emerald-600 text-white hover:bg-emerald-700'
           }`}
         >
           {ordering
             ? '...'
+            : editMode
+            ? '💾 שמור שינויים'
             : alreadyOrdered
             ? '✓ הוזמן — יתקבל באימון (לחץ לביטול)'
             : hasOptions && selectedOption

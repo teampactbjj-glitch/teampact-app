@@ -29,6 +29,32 @@ export default function ProductRequests({ onMarkedDone }) {
       .update({ status: 'done' })
       .eq('id', id)
     if (error) { console.error('markDone error:', error); setMarkingId(null); return }
+
+    // הורדת מלאי — אם יש product_id + בחירות
+    const req = requests.find(r => r.id === id)
+    if (req?.product_id) {
+      try {
+        let q = supabase.from('product_variants')
+          .select('id, stock')
+          .eq('product_id', req.product_id)
+          .is('component_name', null)
+        if (req.selected_size)   q = q.eq('size', req.selected_size)
+        else                     q = q.is('size', null)
+        if (req.selected_color)  q = q.eq('color', req.selected_color)
+        else                     q = q.is('color', null)
+        if (req.selected_length) q = q.eq('length', req.selected_length)
+        else                     q = q.is('length', null)
+        const { data: varRows } = await q
+        if (varRows && varRows.length > 0) {
+          const v = varRows[0]
+          const newStock = Math.max(0, (parseInt(v.stock) || 0) - 1)
+          await supabase.from('product_variants').update({ stock: newStock }).eq('id', v.id)
+        }
+      } catch (e) {
+        console.error('stock deduction error:', e)
+      }
+    }
+
     setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'done' } : r))
     onMarkedDone?.()
     setMarkingId(null)

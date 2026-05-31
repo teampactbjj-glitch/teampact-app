@@ -662,14 +662,20 @@ function ShopTab({ profile, member, allAnnouncements }) {
       const ok = await confirm({ title: 'ביטול הזמנה', message: `לבטל את ההזמנה של "${item.title}"?`, confirmText: 'בטל הזמנה', danger: true })
       if (!ok) return
       setOrderingId(item.id)
-      await supabase.from('product_requests')
-        .delete()
-        .eq('athlete_id', profile?.id)
-        .eq('product_name', item.title)
-        .eq('status', 'pending')
+      const reqId = orderedRequestsMap[item.id]?.id
+      if (reqId) {
+        await supabase.from('product_requests').update({ status: 'cancelled' }).eq('id', reqId)
+      } else {
+        await supabase.from('product_requests')
+          .update({ status: 'cancelled' })
+          .eq('athlete_id', profile?.id)
+          .eq('product_name', item.title)
+          .eq('status', 'pending')
+      }
       setOrdered(prev => { const n = new Set(prev); n.delete(item.id); return n })
       setOrderedRequestsMap(prev => { const n = {...prev}; delete n[item.id]; return n })
       setOrderingId(null)
+      setSelectedProductId(null)
       return
     }
     setOrderingId(item.id)
@@ -819,50 +825,71 @@ function ShopTab({ profile, member, allAnnouncements }) {
         <div>
           <h3 className="font-bold text-gray-700 text-sm mb-3">🛒 מוצרים</h3>
           <div className="space-y-3">
-            {products.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSelectedProductId(item.id)}
-                className="w-full text-right bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition"
-              >
-                {item.image_url && (
-                  <div className="aspect-[3/4] w-full overflow-hidden rounded-xl">
-                    <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" loading="lazy" />
-                  </div>
-                )}
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-800">{item.title}</p>
-                      {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
+            {products.map(item => {
+              const isPending = ordered.has(item.id) && !orderedDone.has(item.id)
+              const isDone    = orderedDone.has(item.id)
+              return (
+                <div
+                  key={item.id}
+                  className="w-full text-right bg-white rounded-xl border shadow-sm overflow-hidden"
+                >
+                  {/* אזור תמונה + פרטים — לחיץ לדף פירוט (רק אם לא הוזמן) */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { if (!isPending && !isDone) setSelectedProductId(item.id) }}
+                    onKeyDown={e => e.key === 'Enter' && !isPending && !isDone && setSelectedProductId(item.id)}
+                    className={!isPending && !isDone ? 'cursor-pointer hover:shadow-md transition' : ''}
+                  >
+                    {item.image_url && (
+                      <div className="aspect-[3/4] w-full overflow-hidden rounded-t-xl">
+                        <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" loading="lazy" />
+                      </div>
+                    )}
+                    <div className="p-4 pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800">{item.title}</p>
+                          {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
+                        </div>
+                        {item.price != null && <span className="text-lg font-bold text-emerald-600 flex-shrink-0">₪{item.price}</span>}
+                      </div>
                     </div>
-                    {item.price != null && <span className="text-lg font-bold text-emerald-600 flex-shrink-0">₪{item.price}</span>}
                   </div>
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    {orderedDone.has(item.id) ? (
-                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">✅ הושלמה</span>
-                    ) : ordered.has(item.id) ? (
-                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">⏳ ממתין לאישור</span>
+
+                  {/* אזור סטטוס + כפתורי פעולה */}
+                  <div className="px-4 pb-4 pt-1">
+                    {isDone ? (
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">✅ ההזמנה הושלמה</span>
+                    ) : isPending ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full flex-1">⏳ ממתין לאישור מנהל</span>
+                        <button
+                          type="button"
+                          onClick={() => { setEditMode(true); setSelectedProductId(item.id) }}
+                          className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1.5 rounded-lg font-medium hover:bg-blue-100 transition"
+                        >
+                          ✏️ ערוך
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOrder(item)}
+                          disabled={orderingId === item.id}
+                          className="text-xs bg-red-50 text-red-600 border border-red-200 px-2.5 py-1.5 rounded-lg font-medium hover:bg-red-100 transition disabled:opacity-50"
+                        >
+                          🗑 בטל
+                        </button>
+                      </div>
                     ) : (
-                      <span className="text-xs text-emerald-600">לחץ לפרטים ורכישה ←</span>
-                    )}
-                    {ordered.has(item.id) && !orderedDone.has(item.id) && (
-                      <button
-                        type="button"
-                        onClick={e => { e.stopPropagation(); setEditMode(true); setSelectedProductId(item.id) }}
-                        className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1 rounded-lg font-medium hover:bg-blue-100 transition"
-                      >
-                        ✏️ ערוך
-                      </button>
-                    )}
-                    {!ordered.has(item.id) && !orderedDone.has(item.id) && (
-                      <span className="text-xs text-gray-400">→</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-emerald-600">לחץ לפרטים ורכישה ←</span>
+                        <span className="text-xs text-gray-400">→</span>
+                      </div>
                     )}
                   </div>
                 </div>
-              </button>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

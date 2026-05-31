@@ -12,7 +12,7 @@ import { supabase } from '../../lib/supabase'
 
 const fmt = n => '₪' + Number(n).toLocaleString('he-IL')
 
-export default function BranchSettings({ isAdmin }) {
+export default function BranchSettings({ isAdmin, onClose }) {
   if (!isAdmin) return (
     <div className="p-6 text-center text-red-600 font-bold" dir="rtl">
       ⛔ גישה מורשית למנהל בלבד
@@ -135,9 +135,17 @@ export default function BranchSettings({ isAdmin }) {
     <div className="space-y-4" dir="rtl">
 
       {/* כותרת */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 flex items-center gap-2">
-        <span className="text-2xl">⚙️</span>
-        <h2 className="font-black text-gray-900 text-lg">הגדרות סניפים</h2>
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">⚙️</span>
+          <h2 className="font-black text-gray-900 text-lg">הגדרות סניפים</h2>
+        </div>
+        {onClose && (
+          <button onClick={onClose}
+            className="text-sm text-gray-400 hover:text-gray-700 font-bold px-3 py-1 rounded-lg hover:bg-gray-100">
+            ✕ סגור
+          </button>
+        )}
       </div>
 
       {error && (
@@ -175,44 +183,63 @@ export default function BranchSettings({ isAdmin }) {
 
               {/* ── ניכוי מתנס ── */}
               <section>
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <div className="font-black text-gray-800 text-sm">ניכוי מתנס / חברת ניהול</div>
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      אחוז שלוקחת חברת הבידור / הניהול מכל מנוי. 0% אם אין ניכוי.
-                    </div>
-                  </div>
-                  {!isEditCut ? (
-                    <button
-                      onClick={() => setEditCut(p => ({ ...p, [branch.id]: branch.platform_cut ?? 0 }))}
-                      className={`text-lg font-black px-3 py-1 rounded-xl border
-                        ${(branch.platform_cut ?? 0) > 0
-                          ? 'text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100'
-                          : 'text-gray-500 bg-gray-100 border-gray-200 hover:bg-gray-200'}`}
-                    >
-                      {branch.platform_cut ?? 0}%
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number" min="0" max="100"
-                        value={editCut[branch.id]}
-                        onChange={e => setEditCut(p => ({ ...p, [branch.id]: e.target.value }))}
-                        className="w-16 text-sm border border-blue-400 rounded-lg px-2 py-1.5 text-center font-bold"
-                      />
-                      <span className="text-sm text-gray-500">%</span>
-                      <button
-                        onClick={() => saveCut(branch.id)}
-                        disabled={saving === `cut-${branch.id}`}
-                        className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg"
-                      >{saving === `cut-${branch.id}` ? '...' : '✓ שמור'}</button>
-                      <button
-                        onClick={() => setEditCut(p => { const n={...p}; delete n[branch.id]; return n })}
-                        className="text-sm bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg"
-                      >ביטול</button>
-                    </div>
-                  )}
+                <div className="font-black text-gray-800 text-sm mb-1">ניכוי מתנס / חברת ניהול</div>
+                <div className="text-xs text-gray-400 mb-3">
+                  רלוונטי רק אם יש חברה חיצונית שלוקחת אחוז מהמנויים (כמו חברת בידור ובילוי).
                 </div>
+
+                {/* toggle */}
+                <div className="flex items-center gap-3 mb-3">
+                  <button
+                    onClick={async () => {
+                      const cur = branch.platform_cut ?? 0
+                      const newVal = cur > 0 ? 0 : 40
+                      await supabase.from('branches').update({ platform_cut: newVal }).eq('id', branch.id)
+                      fetchAll()
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                      ${(branch.platform_cut ?? 0) > 0 ? 'bg-orange-500' : 'bg-gray-300'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
+                      ${(branch.platform_cut ?? 0) > 0 ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                  <span className="text-sm text-gray-700">
+                    {(branch.platform_cut ?? 0) > 0
+                      ? <span className="font-semibold text-orange-700">פעיל — יש ניכוי</span>
+                      : <span className="text-gray-500">לא פעיל — אין ניכוי לסניף זה</span>}
+                  </span>
+                </div>
+
+                {/* שדה אחוז — רק כשפעיל */}
+                {(branch.platform_cut ?? 0) > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">אחוז ניכוי:</span>
+                    {!isEditCut ? (
+                      <button
+                        onClick={() => setEditCut(p => ({ ...p, [branch.id]: branch.platform_cut }))}
+                        className="text-lg font-black text-orange-700 bg-orange-50 hover:bg-orange-100 px-3 py-1 rounded-xl border border-orange-200"
+                      >
+                        {branch.platform_cut}%
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number" min="1" max="100"
+                          value={editCut[branch.id]}
+                          onChange={e => setEditCut(p => ({ ...p, [branch.id]: e.target.value }))}
+                          className="w-16 text-sm border border-blue-400 rounded-lg px-2 py-1.5 text-center font-bold"
+                        />
+                        <span className="text-sm text-gray-500">%</span>
+                        <button onClick={() => saveCut(branch.id)} disabled={saving === `cut-${branch.id}`}
+                          className="text-sm bg-blue-600 text-white font-bold px-3 py-1.5 rounded-lg">
+                          {saving === `cut-${branch.id}` ? '...' : '✓ שמור'}
+                        </button>
+                        <button onClick={() => setEditCut(p => { const n={...p}; delete n[branch.id]; return n })}
+                          className="text-sm bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg">ביטול</button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </section>
 
               <hr className="border-gray-100" />

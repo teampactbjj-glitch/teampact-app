@@ -484,9 +484,6 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
             <SalaryReport isAdmin={isAdmin} />
           )}
 
-          {activeTab === 'branchsettings' && isAdmin && (
-            <BranchSettings isAdmin={isAdmin} />
-          )}
 
           {activeTab === 'shop' && (
             <ShopManager isAdmin={isAdmin} trainerId={profile?.id} onOrdersChange={(n) => { setOrdersCount(n); refreshCounts() }} />

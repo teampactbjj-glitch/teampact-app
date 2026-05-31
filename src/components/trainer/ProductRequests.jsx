@@ -60,16 +60,30 @@ export default function ProductRequests({ onMarkedDone }) {
     setMarkingId(null)
   }
 
-  // pending = רשומות חדשות (status='pending' או null) או כל מה שלא 'done'/'cancelled'
-  const pending = requests.filter(r => !r.status || r.status === 'pending')
-  const done = requests.filter(r => r.status === 'done')
+  const pending    = requests.filter(r => !r.status || r.status === 'pending')
+  const done       = requests.filter(r => r.status === 'done')
+  const cancelled  = requests.filter(r => r.status === 'cancelled')
+
+  function statusBadge(req) {
+    if (req.status === 'done')      return <span className="text-xs text-gray-400">✓ נרכש</span>
+    if (req.status === 'cancelled') return <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">✗ בוטל</span>
+    return (
+      <button
+        onClick={() => markDone(req.id)}
+        disabled={markingId === req.id}
+        className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50"
+      >
+        {markingId === req.id ? '...' : 'סמן כנרכש'}
+      </button>
+    )
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-800">בקשות מוצרים</h2>
         <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full">
-          {pending.length} ממתינות · {done.length} טופלו
+          {pending.length} ממתינות · {done.length} טופלו · {cancelled.length} בוטלו
         </span>
       </div>
 
@@ -83,23 +97,29 @@ export default function ProductRequests({ onMarkedDone }) {
       ) : (
         <ul className="space-y-2">
           {requests.map(req => {
-            const isDone = req.status === 'done' // pending / null / anything else → show button
+            const isDone      = req.status === 'done'
+            const isCancelled = req.status === 'cancelled'
+            const isInactive  = isDone || isCancelled
             return (
               <li
                 key={req.id}
-                className={`rounded-xl border shadow-sm px-4 py-3 transition ${isDone ? 'bg-gray-50 border-gray-200' : 'bg-white'}`}
+                className={`rounded-xl border shadow-sm px-4 py-3 transition ${
+                  isCancelled ? 'bg-red-50 border-red-100'
+                  : isDone    ? 'bg-gray-50 border-gray-200'
+                  : 'bg-white'
+                }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     {/* שורה 1: שם המתאמן + תאריך */}
                     <div className="flex items-center justify-between gap-2">
-                      <p className={`font-bold ${isDone ? 'text-gray-400' : 'text-gray-800'}`}>{req.athlete_name}</p>
+                      <p className={`font-bold ${isInactive ? 'text-gray-400' : 'text-gray-800'}`}>{req.athlete_name}</p>
                       <span className="text-xs text-gray-400 shrink-0">
                         {new Date(req.created_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
                       </span>
                     </div>
                     {/* שורה 2: שם המוצר */}
-                    <p className={`text-sm mt-1 ${isDone ? 'text-gray-400' : 'text-gray-700'}`}>
+                    <p className={`text-sm mt-1 ${isCancelled ? 'text-red-400 line-through' : isDone ? 'text-gray-400' : 'text-gray-700'}`}>
                       📦 {req.product_name}
                     </p>
                     {/* שורה 3: מידה + צבע + כמות - badges */}
@@ -122,7 +142,7 @@ export default function ProductRequests({ onMarkedDone }) {
                         )}
                       </div>
                     )}
-                    {/* שורה 4: הערות (אפשרות רכישה + פרטים נוספים) */}
+                    {/* שורה 4: הערות */}
                     {req.notes && (
                       <p className="text-xs text-gray-500 mt-1.5 bg-gray-50 rounded-lg px-2 py-1 leading-relaxed">
                         💬 {req.notes}
@@ -130,7 +150,7 @@ export default function ProductRequests({ onMarkedDone }) {
                     )}
                     {/* שורה 5: מחיר */}
                     {(req.total_price != null || req.unit_price != null) && (
-                      <p className="text-sm font-bold text-emerald-600 mt-1.5">
+                      <p className={`text-sm font-bold mt-1.5 ${isCancelled ? 'text-gray-400 line-through' : 'text-emerald-600'}`}>
                         💰 ₪{req.total_price ?? req.unit_price}
                         {req.quantity > 1 && req.unit_price && (
                           <span className="text-xs text-gray-400 font-normal mr-1">
@@ -141,17 +161,7 @@ export default function ProductRequests({ onMarkedDone }) {
                     )}
                   </div>
                   <div className="shrink-0">
-                    {isDone ? (
-                      <span className="text-xs text-gray-400">✓ נרכש</span>
-                    ) : (
-                      <button
-                        onClick={() => markDone(req.id)}
-                        disabled={markingId === req.id}
-                        className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50"
-                      >
-                        {markingId === req.id ? '...' : 'סמן כנרכש'}
-                      </button>
-                    )}
+                    {statusBadge(req)}
                   </div>
                 </div>
               </li>

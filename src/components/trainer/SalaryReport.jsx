@@ -12,9 +12,10 @@
  * אין זליגה: class_id → branch_id — אין שיוך ידני.
  */
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react'
 import { supabase } from '../../lib/supabase'
 import * as XLSX from 'xlsx'
+import BranchSettings from './BranchSettings'
 
 // ─── קבועים ──────────────────────────────────────────────────
 
@@ -443,6 +444,8 @@ export default function SalaryReport({ isAdmin }) {
 
   // ─── UI ───────────────────────────────────────────────────
 
+  const [showSettings, setShowSettings] = useState(false)
+
   const grandCoachSalary = salaryData.reduce((s, c) => s + c.totalSalary, 0)
   const activeCoaches    = salaryData.filter(c => c.totalAthletes > 0).length
 
@@ -487,6 +490,15 @@ export default function SalaryReport({ isAdmin }) {
             className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-3 py-1.5 rounded-lg">
             🔄 רענן
           </button>
+          <button
+            onClick={() => setShowSettings(v => !v)}
+            className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors
+              ${showSettings
+                ? 'bg-gray-900 text-white border-gray-900'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+          >
+            ⚙️ הגדרות סניפים
+          </button>
         </div>
       </div>
 
@@ -494,6 +506,11 @@ export default function SalaryReport({ isAdmin }) {
         <div className="bg-red-50 border border-red-300 rounded-xl p-3 text-red-800 text-sm font-medium">
           ⚠️ {error}
         </div>
+      )}
+
+      {/* ── הגדרות סניפים (מתקפל) ── */}
+      {showSettings && (
+        <BranchSettings isAdmin={isAdmin} onClose={() => setShowSettings(false)} />
       )}
 
       {loading && <div className="text-center text-gray-400 py-10 text-sm">טוען...</div>}

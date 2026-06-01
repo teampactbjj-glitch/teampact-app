@@ -168,6 +168,25 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
   useEffect(() => { fetchAll() }, [])
 
+  // טעינת כל המלאי ברקע כשנכנסים לטאב inventory
+  useEffect(() => {
+    if (tab !== 'inventory' || products.length === 0) return
+    const unloaded = products.filter(p => !inventoryData[p.id])
+    if (unloaded.length === 0) return
+    Promise.all(
+      unloaded.map(p =>
+        supabase.from('product_variants').select('*').eq('product_id', p.id)
+          .then(({ data }) => ({ id: p.id, data: data || [] }))
+      )
+    ).then(results => {
+      setInventoryData(prev => {
+        const next = { ...prev }
+        results.forEach(({ id, data }) => { if (!next[id]) next[id] = data })
+        return next
+      })
+    })
+  }, [tab, products])
+
   async function fetchAll() {
     setLoading(true)
     // מאמן רגיל (לא אדמין) רואה רק מוצרים — לא מושכים בקשות הזמנה בכלל
@@ -805,6 +824,49 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
             const comps = getProductComponents(product) // [null] או ['ראשגארד','מכנס']
             const isMultiComp = comps.length > 1 || comps[0] !== null
 
+            // סיכום וריאנטים לתצוגה סגורה — קיבוץ לפי ממד עיקרי
+            const variantSummary = (() => {
+              if (!hasAnyVars) return null
+              const hasColors = allVars.some(v => v.color)
+              const hasSizes = allVars.some(v => v.size)
+              // אם יש רב-רכיב, נחזיר מפת רכיב → פירוט
+              if (isMultiComp) {
+                return comps.filter(Boolean).map(comp => {
+                  const cvars = allVars.filter(v => v.component_name === comp)
+                  const cHasColors = cvars.some(v => v.color)
+                  const cHasSizes = cvars.some(v => v.size)
+                  const SIZE_ORDER_C = ['XXXS','XXS','XS','S','M','L','XL','XXL','XXXL','A0','A1','A2','A3','A4']
+                  let groups = {}
+                  if (cHasSizes) {
+                    const sg = {}
+                    cvars.forEach(v => { if (v.size) sg[v.size] = (sg[v.size] || 0) + (parseInt(v.stock) || 0) })
+                    Object.keys(sg).sort((a,b) => {
+                      const ai = SIZE_ORDER_C.indexOf(a), bi = SIZE_ORDER_C.indexOf(b)
+                      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+                    }).forEach(k => { groups[k] = sg[k] })
+                  } else if (cHasColors) {
+                    cvars.forEach(v => { if (v.color) groups[v.color] = (groups[v.color] || 0) + (parseInt(v.stock) || 0) })
+                  }
+                  return { comp, groups }
+                })
+              }
+              // מוצר רגיל — קיבוץ לפי מידה (עדיפות) ואם אין — לפי צבע
+              let groups = {}
+              if (hasSizes) {
+                const SIZE_ORDER = ['XXXS','XXS','XS','S','M','L','XL','XXL','XXXL','A0','A1','A2','A3','A4']
+                const sizeGroups = {}
+                allVars.forEach(v => { if (v.size) sizeGroups[v.size] = (sizeGroups[v.size] || 0) + (parseInt(v.stock) || 0) })
+                // מיון לפי סדר מידות
+                Object.keys(sizeGroups).sort((a,b) => {
+                  const ai = SIZE_ORDER.indexOf(a), bi = SIZE_ORDER.indexOf(b)
+                  return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+                }).forEach(k => { groups[k] = sizeGroups[k] })
+              } else if (hasColors) {
+                allVars.forEach(v => { if (v.color) groups[v.color] = (groups[v.color] || 0) + (parseInt(v.stock) || 0) })
+              }
+              return Object.keys(groups).length ? [{ comp: null, groups }] : null
+            })()
+
             // סינון פעיל למוצר זה
             const filter = invFilter[product.id] || {}
             const activeComp = filter.comp !== undefined ? filter.comp : (comps.filter(Boolean)[0] ?? null)
@@ -833,7 +895,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
               })
 
             // האם מוכן להציג grid מידות
-            const canShowGrid = activeColor && (!hasLengths || activeLength)
+            const canShowGrid = (compColors.length === 0 || activeColor) && (!hasLengths || activeLength)
 
             // סה"כ מלאי לרכיב הפעיל
             const activeCompStock = allVars
@@ -852,14 +914,32 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-gray-800 text-sm">{product.title}</p>
                     {hasAnyVars && (
-                      <p className={`text-xs font-medium mt-0.5 ${totalStock > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {totalStock > 0 ? `✓ ${totalStock} יחידות במלאי` : '⚠️ כל המלאי אזל'}
-                      </p>
+                      <>
+                        <p className={`text-xs font-medium mt-0.5 ${totalStock > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                          {totalStock > 0 ? `✓ ${totalStock} יחידות במלאי` : '⚠️ כל המלאי אזל'}
+                        </p>
+                        {variantSummary && !isOpen && (
+                          <div className="mt-1 space-y-0.5">
+                            {variantSummary.map(({ comp, groups }) => (
+                              <div key={comp || '_'} className="flex flex-wrap gap-1 items-center">
+                                {comp && <span className="text-[10px] text-blue-500 font-semibold">{comp}:</span>}
+                                {Object.entries(groups).map(([label, qty]) => (
+                                  <span key={label} className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                                    qty > 0 ? 'bg-gray-100 text-gray-700' : 'bg-red-50 text-red-400'
+                                  }`}>
+                                    {label}: {qty}
+                                  </span>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
                     {!hasAnyVars && inventoryData[product.id] !== undefined && (
                       <p className="text-xs text-amber-600">טרם הוגדר מלאי — פתח והגדר</p>
                     )}
-                    {isMultiComp && (
+                    {isMultiComp && !hasAnyVars && (
                       <p className="text-[10px] text-blue-500 mt-0.5">
                         פריטים: {comps.filter(Boolean).join(' · ')}
                       </p>

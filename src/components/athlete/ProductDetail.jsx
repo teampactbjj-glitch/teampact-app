@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react'
  *   alreadyOrdered - בולאני: האם המוצר כבר הוזמן
  *   ordering       - בולאני: האם כרגע בתהליך הזמנה (לבטל כפתור)
  */
-export default function ProductDetail({ product, variants = [], onBack, onOrder, onEdit, alreadyOrdered, ordering, editMode = false }) {
+export default function ProductDetail({ product, variants = [], onBack, onOrder, onEdit, alreadyOrdered, ordering, editMode = false, initialSize = null, initialColor = null, initialLength = null, initialNotes = null, initialQuantity = 1 }) {
   // variants = מערך וריאנטים מה-DB עם stock. אם ריק = אין מידע מלאי, מציגים הכל
   const hasVariantData = variants.length > 0
 
@@ -76,14 +76,21 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
   const hasColors = colors.length > 0
   const hasLengths = lengths.length > 0
 
-  // ברירת מחדל: האפשרות המומלצת (⭐) אם יש, אחרת הראשונה
-  const [selectedOption, setSelectedOption] = useState(
-    hasOptions ? (options.find(o => o.is_featured) || options[0]) : null
-  )
-  const [selectedSize, setSelectedSize] = useState(null)
-  const [selectedColor, setSelectedColor] = useState(null)
-  const [selectedLength, setSelectedLength] = useState(null)
-  const [quantity, setQuantity] = useState(1)
+  // ברירת מחדל: אם מצב עריכה — שחזר אפשרות מה-notes, אחרת האפשרות המומלצת
+  const initialOption = (() => {
+    if (!editMode || !initialNotes || !hasOptions) return hasOptions ? (options.find(o => o.is_featured) || options[0]) : null
+    const match = initialNotes.match(/אפשרות: ([^·]+)/)
+    if (match) {
+      const name = match[1].trim()
+      return options.find(o => o.name === name) || (hasOptions ? (options.find(o => o.is_featured) || options[0]) : null)
+    }
+    return hasOptions ? (options.find(o => o.is_featured) || options[0]) : null
+  })()
+  const [selectedOption, setSelectedOption] = useState(initialOption)
+  const [selectedSize, setSelectedSize] = useState(initialSize)
+  const [selectedColor, setSelectedColor] = useState(initialColor)
+  const [selectedLength, setSelectedLength] = useState(initialLength)
+  const [quantity, setQuantity] = useState(initialQuantity)
   const [validationError, setValidationError] = useState('')
 
   // רכיבי וריאציה של האפשרות הנבחרת (למשל: תיק + חליפה → רכיב אחד; תיק + סט נו-גי → שני רכיבים)

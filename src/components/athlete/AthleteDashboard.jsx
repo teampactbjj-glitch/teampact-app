@@ -821,6 +821,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
   const selectedProduct = selectedProductId ? products.find(p => p.id === selectedProductId) : null
   if (selectedProduct) {
     const editReqId = editMode ? orderedRequestsMap[selectedProduct.id]?.id : null
+    const existingReq = orderedRequestsMap[selectedProduct.id]
     return (
       <ProductDetail
         product={selectedProduct}
@@ -833,6 +834,11 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
         alreadyOrdered={!editMode && ordered.has(selectedProduct.id)}
         ordering={orderingId === selectedProduct.id}
         editMode={editMode}
+        initialSize={editMode ? existingReq?.selected_size : null}
+        initialColor={editMode ? existingReq?.selected_color : null}
+        initialLength={editMode ? existingReq?.selected_length : null}
+        initialNotes={editMode ? existingReq?.notes : null}
+        initialQuantity={editMode ? (existingReq?.quantity || 1) : 1}
       />
     )
   }

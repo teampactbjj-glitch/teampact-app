@@ -1839,8 +1839,8 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAnnouncements() {
     const statusFilter = 'status.eq.approved,status.is.null'
     const [itemsRes, generalRes] = await Promise.all([
-      supabase.from('announcements').select('*').in('type', ['product', 'seminar']).or(statusFilter).order('created_at', { ascending: false }),
-      supabase.from('announcements').select('*').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
+      supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, currency, branch_ids, link_url, expires_at').in('type', ['product', 'seminar']).or(statusFilter).order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, currency, branch_ids, link_url, expires_at').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
     ])
     setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])
   }

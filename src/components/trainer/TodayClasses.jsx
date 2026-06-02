@@ -128,11 +128,16 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     fetchDayClasses(selectedDate)
   }, [trainerId, selectedDate])
 
-  // רענון ספירת רישומים כל 15 שניות (כדי שמאמן יראה רישום שנרשם בזמן אמת)
+  // Realtime: עדכון ספירת מתאמנים כשיש שינוי ב-member_classes או class_registrations
+  // במקום polling כל 15 שניות — מקבלים עדכון מיידי רק כשמשהו משתנה
   useEffect(() => {
     if (classes.length === 0) return
-    const i = setInterval(() => fetchMemberCounts(classes.map(c => c.id)), 15000)
-    return () => clearInterval(i)
+    const classIds = classes.map(c => c.id)
+    const ch = supabase.channel('member-counts-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_classes' }, () => fetchMemberCounts(classIds))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_registrations' }, () => fetchMemberCounts(classIds))
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
   }, [classes, selectedDate])
 
   // גלול אל התאריך הנבחר בסלייד — instantly, ועוצר ברגע שהגעת ליעד.

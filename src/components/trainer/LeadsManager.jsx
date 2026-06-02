@@ -29,7 +29,7 @@ export default function LeadsManager({ trainerId = null, isAdmin = false } = {})
     }
 
     const [{ data: leadsData }, { data: branchData }] = await Promise.all([
-      supabase.from('members').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('members').select('id, full_name, email, phone, status, subscription_type, branch_id, branch_ids, coach_id, requested_coach_name, requested_coach_names, created_at').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('branches').select('id, name'),
     ])
 

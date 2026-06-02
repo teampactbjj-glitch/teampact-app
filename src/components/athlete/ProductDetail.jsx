@@ -34,9 +34,15 @@ export default function ProductDetail({ product, variants = [], allProducts = []
 
   function getCompVars(compName) {
     if (compName === null) {
-      // מוצר פשוט — מנסה קודם וריאנטים ללא component_name
       const nullVars = variants.filter(v => v.component_name == null)
-      // אם אין → fallback לכל הוריאנטים (וריאנטים שנוצרו בטאב מלאי עם שם פריט)
+      // אם ה-null variants ריקים לחלוטין (stock=0 לכולם) — השתמש בוריאנטי הרכיב הראשי
+      const nullHasStock = nullVars.some(v => (v.stock || 0) > 0)
+      if (!nullHasStock && nullVars.length > 0) {
+        // מצא את הרכיב הראשי (הכי הרבה stock) — לא חגורה/belt
+        const compNames = [...new Set(variants.map(v => v.component_name).filter(Boolean))]
+        const mainComp = compNames.find(c => !c.includes('חגורה') && !c.includes('belt') && !c.includes('חגורות'))
+        if (mainComp) return variants.filter(v => v.component_name === mainComp)
+      }
       return nullVars.length > 0 ? nullVars : variants
     }
     return variants.filter(v => (v.component_name || null) === compName)

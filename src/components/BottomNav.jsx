@@ -1,4 +1,4 @@
-export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin = false, isSecretary = false, pendingCount = 0, leadsCount = 0, ordersCount = 0, announcementsCount = 0, scheduleCount = 0, coachesCount = 0 }) {
+export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin = false, isSecretary = false, pendingCount = 0, leadsCount = 0, ordersCount = 0, announcementsCount = 0, scheduleCount = 0, coachesCount = 0, cartCount = 0 }) {
   const tabs = isSecretary
     ? [
         { id: 'athletes',      icon: '👥', label: 'מתאמנים' },
@@ -43,6 +43,7 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
         let badgeColor = null
         if (tab.id === 'schedule' && isTrainer && !isSecretary && scheduleCount > 0) { badgeCount = scheduleCount; badgeColor = 'red' }
         else if (tab.id === 'shop' && isTrainer && !isSecretary && ordersCount > 0) { badgeCount = ordersCount; badgeColor = 'red' }
+        else if (tab.id === 'shop' && !isTrainer && cartCount > 0) { badgeCount = cartCount; badgeColor = 'emerald' }
         else if (tab.id === 'athletes' && (isTrainer || isSecretary) && (leadsCount + pendingCount) > 0) { badgeCount = leadsCount + pendingCount; badgeColor = 'orange' }
         else if (tab.id === 'announcements' && announcementsCount > 0) { badgeCount = announcementsCount; badgeColor = 'red' }
         else if (tab.id === 'coaches' && isAdmin && coachesCount > 0) { badgeCount = coachesCount; badgeColor = 'orange' }
@@ -85,7 +86,7 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
               letterSpacing: '0.01em',
             }}>{tab.label}</span>
             {badgeCount > 0 && (
-              <span aria-hidden="true" className={`absolute flex items-center justify-center rounded-full ${badgeColor === 'red' ? 'bg-red-600' : 'bg-orange-500'} text-white text-[10px] font-bold`}
+              <span aria-hidden="true" className={`absolute flex items-center justify-center rounded-full ${badgeColor === 'red' ? 'bg-red-600' : badgeColor === 'emerald' ? 'bg-emerald-600' : 'bg-orange-500'} text-white text-[10px] font-bold`}
                 style={{
                   top: 6,
                   right: '50%',

@@ -166,7 +166,14 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     setHasDraft(false)
   }
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => {
+    fetchAll()
+    // Realtime: עדכון אוטומטי כשהזמנה נוצרת/עודכנה/בוטלה
+    const ch = supabase.channel('shop-orders-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_requests' }, () => fetchAll())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [])
 
   // טעינת כל המלאי ברקע כשנכנסים לטאב inventory
   useEffect(() => {

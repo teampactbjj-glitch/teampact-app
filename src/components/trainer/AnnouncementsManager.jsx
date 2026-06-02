@@ -107,7 +107,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   async function fetchAnnouncements() {
     setLoading(true)
-    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, currency, branch_ids, link_url, expires_at')
+    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids')
       .in('type', ['general', 'announcement', 'seminar'])
       .order('created_at', { ascending: false })
     setItems(data || [])

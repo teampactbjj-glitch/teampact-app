@@ -62,8 +62,15 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
     : []
   const hasOptions = options.length > 0
 
-  const sizes = Array.isArray(product.available_sizes) ? product.available_sizes.filter(Boolean) : []
-  const colors = Array.isArray(product.available_colors) ? product.available_colors.filter(Boolean) : []
+  // fallback: אם available_sizes/colors ריקים — גזור מ-variants
+  const variantSizes = [...new Set(variants.map(v => v.size).filter(Boolean))]
+  const variantColors = [...new Set(variants.map(v => v.color).filter(Boolean))]
+  const sizes = Array.isArray(product.available_sizes) && product.available_sizes.filter(Boolean).length > 0
+    ? product.available_sizes.filter(Boolean)
+    : variantSizes
+  const colors = Array.isArray(product.available_colors) && product.available_colors.filter(Boolean).length > 0
+    ? product.available_colors.filter(Boolean)
+    : variantColors
   const lengths = Array.isArray(product.available_lengths) ? product.available_lengths.filter(Boolean) : []
   const hasSizes = sizes.length > 0
   const hasColors = colors.length > 0
@@ -165,7 +172,6 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
     if (hasSizes && !selectedSize) { setValidationError('יש לבחור מידה'); return }
     if (hasColors && !selectedColor) { setValidationError('יש לבחור צבע'); return }
     if (hasLengths && !selectedLength) { setValidationError('יש לבחור אורך (ארוך / קצר)'); return }
-    if (quantity > maxQty && maxQty !== Infinity) { setValidationError(`המלאי הזמין: ${maxQty} יחידות`); return }
     setValidationError('')
     onOrder(product, selectedOption, selectedSize, selectedColor, selectedLength, null, quantity)
   }
@@ -638,14 +644,10 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
               <span className="w-8 text-center font-bold text-gray-900">{quantity}</span>
               <button
                 type="button"
-                onClick={() => setQuantity(q => Math.min(maxQty, q + 1))}
-                disabled={quantity >= maxQty}
-                className="w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold text-lg flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 transition"
+                onClick={() => setQuantity(q => q + 1)}
+                className="w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold text-lg flex items-center justify-center hover:bg-gray-100 transition"
               >+</button>
             </div>
-            {maxQty !== Infinity && maxQty > 0 && (
-              <span className="text-xs text-gray-400">מלאי: {maxQty}</span>
-            )}
           </div>
         )}
 

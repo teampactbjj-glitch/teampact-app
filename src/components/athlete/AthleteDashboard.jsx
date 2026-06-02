@@ -684,6 +684,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
       setOrderedRequestsMap(prev => { const n = {...prev}; delete n[item.id]; return n })
       setOrderingId(null)
       setSelectedProductId(null)
+      allTrainerUserIds().then(ids => notifyPush({ userIds: ids, title: '❌ ביטול הזמנה', body: `${athleteName} ביטל הזמנה: ${item.title}`, url: '/#shop', tag: `order-cancel:${Date.now()}` })).catch(() => {})
       return
     }
     setOrderingId(item.id)
@@ -934,6 +935,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
                         setOrdered(prev => { const n = new Set(prev); n.delete(item.id); return n })
                         setOrderedRequestsMap(prev => { const n = {...prev}; delete n[item.id]; return n })
                         setOrderingId(null)
+                        allTrainerUserIds().then(ids => notifyPush({ userIds: ids, title: '❌ ביטול הזמנה', body: `${athleteName} ביטל הזמנה: ${item.title}`, url: '/#shop', tag: `order-cancel:${Date.now()}` })).catch(() => {})
                       }}
                       disabled={orderingId === item.id}
                       className="flex-1 text-sm bg-red-50 text-red-600 border border-red-200 py-2 rounded-xl font-medium hover:bg-red-100 transition disabled:opacity-50"

@@ -4,8 +4,8 @@ import { supabase } from '../../lib/supabase'
 import { useToast, useConfirm } from '../a11y'
 import { uploadToCloudinary } from '../../lib/cloudinary'
 
-const STATUS_LABELS = { pending: 'ממתין', done: 'טופל' }
-const STATUS_COLORS = { pending: 'bg-orange-100 text-orange-700', done: 'bg-green-100 text-green-700' }
+const STATUS_LABELS = { pending: 'ממתין', done: 'טופל', cancelled: 'בוטל' }
+const STATUS_COLORS = { pending: 'bg-orange-100 text-orange-700', done: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-600' }
 
 // מפתח לשמירת טיוטה של מוצר חדש ב-localStorage. משותף לכל המאמנים במכשיר הזה.
 const DRAFT_KEY = 'teampact_product_draft_v1'

@@ -11,9 +11,23 @@ import { useState, useEffect } from 'react'
  *   alreadyOrdered - בולאני: האם המוצר כבר הוזמן
  *   ordering       - בולאני: האם כרגע בתהליך הזמנה (לבטל כפתור)
  */
-export default function ProductDetail({ product, variants = [], onBack, onOrder, onEdit, alreadyOrdered, ordering, editMode = false, initialSize = null, initialColor = null, initialLength = null, initialNotes = null, initialQuantity = 1 }) {
+export default function ProductDetail({ product, variants = [], allProducts = [], onBack, onOrder, onEdit, alreadyOrdered, ordering, editMode = false, initialSize = null, initialColor = null, initialLength = null, initialNotes = null, initialQuantity = 1 }) {
   // variants = מערך וריאנטים מה-DB עם stock. אם ריק = אין מידע מלאי, מציגים הכל
   const hasVariantData = variants.length > 0
+
+  // מחפש מוצר מתאים לרכיב חבילה (לפי שם) ומחזיר מידות/צבעים מהמלאי שלו
+  function getCompProductData(compName) {
+    if (!compName || !allProducts.length) return { sizes: [], colors: [], lengths: [] }
+    const match = allProducts.find(p =>
+      p.title?.includes(compName) || compName.includes(p.title?.split(' ')[0] || '')
+    )
+    if (!match) return { sizes: [], colors: [], lengths: [] }
+    return {
+      sizes: Array.isArray(match.available_sizes) ? match.available_sizes.filter(Boolean) : [],
+      colors: Array.isArray(match.available_colors) ? match.available_colors.filter(Boolean) : [],
+      lengths: Array.isArray(match.available_lengths) ? match.available_lengths.filter(Boolean) : [],
+    }
+  }
 
   // פונקציות עזר לבדיקת מלאי — מודעות לפריט (component_name)
   // אם אין וריאנטים לאותו פריט → מציגים הכל כזמין (אין נתון מלאי)
@@ -438,9 +452,13 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
             const hasCV = cVars.length > 0
             const sel = componentSelections[idx] || {}
 
-            // צבעים — כל הצבעים הזמינים לרכיב זה (ללא סינון)
+            // fallback ממוצר מתאים (אם אין variants לרכיב)
+            const compProductData = !hasCV ? getCompProductData(comp.name) : { sizes: [], colors: [], lengths: [] }
+
+            // צבעים — מ-variants → מוצר מתאים → JSON
             const compColors = hasCV
               ? [...new Set(cVars.map(v => v.color).filter(Boolean))]
+              : compProductData.colors.length > 0 ? compProductData.colors
               : Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
 
             // אורכים — מסוננים לפי צבע שנבחר
@@ -449,6 +467,7 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
               : cVars
             const compLengths = hasCV
               ? [...new Set(lengthVars.map(v => v.length).filter(Boolean))]
+              : compProductData.lengths.length > 0 ? compProductData.lengths
               : Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
 
             // מידות — מסוננות לפי צבע + אורך שנבחרו
@@ -460,6 +479,7 @@ export default function ProductDetail({ product, variants = [], onBack, onOrder,
               : cVars
             const compSizes = hasCV
               ? [...new Set(sizeVars.map(v => v.size).filter(Boolean))]
+              : compProductData.sizes.length > 0 ? compProductData.sizes
               : Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
 
             const needsColor = compColors.length > 0

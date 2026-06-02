@@ -827,6 +827,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
       <ProductDetail
         product={selectedProduct}
         variants={selectedProductVariants}
+        allProducts={products}
         onBack={() => { setSelectedProductId(null); setEditMode(false) }}
         onOrder={async (product, option, size, color, length, componentSelections, qty) => {
           await handleOrder(product, option, size, color, length, componentSelections, qty ?? 1, editReqId)

@@ -15,12 +15,12 @@ export default function ProductDetail({ product, variants = [], allProducts = []
   // variants = מערך וריאנטים מה-DB עם stock. אם ריק = אין מידע מלאי, מציגים הכל
   const hasVariantData = variants.length > 0
 
-  // מחפש מוצר מתאים לרכיב חבילה (לפי שם) ומחזיר מידות/צבעים מהמלאי שלו
+  // מחפש מוצר לפי שם רכיב — התאמה מדויקת לשם מוצר בודד
   function getCompProductData(compName) {
     if (!compName || !allProducts.length) return { sizes: [], colors: [], lengths: [] }
-    const match = allProducts.find(p =>
-      p.title?.includes(compName) || compName.includes(p.title?.split(' ')[0] || '')
-    )
+    const normalize = s => (s || '').replace(/['''׳]/g, "'").trim()
+    const normComp = normalize(compName)
+    const match = allProducts.find(p => normalize(p.title) === normComp)
     if (!match) return { sizes: [], colors: [], lengths: [] }
     return {
       sizes: Array.isArray(match.available_sizes) ? match.available_sizes.filter(Boolean) : [],

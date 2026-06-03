@@ -1,6 +1,19 @@
 import { useState, useEffect } from 'react'
 import { ADULT_BELTS, KIDS_BELTS } from '../../lib/belts'
 
+// נרמול שם לצורך השוואה: רווחים, מקפים, גרשיים, זכר/נקבה
+// למשל: "אפור שחור" == "אפור-שחור" == "אפור - שחור"
+//        "לבן" == "לבנה"  |  "שחור" == "שחורה"
+export function normalizeColorName(s) {
+  if (!s) return ''
+  return s
+    .trim()
+    .replace(/['''׳]/g, "'")         // גרשיים
+    .replace(/\s*-\s*/g, ' ')        // מקף עם/בלי רווחים → רווח
+    .replace(/ה$/g, '')              // הסרת ה' בסוף (לבנה→לבן, שחורה→שחור)
+    .toLowerCase()
+}
+
 /**
  * דף פירוט מוצר למתאמן - נפתח כמסך מלא כשלוחצים על מוצר בחנות.
  * מציג: תמונה, תיאור קצר, תיאור מלא, תכונות בולטות, ואפשרויות רכישה.
@@ -114,11 +127,14 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
     return variants.filter(v => (v.component_name || null) === compName)
   }
 
+  // השוואת צבע עם נרמול (רווח/מקף, זכר/נקבה)
+  const colorsMatch = (a, b) => normalizeColorName(a) === normalizeColorName(b)
+
   // בדיקת זמינות צבע (ללא סינון מידה — צבע הוא הבחירה הראשונה)
   const colorHasStock = (color, compName = null) => {
     const cv = getCompVars(compName)
     if (cv.length === 0) return true
-    return cv.some(v => v.color === color && (v.stock || 0) > 0)
+    return cv.some(v => colorsMatch(v.color, color) && (v.stock || 0) > 0)
   }
 
   // בדיקת זמינות אורך — מסונן לפי צבע שנבחר
@@ -127,7 +143,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
     if (cv.length === 0) return true
     return cv.some(v =>
       v.length === len &&
-      (!forColor || v.color === forColor) &&
+      (!forColor || colorsMatch(v.color, forColor)) &&
       (v.stock || 0) > 0
     )
   }
@@ -138,7 +154,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
     if (cv.length === 0) return true
     return cv.some(v =>
       v.size === size &&
-      (!forColor || v.color === forColor) &&
+      (!forColor || colorsMatch(v.color, forColor)) &&
       (!forLength || v.length === forLength) &&
       (v.stock || 0) > 0
     )

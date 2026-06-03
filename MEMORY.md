@@ -23,6 +23,13 @@
 ### קומיט
 `feat: bundle system + belt display + discount % + fix gi colors & description`
 
+### ⚠️ כלל קריטי — matching צבעים/שמות בעברית
+**תמיד** להשתמש ב-`normalizeColorName()` (מ-ProductDetail.jsx) לפני כל השוואת צבע/שם:
+- "אפור שחור" == "אפור-שחור" == "אפור - שחור" (רווח vs מקף)
+- "לבן" == "לבנה" / "שחור" == "שחורה" (זכר vs נקבה — הסרת ה' בסוף)
+- הפונקציה: `.trim().replace(/\s*-\s*/g,' ').replace(/ה$/,'').toLowerCase()`
+- **כל** matching של color/size/component_name → תמיד דרך normalizeColorName
+
 ### My last pending task
 הכל הושלם. לבדוק ב-Vercel שה-build עבר. Cmd+Shift+R לאחר deploy.
 

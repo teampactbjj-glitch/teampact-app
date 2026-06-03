@@ -1115,12 +1115,19 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                               <p className="text-xs font-bold text-gray-700">
                                 📏 {activeComp || 'מלאי'} — {activeColor}{activeLength ? ` + ${activeLength}` : ''}:
                               </p>
+                              <button type="button"
+                                disabled={inventoryLoading}
+                                onClick={() => generateInventoryMatrix(product, activeComp)}
+                                className="text-xs bg-blue-600 text-white px-2 py-1 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                {inventoryLoading ? 'יוצר...' : '+ צור שורות חסרות'}
+                              </button>
                             </div>
 
                             {filteredVars.length === 0 ? (
                               <div className="text-center py-4 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
                                 <p className="text-xs text-gray-400">אין שורות מלאי לשילוב זה</p>
-                                <p className="text-[10px] text-gray-400 mt-1">לחץ "+ צור שורות" ליצירה אוטומטית</p>
+                                <p className="text-[10px] text-gray-400 mt-1">לחץ "+ צור שורות חסרות" ↑</p>
                               </div>
                             ) : (
                               <div className="grid grid-cols-3 gap-2">

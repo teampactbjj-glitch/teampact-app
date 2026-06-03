@@ -105,16 +105,9 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
 
   function getCompVars(compName) {
     if (compName === null) {
-      const nullVars = variants.filter(v => v.component_name == null)
-      // אם ה-null variants ריקים לחלוטין (stock=0 לכולם) — השתמש בוריאנטי הרכיב הראשי
-      const nullHasStock = nullVars.some(v => (v.stock || 0) > 0)
-      if (!nullHasStock && nullVars.length > 0) {
-        // מצא את הרכיב הראשי (הכי הרבה stock) — לא חגורה/belt
-        const compNames = [...new Set(variants.map(v => v.component_name).filter(Boolean))]
-        const mainComp = compNames.find(c => !c.includes('חגורה') && !c.includes('belt') && !c.includes('חגורות'))
-        if (mainComp) return variants.filter(v => v.component_name === mainComp)
-      }
-      return nullVars.length > 0 ? nullVars : variants
+      // מחזיר את כל הוריאנטים של המוצר לבדיקת מלאי —
+      // מלאי יכול לשבת תחת component_name שונה (למשל 'חליפה') ולא בהכרח null
+      return variants.length > 0 ? variants : []
     }
     // חיפוש קודם ב-compVariantsMap (וריאנטים של מוצר רכיב נפרד בחבילה)
     if (compVariantsMap[compName]?.length) return compVariantsMap[compName]

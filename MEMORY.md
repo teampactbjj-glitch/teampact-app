@@ -1,5 +1,33 @@
 # MEMORY - TeamPact App
 
+## ✅ Session 03.06.2026 — מערכת חבילות + אחוז הנחה + תצוגת חגורות (COMPLETED)
+
+### מה בוצע
+1. **מערכת חבילות חדשה** — SQL: `bundle_items JSONB` על `announcements`. חבילה = announcement עם `type='bundle'` ו-`bundle_items: [{product_id, product_name, qty}]`.
+2. **ShopManager** — כפתור "🎁 הוסף חבילה" ליד "הוסף מוצר" בטאב מוצרים. כמות +/− לכל פריט (2× סט נו-גי). מציג חיסכון בזמן אמת. רשימת חבילות קיימות עם מחיר וחיסכון.
+3. **AthleteDashboard** — טוען type='bundle'. כשפותחים חבילה — variants נטענים לפי product_id. כשפותחים מוצר — מוצא חבילות רלוונטיות ומציג אותן.
+4. **ProductDetail** — חבילה: בחירת צבע/אורך/מידה לכל פריט בנפרד, מלאי אמיתי מ-product_variants. מוצר בודד: "זמין גם בחבילה" בתחתית.
+5. **אחוז הנחה** — badge אדום `-X%` + מחיר מחוק + "💰 חסכו ₪X" על כל אפשרות חבילה. מחושב מ-`original_price` (שדה חדש ב-purchase_options) או fallback מה-note הישן.
+6. **תצוגת חגורות** — שתי שורות: בוגרים (לבנה→שחורה עם צבע אמיתי) + ילדים (אפורה→ירוקה-שחורה). מזוהה אוטומטית לפי title מכיל "חגורה".
+7. **תיקון SELECT** — נוסף `description_long, features` לשאילתת המוצרים — תיאור מלא ותכונות מוצגים שוב.
+8. **תיקון צבעים** — `available_colors` קודם, `product_variants` לבדיקת מלאי בלבד. SQL: `UPDATE announcements SET available_colors = ARRAY['לבן','אפור שחור','שחור'] WHERE id = '5c91e303...'` (חליפה).
+9. **הוסרו** — "צור/עדכן מטריצת וריאנטים" ו-"+ צור שורות" מטאב מלאי.
+
+### קבצים שנגעו
+| קובץ | מה שונה |
+|---|---|
+| `src/components/trainer/ShopManager.jsx` | bundle state/functions/UI, הסרת matrix buttons, original_price בpurchase_options |
+| `src/components/athlete/AthleteDashboard.jsx` | bundle loading, compVariantsMap, relatedBundles, SELECT + description_long/features |
+| `src/components/athlete/ProductDetail.jsx` | bundle UI, belt display, discount %, available_colors priority |
+
+### קומיט
+`feat: bundle system + belt display + discount % + fix gi colors & description`
+
+### My last pending task
+הכל הושלם. לבדוק ב-Vercel שה-build עבר. Cmd+Shift+R לאחר deploy.
+
+---
+
 ## ⚠️ Session 02.06.2026 (ערב) — עגלת קניות + חנות + מלאי (חלקית פתוחה)
 
 ### מה בוצע והושלם ✅

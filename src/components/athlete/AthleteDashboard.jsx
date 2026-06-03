@@ -596,7 +596,7 @@ function AnnouncementsTab({ announcements, profile, member }) {
 function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
   const toast = useToast()
   const confirm = useConfirm()
-  const products = allAnnouncements.filter(a => a.type === 'product')
+  const products = allAnnouncements.filter(a => a.type === 'product' || a.type === 'bundle')
   const athleteName = member?.full_name || profile?.full_name || profile?.email || 'לא ידוע'
   const storageKey = profile?.id ? `shop_ordered_${profile.id}` : null
   const [ordered, setOrdered] = useState(() => {
@@ -606,6 +606,8 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
   const [orderingId, setOrderingId] = useState(null)
   const [selectedProductId, setSelectedProductId] = useState(null)  // איזה מוצר פתוח בדף פירוט
   const [selectedProductVariants, setSelectedProductVariants] = useState([])
+  const [compVariantsMap, setCompVariantsMap] = useState({})  // { compName: variants[] } לחבילות
+  const productsRef = useRef([])  // ref כדי לקרוא products בתוך useEffect בלי לגרום לו להריץ מחדש
   const [orderedDone, setOrderedDone] = useState(new Set())  // הזמנות שהמנהל סיים
   const [orderedRequestsMap, setOrderedRequestsMap] = useState({})  // product_id → רשומת הזמנה מלאה
   const [editMode, setEditMode] = useState(false)  // האם פותחים ProductDetail לעריכה
@@ -621,15 +623,54 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
     onCartCountChange?.(pending)
   }, [ordered, orderedDone])
 
-  // טעינת וריאנטים (מלאי) כשפותחים מוצר
+  // שומר ref עדכני על products כדי לקרוא אותו מתוך effects בלי להוסיפו לdependency
+  useEffect(() => { productsRef.current = products }, [products])
+
+  // טעינת וריאנטים (מלאי) כשפותחים מוצר או חבילה
   useEffect(() => {
-    if (!selectedProductId) { setSelectedProductVariants([]); return }
-    supabase
-      .from('product_variants')
-      .select('id, size, color, length, component_name, stock, active')
-      .eq('product_id', selectedProductId)
-      .eq('active', true)
-      .then(({ data }) => setSelectedProductVariants(data || []))
+    if (!selectedProductId) { setSelectedProductVariants([]); setCompVariantsMap({}); return }
+    const doLoad = async () => {
+      const allProds = productsRef.current
+      const prod = allProds.find(p => p.id === selectedProductId)
+      const isBundle = prod?.type === 'bundle'
+      const map = {}  // { product_id: variants[] }
+
+      if (isBundle) {
+        // חבילה: אין וריאנטים עצמיים — כולם נטענים לפי product_id של כל פריט
+        setSelectedProductVariants([])
+        for (const item of (prod.bundle_items || [])) {
+          const { data } = await supabase.from('product_variants')
+            .select('id, size, color, length, component_name, stock, active')
+            .eq('product_id', item.product_id).eq('active', true)
+          if (data?.length) map[item.product_id] = data
+        }
+      } else {
+        // מוצר בודד: טוען וריאנטים עצמיים
+        const { data: mainVars } = await supabase.from('product_variants')
+          .select('id, size, color, length, component_name, stock, active')
+          .eq('product_id', selectedProductId).eq('active', true)
+        setSelectedProductVariants(mainVars || [])
+
+        // מוצא חבילות שמכילות את המוצר הזה וטוען variants לכל הפריטים שלהן
+        const relBundles = allProds.filter(p =>
+          p.type === 'bundle' &&
+          (p.bundle_items || []).some(i => i.product_id === selectedProductId)
+        )
+        for (const bundle of relBundles) {
+          for (const item of (bundle.bundle_items || [])) {
+            if (map[item.product_id]) continue
+            const { data } = await supabase.from('product_variants')
+              .select('id, size, color, length, component_name, stock, active')
+              .eq('product_id', item.product_id).eq('active', true)
+            if (data?.length) map[item.product_id] = data
+          }
+        }
+      }
+
+      setCompVariantsMap(map)
+    }
+    doLoad()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProductId])
 
   useEffect(() => {
@@ -823,10 +864,16 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
   if (selectedProduct) {
     const editReqId = editMode ? orderedRequestsMap[selectedProduct.id]?.id : null
     const existingReq = orderedRequestsMap[selectedProduct.id]
+    // חבילות רלוונטיות — חבילות שמכילות את המוצר הזה
+    const relatedBundles = selectedProduct.type !== 'bundle'
+      ? products.filter(p => p.type === 'bundle' && (p.bundle_items || []).some(i => i.product_id === selectedProduct.id))
+      : []
     return (
       <ProductDetail
         product={selectedProduct}
         variants={selectedProductVariants}
+        compVariantsMap={compVariantsMap}
+        relatedBundles={relatedBundles}
         allProducts={products}
         onBack={() => { setSelectedProductId(null); setEditMode(false) }}
         onOrder={async (product, option, size, color, length, componentSelections, qty) => {
@@ -1960,7 +2007,7 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAnnouncements() {
     const statusFilter = 'status.eq.approved,status.is.null'
     const [itemsRes, generalRes] = await Promise.all([
-      supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids, purchase_options, available_sizes, available_colors, available_lengths').in('type', ['product', 'seminar']).or(statusFilter).order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, status, created_at, price, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
       supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
     ])
     setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])

@@ -76,6 +76,12 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   const [loading, setLoading] = useState(true)
   const [hasDraft, setHasDraft] = useState(false)  // האם יש טיוטה שמורה ב-localStorage
 
+  // ─── חבילות ───────────────────────────────────────────────
+  const [bundles, setBundles] = useState([])
+  const [showBundleForm, setShowBundleForm] = useState(false)
+  const [bundleForm, setBundleForm] = useState({ name: '', price: '', items: [] }) // items: [{product_id, product_name}]
+  const [savingBundle, setSavingBundle] = useState(false)
+
   // מלאי - טאב ניהול מלאי
   const [inventoryData, setInventoryData] = useState({})      // { [productId]: variants[] }
   const [inventoryExpanded, setInventoryExpanded] = useState(null) // product id שפתוח
@@ -225,7 +231,56 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     setOrders(merged)
     const pending = merged.filter(o => o.status === 'pending').length
     onOrdersChange?.(pending)
+    // טעינת חבילות
+    const { data: bundleData } = await supabase
+      .from('announcements').select('id, title, price, bundle_items, created_at')
+      .eq('type', 'bundle').is('deleted_at', null).order('created_at', { ascending: false })
+    setBundles(bundleData || [])
     setLoading(false)
+  }
+
+  // ─── פונקציות חבילות ───────────────────────────────────────────
+  function toggleBundleItem(product) {
+    setBundleForm(prev => {
+      const exists = prev.items.find(i => i.product_id === product.id)
+      return {
+        ...prev,
+        items: exists
+          ? prev.items.filter(i => i.product_id !== product.id)
+          : [...prev.items, { product_id: product.id, product_name: product.title, qty: 1 }],
+      }
+    })
+  }
+
+  async function handleSaveBundle() {
+    if (!bundleForm.name.trim()) { toast.error('חובה שם לחבילה'); return }
+    if (bundleForm.items.length < 2) { toast.error('חבילה צריכה לפחות 2 מוצרים'); return }
+    setSavingBundle(true)
+    const payload = {
+      title: bundleForm.name.trim(),
+      price: bundleForm.price ? parseFloat(bundleForm.price) : null,
+      type: 'bundle',
+      status: 'approved',
+      bundle_items: bundleForm.items,
+      content: '',
+      trainer_id: trainerId || null,
+    }
+    const { error } = await supabase.from('announcements').insert(payload)
+    setSavingBundle(false)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    toast.success('החבילה נשמרה!')
+    setBundleForm({ name: '', price: '', items: [] })
+    setShowBundleForm(false)
+    const { data } = await supabase.from('announcements').select('id, title, price, bundle_items, created_at')
+      .eq('type', 'bundle').is('deleted_at', null).order('created_at', { ascending: false })
+    setBundles(data || [])
+  }
+
+  async function handleDeleteBundle(id) {
+    const ok = await confirm('למחוק את החבילה?')
+    if (!ok) return
+    await supabase.from('announcements').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    setBundles(prev => prev.filter(b => b.id !== id))
   }
 
   // ─── ניהול מלאי ───────────────────────────────────────────────
@@ -534,6 +589,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
             .map(o => ({
               name: o.name || '',
               price: o.price !== '' && o.price != null ? parseFloat(o.price) : null,
+              original_price: o.original_price !== '' && o.original_price != null ? parseFloat(o.original_price) : null,
               note: o.note || '',
               is_featured: !!o.is_featured,
               // שמירת רכיבי וריאציה (לחבילות עם מידה/צבע פר פריט)
@@ -1059,15 +1115,6 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                               <p className="text-xs font-bold text-gray-700">
                                 📏 {activeComp || 'מלאי'} — {activeColor}{activeLength ? ` + ${activeLength}` : ''}:
                               </p>
-                              {filteredVars.length === 0 && (
-                                <button type="button"
-                                  disabled={inventoryLoading}
-                                  onClick={() => generateInventoryMatrix(product, activeComp)}
-                                  className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50"
-                                >
-                                  {inventoryLoading ? 'יוצר...' : '+ צור שורות'}
-                                </button>
-                              )}
                             </div>
 
                             {filteredVars.length === 0 ? (
@@ -1157,13 +1204,80 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
           )}
 
           {isAdmin && (
-            <div className="flex justify-end">
-              <button onClick={() => showForm ? setShowForm(false) : openAdd(false)}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => { setShowBundleForm(f => !f); setShowForm(false) }}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${showBundleForm ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-purple-600 text-white border-transparent hover:bg-purple-700'}`}>
+                {showBundleForm ? 'ביטול חבילה' : '🎁 הוסף חבילה'}
+              </button>
+              <button onClick={() => { setShowForm(f => !f); setShowBundleForm(false) }}
                 className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
                 {showForm ? 'ביטול' : '+ הוסף מוצר'}
               </button>
             </div>
           )}
+
+          {/* ── טופס הוספת חבילה ── */}
+          {showBundleForm && (() => {
+            const regularTotal = bundleForm.items.reduce((sum, i) => {
+              const p = products.find(pr => pr.id === i.product_id)
+              return sum + (p?.price ? parseFloat(p.price) * (i.qty || 1) : 0)
+            }, 0)
+            const bundlePrice = bundleForm.price ? parseFloat(bundleForm.price) : 0
+            const saving = regularTotal > 0 && bundlePrice > 0 ? (regularTotal - bundlePrice).toFixed(0) : null
+            return (
+              <div className="bg-white border border-purple-200 rounded-xl p-4 space-y-4 shadow-sm">
+                <h4 className="font-bold text-sm text-purple-700 border-b border-purple-100 pb-1">🎁 חבילה חדשה</h4>
+                <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="שם החבילה *"
+                  value={bundleForm.name} onChange={e => setBundleForm(p => ({ ...p, name: e.target.value }))} />
+                <div className="space-y-1">
+                  <input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="מחיר החבילה ₪"
+                    value={bundleForm.price} onChange={e => setBundleForm(p => ({ ...p, price: e.target.value }))} />
+                  {saving !== null && (
+                    <p className="text-xs text-emerald-600 font-bold">
+                      💰 חיסכון: ₪{saving} לעומת קנייה בנפרד (₪{regularTotal.toFixed(0)})
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-bold text-gray-600">בחר מוצרים (לפחות 2):</p>
+                  <div className="space-y-1 max-h-52 overflow-y-auto border rounded-lg p-2">
+                    {products.filter(p => p.type === 'product').map(p => {
+                      const existing = bundleForm.items.find(i => i.product_id === p.id)
+                      return (
+                        <div key={p.id} className="flex items-center gap-2 text-sm hover:bg-gray-50 rounded p-1">
+                          <input type="checkbox" checked={!!existing}
+                            onChange={() => toggleBundleItem(p)}
+                            className="flex-shrink-0" />
+                          <span className="flex-1 truncate">{p.title}</span>
+                          {p.price != null && <span className="text-gray-400 text-xs">₪{p.price}</span>}
+                          {existing && (
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button type="button" onClick={() => setBundleForm(prev => ({
+                                ...prev, items: prev.items.map(i => i.product_id === p.id ? { ...i, qty: Math.max(1, (i.qty||1) - 1) } : i)
+                              }))} className="w-5 h-5 rounded bg-gray-200 text-xs font-bold hover:bg-gray-300">−</button>
+                              <span className="w-5 text-center text-xs font-bold">{existing.qty || 1}</span>
+                              <button type="button" onClick={() => setBundleForm(prev => ({
+                                ...prev, items: prev.items.map(i => i.product_id === p.id ? { ...i, qty: (i.qty||1) + 1 } : i)
+                              }))} className="w-5 h-5 rounded bg-gray-200 text-xs font-bold hover:bg-gray-300">+</button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {bundleForm.items.length > 0 && (
+                    <p className="text-xs text-purple-600">
+                      {bundleForm.items.map(i => `${i.qty > 1 ? `${i.qty}× ` : ''}${i.product_name}`).join(' + ')}
+                    </p>
+                  )}
+                </div>
+                <button onClick={handleSaveBundle} disabled={savingBundle}
+                  className="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-purple-700 disabled:opacity-50">
+                  {savingBundle ? 'שומר...' : '💾 שמור חבילה'}
+                </button>
+              </div>
+            )
+          })()}
 
           {showForm && (
             <div className="bg-white border rounded-xl p-4 space-y-4 shadow-sm">
@@ -1271,10 +1385,38 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                           purchase_options: p.purchase_options.filter((_, i) => i !== idx),
                         }))}>✕</button>
                     </div>
-                    <div className="flex gap-2 items-center">
+                    <div className="flex gap-2 items-center flex-wrap">
+                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                        <span className="text-[10px] text-gray-500 whitespace-nowrap">מחיר רגיל ₪</span>
+                        <input
+                          type="number" step="0.01"
+                          className="w-20 border rounded px-2 py-1 text-xs"
+                          placeholder="ללא חבילה"
+                          value={opt.original_price || ''}
+                          onChange={e => {
+                            const orig = e.target.value
+                            const bundlePrice = parseFloat(opt.price) || 0
+                            const origNum = parseFloat(orig) || 0
+                            const saving = origNum > bundlePrice ? (origNum - bundlePrice).toFixed(0) : 0
+                            const note = saving > 0 ? `חיסכון ${saving}` : (opt.note || '')
+                            setForm(p => ({
+                              ...p,
+                              purchase_options: p.purchase_options.map((o, i) => i === idx ? { ...o, original_price: orig, note } : o),
+                            }))
+                          }} />
+                        {(() => {
+                          const orig = parseFloat(opt.original_price) || 0
+                          const bundle = parseFloat(opt.price) || 0
+                          const saving = orig > bundle ? orig - bundle : 0
+                          const pct = orig > 0 && saving > 0 ? Math.round((saving / orig) * 100) : 0
+                          return pct > 0 ? (
+                            <span className="text-[10px] font-black text-red-500 bg-red-50 px-1.5 py-0.5 rounded">-{pct}%</span>
+                          ) : null
+                        })()}
+                      </div>
                       <input
-                        className="flex-1 border rounded px-2 py-1 text-xs text-gray-600"
-                        placeholder="הערה/תיאור קצר (למשל: חיסכון של 10%)"
+                        className="flex-1 border rounded px-2 py-1 text-xs text-gray-600 min-w-0"
+                        placeholder="הערה (יחושב אוטומטית מהמחיר הרגיל)"
                         value={opt.note || ''}
                         onChange={e => setForm(p => ({
                           ...p,
@@ -1643,15 +1785,6 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                       </div>
                     </div>
 
-                    <button type="button" onClick={generateVariantsFromMatrix}
-                      className="w-full bg-blue-600 text-white py-1.5 rounded-lg text-xs font-bold">
-                      🔄 צור / עדכן מטריצת וריאנטים (מידה × צבע × אורך)
-                    </button>
-                    {variants.length > 0 && (
-                      <p className="text-[10px] text-blue-600 text-center">
-                        שינית מידה/צבע/אורך? לחץ כפתור ↑ לעדכון הטבלה
-                      </p>
-                    )}
 
                     {/* טבלת וריאנטים */}
                     {variants.length > 0 && (
@@ -1741,6 +1874,42 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
           )}
         </div>
       )}
+
+          {/* ─── רשימת חבילות (בתוך טאב מוצרים) ─── */}
+          {tab === 'products' && isAdmin && bundles.length > 0 && (
+            <div className="space-y-2 pt-2 border-t">
+              <h3 className="text-xs font-bold text-purple-700 uppercase tracking-wide">🎁 חבילות קיימות</h3>
+              {bundles.map(b => {
+                const regularTotal = (b.bundle_items || []).reduce((sum, i) => {
+                  const p = products.find(pr => pr.id === i.product_id)
+                  return sum + (p?.price ? parseFloat(p.price) * (i.qty || 1) : 0)
+                }, 0)
+                const saving = regularTotal > 0 && b.price != null ? (regularTotal - b.price).toFixed(0) : null
+                return (
+                  <div key={b.id} className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-gray-800 text-sm">{b.title}</p>
+                      <p className="text-xs text-gray-500">
+                        {(b.bundle_items || []).map(i => `${i.qty > 1 ? `${i.qty}× ` : ''}${i.product_name}`).join(' + ')}
+                      </p>
+                      {b.price != null && (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-sm text-emerald-600 font-bold">₪{b.price}</span>
+                          {saving !== null && parseFloat(saving) > 0 && (
+                            <span className="text-xs text-orange-500 font-bold">חיסכון ₪{saving}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <button onClick={() => handleDeleteBundle(b.id)}
+                      className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg flex-shrink-0">
+                      🗑️
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
     </div>
   )
 }

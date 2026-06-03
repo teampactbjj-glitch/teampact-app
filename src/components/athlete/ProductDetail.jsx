@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ADULT_BELTS, KIDS_BELTS } from '../../lib/belts'
 
 /**
  * דף פירוט מוצר למתאמן - נפתח כמסך מלא כשלוחצים על מוצר בחנות.
@@ -11,9 +12,79 @@ import { useState, useEffect } from 'react'
  *   alreadyOrdered - בולאני: האם המוצר כבר הוזמן
  *   ordering       - בולאני: האם כרגע בתהליך הזמנה (לבטל כפתור)
  */
-export default function ProductDetail({ product, variants = [], allProducts = [], onBack, onOrder, onEdit, alreadyOrdered, ordering, editMode = false, initialSize = null, initialColor = null, initialLength = null, initialNotes = null, initialQuantity = 1 }) {
+export default function ProductDetail({ product, variants = [], compVariantsMap = {}, relatedBundles = [], allProducts = [], onBack, onOrder, onEdit, alreadyOrdered, ordering, editMode = false, initialSize = null, initialColor = null, initialLength = null, initialNotes = null, initialQuantity = 1 }) {
+  const isBundle = product.type === 'bundle'
+  const bundleItems = isBundle ? (product.bundle_items || []) : []
   // variants = מערך וריאנטים מה-DB עם stock. אם ריק = אין מידע מלאי, מציגים הכל
   const hasVariantData = variants.length > 0
+
+  // ── זיהוי מוצר חגורה ומיון לשתי שורות ──
+  const isBeltProduct = (product.title || '').includes('חגורה')
+  const adultBeltLabels = new Set(ADULT_BELTS.map(b => b.label))
+  const kidsBeltLabels  = new Set(KIDS_BELTS.map(b => b.label))
+  const allBeltsMap = Object.fromEntries(
+    [...ADULT_BELTS, ...KIDS_BELTS].map(b => [b.label, b])
+  )
+  // פונקציה לרינדור כפתור חגורה עם צבע אמיתי
+  function BeltButton({ color, isSelected, inStock, onToggle }) {
+    const beltMeta = allBeltsMap[color]
+    return (
+      <button type="button" aria-pressed={isSelected} disabled={!inStock}
+        onClick={() => onToggle(isSelected ? null : color)}
+        style={beltMeta ? { backgroundColor: beltMeta.color, color: beltMeta.text, borderColor: isSelected ? '#10b981' : inStock ? beltMeta.color : '#e5e7eb' } : {}}
+        className={`py-1.5 px-3 rounded-lg border-2 text-xs font-bold transition ${
+          !inStock ? 'opacity-50 cursor-not-allowed'
+          : isSelected ? 'ring-2 ring-emerald-500 ring-offset-1 shadow-md scale-105'
+          : 'hover:scale-105'
+        }`}>
+        {color}
+        {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+      </button>
+    )
+  }
+  // קטע תצוגת חגורות מחולק לשתי שורות
+  function BeltColorSection({ headingId, onToggle }) {
+    const adultColors = colors.filter(c => adultBeltLabels.has(c))
+    const kidsColors  = colors.filter(c => kidsBeltLabels.has(c))
+    return (
+      <div role="group" aria-labelledby={headingId}>
+        <div className="flex items-center justify-between mb-2">
+          <h3 id={headingId} className="font-bold text-sm text-gray-800">🥋 בחר דרגה</h3>
+          {selectedColor && <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedColor}</span>}
+        </div>
+        {adultColors.length > 0 && (
+          <div className="mb-2">
+            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide mb-1">בוגרים</p>
+            <div className="flex flex-wrap gap-2">
+              {adultColors.map(color => (
+                <BeltButton key={color} color={color} isSelected={selectedColor === color}
+                  inStock={colorHasStock(color)} onToggle={onToggle} />
+              ))}
+            </div>
+          </div>
+        )}
+        {kidsColors.length > 0 && (
+          <div>
+            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide mb-1">ילדים</p>
+            <div className="flex flex-wrap gap-2">
+              {kidsColors.map(color => (
+                <BeltButton key={color} color={color} isSelected={selectedColor === color}
+                  inStock={colorHasStock(color)} onToggle={onToggle} />
+              ))}
+            </div>
+          </div>
+        )}
+        {adultColors.length === 0 && kidsColors.length === 0 && (
+          <div className="flex flex-wrap gap-2">
+            {colors.map(color => (
+              <BeltButton key={color} color={color} isSelected={selectedColor === color}
+                inStock={colorHasStock(color)} onToggle={onToggle} />
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   // מחפש מוצר לפי שם רכיב — התאמה מדויקת לשם מוצר בודד
   function getCompProductData(compName) {
@@ -45,6 +116,8 @@ export default function ProductDetail({ product, variants = [], allProducts = []
       }
       return nullVars.length > 0 ? nullVars : variants
     }
+    // חיפוש קודם ב-compVariantsMap (וריאנטים של מוצר רכיב נפרד בחבילה)
+    if (compVariantsMap[compName]?.length) return compVariantsMap[compName]
     return variants.filter(v => (v.component_name || null) === compName)
   }
 
@@ -82,16 +155,18 @@ export default function ProductDetail({ product, variants = [], allProducts = []
     : []
   const hasOptions = options.length > 0
 
-  // fallback: אם available_sizes/colors ריקים — גזור מ-variants
-  const variantSizes = [...new Set(variants.map(v => v.size).filter(Boolean))]
-  const variantColors = [...new Set(variants.map(v => v.color).filter(Boolean))]
-  const sizes = Array.isArray(product.available_sizes) && product.available_sizes.filter(Boolean).length > 0
-    ? product.available_sizes.filter(Boolean)
-    : variantSizes
-  const colors = Array.isArray(product.available_colors) && product.available_colors.filter(Boolean).length > 0
-    ? product.available_colors.filter(Boolean)
-    : variantColors
-  const lengths = Array.isArray(product.available_lengths) ? product.available_lengths.filter(Boolean) : []
+  // מידות/צבעים/אורכים — available_* לתצוגה (מה המנהל הגדיר במוצר),
+  // product_variants לבדיקת מלאי בלבד (אילו מהם אזלו).
+  // fallback ל-variants אם available_* ריק (מוצר ישן ללא הגדרה ידנית)
+  const variantSizes   = [...new Set(variants.map(v => v.size).filter(Boolean))]
+  const variantColors  = [...new Set(variants.map(v => v.color).filter(Boolean))]
+  const variantLengths = [...new Set(variants.map(v => v.length).filter(Boolean))]
+  const sizes   = Array.isArray(product.available_sizes)   && product.available_sizes.filter(Boolean).length   > 0
+    ? product.available_sizes.filter(Boolean)   : variantSizes
+  const colors  = Array.isArray(product.available_colors)  && product.available_colors.filter(Boolean).length  > 0
+    ? product.available_colors.filter(Boolean)  : variantColors
+  const lengths = Array.isArray(product.available_lengths) && product.available_lengths.filter(Boolean).length > 0
+    ? product.available_lengths.filter(Boolean) : variantLengths
   const hasSizes = sizes.length > 0
   const hasColors = colors.length > 0
   const hasLengths = lengths.length > 0
@@ -112,6 +187,18 @@ export default function ProductDetail({ product, variants = [], allProducts = []
   const [selectedLength, setSelectedLength] = useState(initialLength)
   const [quantity, setQuantity] = useState(initialQuantity)
   const [validationError, setValidationError] = useState('')
+
+  // בחירות לכל פריט בחבילה: { [product_id]: { size, color, length } }
+  const [bundleSelections, setBundleSelections] = useState(() =>
+    Object.fromEntries(bundleItems.map(i => [i.product_id, { size: null, color: null, length: null }]))
+  )
+  function updateBundleSel(productId, field, value) {
+    setBundleSelections(prev => ({
+      ...prev,
+      [productId]: { ...prev[productId], [field]: value },
+    }))
+    setValidationError('')
+  }
 
   // רכיבי וריאציה של האפשרות הנבחרת (למשל: תיק + חליפה → רכיב אחד; תיק + סט נו-גי → שני רכיבים)
   const optionComponents = Array.isArray(selectedOption?.components)
@@ -179,6 +266,22 @@ export default function ProductDetail({ product, variants = [], allProducts = []
   function handleOrderClick() {
     if (alreadyOrdered) {
       onOrder(product, selectedOption, null, null, null, null, quantity)
+      return
+    }
+    // חבילה: ולידציה לפי כל פריט
+    if (isBundle) {
+      for (const item of bundleItems) {
+        const itemVars = compVariantsMap[item.product_id] || []
+        const sel = bundleSelections[item.product_id] || {}
+        const itemSizes   = [...new Set(itemVars.map(v => v.size).filter(Boolean))]
+        const itemColors  = [...new Set(itemVars.map(v => v.color).filter(Boolean))]
+        const itemLengths = [...new Set(itemVars.map(v => v.length).filter(Boolean))]
+        if (itemColors.length  && !sel.color)  { setValidationError(`יש לבחור צבע עבור "${item.product_name}"`);  return }
+        if (itemLengths.length && !sel.length) { setValidationError(`יש לבחור אורך עבור "${item.product_name}"`); return }
+        if (itemSizes.length   && !sel.size)   { setValidationError(`יש לבחור מידה עבור "${item.product_name}"`); return }
+      }
+      setValidationError('')
+      onOrder(product, null, null, null, null, Object.entries(bundleSelections).map(([pid, sel]) => ({ product_id: pid, ...sel })), quantity)
       return
     }
     if (hasComponents) {
@@ -300,32 +403,35 @@ export default function ProductDetail({ product, variants = [], allProducts = []
 
       {/* צבע — רק כשאין components ואין options (מוצר פשוט לחלוטין) */}
       {!hasComponents && !hasOptions && hasColors && (
-        <div role="group" aria-labelledby="color-heading">
-          <div className="flex items-center justify-between mb-2">
-            <h3 id="color-heading" className="font-bold text-sm text-gray-800">🎨 בחר צבע</h3>
-            {selectedColor && <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedColor}</span>}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {colors.map(color => {
-              const isSelected = selectedColor === color
-              const inStock = colorHasStock(color)
-              return (
-                <button key={color} type="button" aria-pressed={isSelected}
-                  aria-label={`צבע ${color}${!inStock ? ' - אזל' : ''}`}
-                  disabled={!inStock}
-                  onClick={() => { setSelectedColor(isSelected ? null : color); setSelectedLength(null); setSelectedSize(null); setValidationError('') }}
-                  className={`py-2 px-5 rounded-xl border-2 text-sm font-bold transition ${
-                    !inStock ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                    : isSelected ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
-                  }`}>
-                  {color}
-                  {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
-                </button>
-              )
-            })}
-          </div>
-        </div>
+        isBeltProduct
+          ? <BeltColorSection headingId="color-heading"
+              onToggle={c => { setSelectedColor(c); setSelectedLength(null); setSelectedSize(null); setValidationError('') }} />
+          : <div role="group" aria-labelledby="color-heading">
+              <div className="flex items-center justify-between mb-2">
+                <h3 id="color-heading" className="font-bold text-sm text-gray-800">🎨 בחר צבע</h3>
+                {selectedColor && <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedColor}</span>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {colors.map(color => {
+                  const isSelected = selectedColor === color
+                  const inStock = colorHasStock(color)
+                  return (
+                    <button key={color} type="button" aria-pressed={isSelected}
+                      aria-label={`צבע ${color}${!inStock ? ' - אזל' : ''}`}
+                      disabled={!inStock}
+                      onClick={() => { setSelectedColor(isSelected ? null : color); setSelectedLength(null); setSelectedSize(null); setValidationError('') }}
+                      className={`py-2 px-5 rounded-xl border-2 text-sm font-bold transition ${
+                        !inStock ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                        : isSelected ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                      }`}>
+                      {color}
+                      {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
       )}
 
       {/* אורך — רק מוצר פשוט */}
@@ -403,47 +509,79 @@ export default function ProductDetail({ product, variants = [], allProducts = []
               const selected = selectedOption && (
                 selectedOption.name === opt.name && selectedOption.price === opt.price
               )
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => setSelectedOption(opt)}
-                  className={`w-full text-right p-3 rounded-xl border-2 transition ${
-                    selected
-                      ? 'border-emerald-500 bg-emerald-50 shadow-sm'
-                      : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className={`text-sm flex-shrink-0 ${
-                            selected ? 'text-emerald-600' : 'text-gray-300'
-                          }`}
-                        >
-                          {selected ? '●' : '○'}
-                        </span>
-                        <span className="font-bold text-gray-800">{opt.name}</span>
-                        {opt.is_featured && (
-                          <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            ⭐ מומלץ
-                          </span>
+              return (() => {
+                  // חישוב אחוז הנחה — קודם מ-original_price, אחר כך מה-note
+                  let saving = 0
+                  if (opt.original_price != null && opt.price != null) {
+                    saving = parseFloat(opt.original_price) - parseFloat(opt.price)
+                    if (saving < 0) saving = 0
+                  } else {
+                    const savingMatch = (opt.note || '').match(/(\d+(?:\.\d+)?)/)
+                    saving = savingMatch ? parseFloat(savingMatch[1]) : 0
+                  }
+                  const originalPrice = opt.original_price != null ? parseFloat(opt.original_price) : (opt.price + saving)
+                  const discountPct = (saving > 0 && originalPrice > 0)
+                    ? Math.round((saving / originalPrice) * 100)
+                    : 0
+                  const isBundle = discountPct > 0
+
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => setSelectedOption(opt)}
+                      className={`w-full text-right p-3 rounded-xl border-2 transition relative overflow-hidden ${
+                        selected
+                          ? 'border-emerald-500 bg-emerald-50 shadow-sm'
+                          : isBundle
+                          ? 'border-orange-200 bg-orange-50 hover:border-orange-400'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                    >
+                      {/* רצועת אחוז הנחה בפינה */}
+                      {discountPct > 0 && (
+                        <div className="absolute top-0 left-0 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-br-lg">
+                          -{discountPct}%
+                        </div>
+                      )}
+
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-sm flex-shrink-0 ${selected ? 'text-emerald-600' : 'text-gray-300'}`}>
+                              {selected ? '●' : '○'}
+                            </span>
+                            <span className="font-bold text-gray-800">{opt.name}</span>
+                            {opt.is_featured && (
+                              <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                ⭐ מומלץ
+                              </span>
+                            )}
+                          </div>
+                          {saving > 0 && (
+                            <p className="text-xs text-orange-600 font-bold mt-1 pr-6">
+                              💰 חסכו ₪{saving} לעומת קנייה בנפרד
+                            </p>
+                          )}
+                          {opt.note && saving === 0 && (
+                            <p className="text-xs text-gray-500 mt-1 pr-6">{opt.note}</p>
+                          )}
+                        </div>
+                        {opt.price != null && (
+                          <div className="flex-shrink-0 text-right">
+                            {saving > 0 && (
+                              <p className="text-[10px] text-gray-400 line-through leading-none">
+                                ₪{opt.price + saving}
+                              </p>
+                            )}
+                            <span className="text-lg font-bold text-emerald-600">₪{opt.price}</span>
+                          </div>
                         )}
                       </div>
-                      {opt.note && (
-                        <p className="text-xs text-gray-500 mt-1 pr-6">{opt.note}</p>
-                      )}
-                    </div>
-                    {opt.price != null && (
-                      <span className="text-lg font-bold text-emerald-600 flex-shrink-0">
-                        ₪{opt.price}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              )
+                    </button>
+                  )
+              })()
             })}
           </div>
         </div>
@@ -451,30 +589,33 @@ export default function ProductDetail({ product, variants = [], allProducts = []
 
       {/* צבע/אורך/מידה לאפשרות ללא רכיבים (תיק בלבד, חליפה בלבד וכו') */}
       {hasOptions && !hasComponents && hasColors && (
-        <div role="group" aria-labelledby="color-heading2">
-          <div className="flex items-center justify-between mb-2">
-            <h3 id="color-heading2" className="font-bold text-sm text-gray-800">🎨 בחר צבע</h3>
-            {selectedColor && <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedColor}</span>}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {colors.map(color => {
-              const isSelected = selectedColor === color
-              const inStock = colorHasStock(color)
-              return (
-                <button key={color} type="button" aria-pressed={isSelected}
-                  disabled={!inStock}
-                  onClick={() => { setSelectedColor(isSelected ? null : color); setSelectedLength(null); setSelectedSize(null); setValidationError('') }}
-                  className={`py-2 px-5 rounded-xl border-2 text-sm font-bold transition ${
-                    !inStock ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                    : isSelected ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
-                  }`}>
-                  {color}{!inStock && <span className="block text-[8px] font-normal">אזל</span>}
-                </button>
-              )
-            })}
-          </div>
-        </div>
+        isBeltProduct
+          ? <BeltColorSection headingId="color-heading2"
+              onToggle={c => { setSelectedColor(c); setSelectedLength(null); setSelectedSize(null); setValidationError('') }} />
+          : <div role="group" aria-labelledby="color-heading2">
+              <div className="flex items-center justify-between mb-2">
+                <h3 id="color-heading2" className="font-bold text-sm text-gray-800">🎨 בחר צבע</h3>
+                {selectedColor && <span className="text-xs text-emerald-600 font-bold">נבחר: {selectedColor}</span>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {colors.map(color => {
+                  const isSelected = selectedColor === color
+                  const inStock = colorHasStock(color)
+                  return (
+                    <button key={color} type="button" aria-pressed={isSelected}
+                      disabled={!inStock}
+                      onClick={() => { setSelectedColor(isSelected ? null : color); setSelectedLength(null); setSelectedSize(null); setValidationError('') }}
+                      className={`py-2 px-5 rounded-xl border-2 text-sm font-bold transition ${
+                        !inStock ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                        : isSelected ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                      }`}>
+                      {color}{!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
       )}
       {hasOptions && !hasComponents && hasLengths && (
         <div role="group" aria-labelledby="length-heading2">
@@ -765,6 +906,105 @@ export default function ProductDetail({ product, variants = [], allProducts = []
           </div>
         )}
 
+        {/* ── בחירת מידה/צבע לכל פריט בחבילה ── */}
+        {isBundle && bundleItems.map(item => {
+          const itemVars = compVariantsMap[item.product_id] || []
+          const sel = bundleSelections[item.product_id] || {}
+          const itemColors  = [...new Set(itemVars.map(v => v.color).filter(Boolean))]
+          const itemLengths = [...new Set(
+            itemVars.filter(v => !sel.color || v.color === sel.color).map(v => v.length).filter(Boolean)
+          )]
+          const itemSizes   = [...new Set(
+            itemVars.filter(v => (!sel.color || v.color === sel.color) && (!sel.length || v.length === sel.length)).map(v => v.size).filter(Boolean)
+          )]
+          const stockOk = (color, length, size) => {
+            if (!itemVars.length) return true
+            return itemVars.some(v =>
+              (!color  || v.color  === color)  &&
+              (!length || v.length === length) &&
+              (!size   || v.size   === size)   &&
+              (v.stock || 0) > 0
+            )
+          }
+          return (
+            <div key={item.product_id} className="bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-200 rounded-xl p-3 space-y-3">
+              <h3 className="font-bold text-sm text-gray-800 flex items-center gap-2">
+                <span className="bg-purple-600 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">🎁</span>
+                {item.product_name}
+              </h3>
+              {itemColors.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold text-gray-600 mb-1.5">צבע</p>
+                  <div className="flex flex-wrap gap-2">
+                    {itemColors.map(color => {
+                      const inStock = stockOk(color, null, null)
+                      const isSelected = sel.color === color
+                      return (
+                        <button key={color} type="button" disabled={!inStock}
+                          onClick={() => updateBundleSel(item.product_id, 'color', isSelected ? null : color)}
+                          className={`py-1.5 px-3 rounded-lg border-2 text-xs font-bold transition ${
+                            !inStock ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                            : isSelected ? 'border-emerald-500 bg-emerald-500 text-white'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                          }`}>
+                          {color}{!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {itemLengths.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold text-gray-600 mb-1.5">אורך</p>
+                  <div className="flex flex-wrap gap-2">
+                    {itemLengths.map(len => {
+                      const inStock = stockOk(sel.color, len, null)
+                      const isSelected = sel.length === len
+                      return (
+                        <button key={len} type="button" disabled={!inStock}
+                          onClick={() => updateBundleSel(item.product_id, 'length', isSelected ? null : len)}
+                          className={`py-1.5 px-4 rounded-lg border-2 text-xs font-bold transition ${
+                            !inStock ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                            : isSelected ? 'border-emerald-500 bg-emerald-500 text-white'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                          }`}>
+                          {len}{!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {itemSizes.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold text-gray-600 mb-1.5">מידה</p>
+                  <div className="flex flex-wrap gap-2">
+                    {itemSizes.map(size => {
+                      const inStock = stockOk(sel.color, sel.length, size)
+                      const isSelected = sel.size === size
+                      return (
+                        <button key={size} type="button" disabled={!inStock}
+                          onClick={() => updateBundleSel(item.product_id, 'size', isSelected ? null : size)}
+                          className={`min-w-[44px] py-1.5 px-2.5 rounded-lg border-2 text-xs font-bold transition ${
+                            !inStock ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                            : isSelected ? 'border-emerald-500 bg-emerald-500 text-white'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                          }`}>
+                          {size}{!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {itemVars.length === 0 && (
+                <p className="text-xs text-gray-400">אין נתוני מלאי עבור מוצר זה</p>
+              )}
+            </div>
+          )
+        })}
+
         <div className="flex items-center justify-between gap-3 mb-2">
           <div className="text-sm text-gray-600">סה"כ לתשלום</div>
           {displayTotal != null && (
@@ -822,6 +1062,24 @@ export default function ProductDetail({ product, variants = [], allProducts = []
           ההזמנה תישלח למאמן · התשלום יתבצע באימון הקרוב
         </p>
       </div>
+
+      {/* חבילות שמכילות את המוצר הזה */}
+      {!isBundle && relatedBundles.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="font-bold text-sm text-gray-700">🎁 זמין גם בחבילה:</h3>
+          {relatedBundles.map(bundle => (
+            <div key={bundle.id} className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold text-gray-800 text-sm">{bundle.title}</p>
+                <p className="text-xs text-gray-500">{(bundle.bundle_items || []).map(i => i.product_name).join(' + ')}</p>
+              </div>
+              {bundle.price != null && (
+                <span className="text-emerald-600 font-bold text-sm flex-shrink-0">₪{bundle.price}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import * as XLSX from 'xlsx'
 import { supabase } from '../../lib/supabase'
 import { notifyPush } from '../../lib/notifyPush'
 import { useToast, useConfirm } from '../a11y'
@@ -224,6 +225,10 @@ export default function ReportsManager({ isAdmin, profile }) {
   // סלייד אחד מאוחד שמשפיע על כל הדוחות (נרשמים חדשים + נטישה + נוכחות)
   const [periodDays, setPeriodDays] = useState(30)
   const [branchFilter, setBranchFilter] = useState('all')
+
+  // בורר חודש לייצוא Excel — נפרד מהסלייד הכללי
+  // 'current' | 'last' | 'YYYY-MM'
+  const [exportMonth, setExportMonth] = useState('current')
 
   const [members, setMembers] = useState([])
   const [coaches, setCoaches] = useState([])
@@ -1485,6 +1490,19 @@ export default function ReportsManager({ isAdmin, profile }) {
     }
   }
 
+  // אפשרויות חודשים לבורר ייצוא — 12 חודשים אחורה (חייב להיות לפני early returns!)
+  const monthOptions = useMemo(() => {
+    const opts = []
+    const now = new Date()
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const label = d.toLocaleDateString('he-IL', { year: 'numeric', month: 'long' })
+      opts.push({ key, label })
+    }
+    return opts
+  }, [])
+
   if (loading) {
     return <div className="text-center text-gray-500 py-8">טוען דוחות…</div>
   }
@@ -1496,6 +1514,93 @@ export default function ReportsManager({ isAdmin, profile }) {
         <p className="text-sm">{err}</p>
       </div>
     )
+  }
+
+  // ===== יצוא Excel — דוח מתאמנים לפי סניף וחודש קלנדרי =====
+
+  // מחזיר { startMs, endMs, label } לפי הבחירה
+  function resolveExportRange(mode) {
+    const now = new Date()
+    if (mode === 'current') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+      const monthLabel = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      return { startMs: start.getTime(), endMs: now.getTime(), label: monthLabel }
+    }
+    if (mode === 'last') {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0)
+      const end   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+      const monthLabel = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`
+      return { startMs: start.getTime(), endMs: end.getTime(), label: monthLabel }
+    }
+    // mode === 'YYYY-MM'
+    const [y, m] = mode.split('-').map(Number)
+    const start = new Date(y, m - 1, 1, 0, 0, 0, 0)
+    const end   = new Date(y, m, 0, 23, 59, 59, 999) // היום האחרון בחודש
+    return { startMs: start.getTime(), endMs: end.getTime(), label: mode }
+  }
+
+  function exportMembersExcel() {
+    const { startMs, endMs, label: monthLabel } = resolveExportRange(exportMonth)
+    const daysInPeriod = (endMs - startMs) / (24 * 60 * 60 * 1000)
+    const weeks = daysInPeriod / 7
+
+    const branchName = branchFilter === 'all'
+      ? 'כל-הסניפים'
+      : (branches.find(b => b.id === branchFilter)?.name || branchFilter)
+
+    // ספירת הגעות לכל מתאמן בחודש הנבחר — מסנן registrations לפי טווח הקלנדרי
+    const attendanceByMember = new Map()
+    registrations.forEach(r => {
+      if (!r.athlete_id || !r.class_id) return
+      const cls = classById.get(r.class_id)
+      if (!cls) return
+      const occDateStr = registrationOccurrenceDateStr(r.week_start, cls.day_of_week)
+      const endClassMs = classEndMs(occDateStr, cls.start_time, cls.duration_minutes)
+      if (endClassMs === null) return
+      if (endClassMs < startMs || endClassMs > endMs) return // מחוץ לטווח החודש
+      attendanceByMember.set(r.athlete_id, (attendanceByMember.get(r.athlete_id) || 0) + 1)
+    })
+
+    // כמות אימונים שבועית לפי סוג מנוי
+    const SUB_WEEKLY = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: null }
+
+    const rows = activeMembers
+      .map(m => {
+        const actual = attendanceByMember.get(m.id) || 0
+        const subType = m.subscription_type || ''
+        const weekly = SUB_WEEKLY[subType]
+        const expected = (weekly !== null && weekly !== undefined)
+          ? Math.round(weekly * weeks)
+          : null
+        let status = ''
+        if (expected !== null) {
+          if (actual === 0) status = '❌ לא הגיע כלל'
+          else if (actual < Math.round(expected * 0.5)) status = '⚠️ מנצל פחות מ-50% מהמנוי'
+          else status = '✅ תקין'
+        }
+
+        return {
+          'שם מלא': m.full_name || '—',
+          'סוג מנוי': SUB_LABELS[subType] || subType || 'לא מוגדר',
+          'הגעות בפועל': actual,
+          'צפי לפי מנוי': expected !== null ? expected : 'ללא הגבלה',
+          'סטטוס': status,
+        }
+      })
+      .sort((a, b) => String(a['שם מלא']).localeCompare(String(b['שם מלא']), 'he'))
+
+    const ws = XLSX.utils.json_to_sheet(rows)
+
+    // רוחב עמודות אוטומטי
+    const colWidths = Object.keys(rows[0] || {}).map(key => ({
+      wch: Math.max(key.length, ...rows.map(r => String(r[key] ?? '').length)) + 2
+    }))
+    ws['!cols'] = colWidths
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'מתאמנים')
+
+    XLSX.writeFile(wb, `teampact_${branchName}_${monthLabel}.xlsx`)
   }
 
   const totalActive = activeMembers.length
@@ -1526,6 +1631,29 @@ export default function ReportsManager({ isAdmin, profile }) {
             onClick={fetchAll}
             className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold px-3 py-1.5 rounded-lg"
           >🔄 רענן</button>
+          {isAdmin && (
+            <select
+              value={exportMonth}
+              onChange={e => setExportMonth(e.target.value)}
+              className="text-xs border border-emerald-400 rounded-lg px-2 py-1.5 bg-white text-emerald-800 font-semibold"
+              title="בחר חודש לדוח Excel"
+            >
+              <option value="current">חודש נוכחי</option>
+              <option value="last">חודש שעבר</option>
+              {monthOptions.slice(2).map(o => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
+          )}
+          {isAdmin && (
+            <button
+              onClick={exportMembersExcel}
+              disabled={activeMembers.length === 0}
+              className="text-xs bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold px-3 py-1.5 rounded-lg"
+            >
+              📥 Excel
+            </button>
+          )}
         </div>
       </div>
 

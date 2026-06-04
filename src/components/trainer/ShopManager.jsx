@@ -694,30 +694,55 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     // ניכוי מלאי — רק אם יש product_id ונתוני בחירה
     if (order.product_id && order._source === 'request') {
       try {
-        let q = supabase.from('product_variants')
-          .select('id, stock')
-          .eq('product_id', order.product_id)
-          .is('component_name', null)  // מוצר פשוט
-
-        // התאמת קוורי לפי מה שנבחר
-        if (order.selected_size)   q = q.eq('size', order.selected_size)
-        else                       q = q.is('size', null)
-        if (order.selected_color)  q = q.eq('color', order.selected_color)
-        else                       q = q.is('color', null)
-        if (order.selected_length) q = q.eq('length', order.selected_length)
-        else                       q = q.is('length', null)
-
-        const { data: varRows } = await q
-        if (varRows && varRows.length > 0) {
-          const v = varRows[0]
-          const newStock = Math.max(0, (parseInt(v.stock) || 0) - 1)
-          await supabase.from('product_variants').update({ stock: newStock }).eq('id', v.id)
-          // עדכון state המלאי המקומי אם הטאב פתוח
-          setInventoryData(prev => {
-            const pid = order.product_id
-            if (!prev[pid]) return prev
-            return { ...prev, [pid]: prev[pid].map(x => x.id === v.id ? { ...x, stock: newStock } : x) }
-          })
+        // חבילה עם רכיבים — מנכים לכל רכיב בנפרד
+        if (Array.isArray(order.component_selections) && order.component_selections.length > 0) {
+          for (const comp of order.component_selections) {
+            if (!comp.component_name) continue
+            let q = supabase.from('product_variants')
+              .select('id, stock')
+              .eq('product_id', order.product_id)
+              .eq('component_name', comp.component_name)
+            if (comp.size)   q = q.eq('size', comp.size)
+            else             q = q.is('size', null)
+            if (comp.color)  q = q.eq('color', comp.color)
+            else             q = q.is('color', null)
+            if (comp.length) q = q.eq('length', comp.length)
+            else             q = q.is('length', null)
+            const { data: varRows } = await q
+            if (varRows && varRows.length > 0) {
+              const v = varRows[0]
+              const newStock = Math.max(0, (parseInt(v.stock) || 0) - (order.quantity || 1))
+              await supabase.from('product_variants').update({ stock: newStock }).eq('id', v.id)
+              setInventoryData(prev => {
+                const pid = order.product_id
+                if (!prev[pid]) return prev
+                return { ...prev, [pid]: prev[pid].map(x => x.id === v.id ? { ...x, stock: newStock } : x) }
+              })
+            }
+          }
+        } else {
+          // מוצר פשוט (לא חבילה)
+          let q = supabase.from('product_variants')
+            .select('id, stock')
+            .eq('product_id', order.product_id)
+            .is('component_name', null)
+          if (order.selected_size)   q = q.eq('size', order.selected_size)
+          else                       q = q.is('size', null)
+          if (order.selected_color)  q = q.eq('color', order.selected_color)
+          else                       q = q.is('color', null)
+          if (order.selected_length) q = q.eq('length', order.selected_length)
+          else                       q = q.is('length', null)
+          const { data: varRows } = await q
+          if (varRows && varRows.length > 0) {
+            const v = varRows[0]
+            const newStock = Math.max(0, (parseInt(v.stock) || 0) - (order.quantity || 1))
+            await supabase.from('product_variants').update({ stock: newStock }).eq('id', v.id)
+            setInventoryData(prev => {
+              const pid = order.product_id
+              if (!prev[pid]) return prev
+              return { ...prev, [pid]: prev[pid].map(x => x.id === v.id ? { ...x, stock: newStock } : x) }
+            })
+          }
         }
       } catch (e) {
         console.warn('stock deduction failed', e)

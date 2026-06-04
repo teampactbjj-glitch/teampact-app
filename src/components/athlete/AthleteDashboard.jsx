@@ -742,11 +742,22 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
     if (selectedColor) payload.selected_color = selectedColor
     if (selectedLength) payload.selected_length = selectedLength
     // אם יש בחירות פר-רכיב - שומרים מידה/צבע/אורך של הרכיב הראשון כ-selected_size/selected_color/selected_length (תאימות לאחור)
+    // ושומרים את כל הבחירות ב-component_selections לניכוי מלאי מדויק
     if (Array.isArray(componentSelections) && componentSelections.length) {
       const first = componentSelections[0] || {}
       if (first.size) payload.selected_size = first.size
       if (first.color) payload.selected_color = first.color
       if (first.length) payload.selected_length = first.length
+      // שמירת כל בחירות הרכיבים עם שם הרכיב לניכוי מלאי ב-markDone
+      if (Array.isArray(selectedOption?.components)) {
+        payload.component_selections = componentSelections.map((sel, i) => ({
+          component_name: selectedOption.components[i]?.name || null,
+          product_id: selectedOption.components[i]?.product_id || null,
+          size: sel?.size || null,
+          color: sel?.color || null,
+          length: sel?.length || null,
+        }))
+      }
     }
     // מרכיבים notes מפורט - כולל אפשרות, מידה, צבע, אורך, רכיבים
     const noteParts = []

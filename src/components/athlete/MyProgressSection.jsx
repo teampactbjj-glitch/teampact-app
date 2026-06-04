@@ -113,6 +113,215 @@ const HOUR_BADGES = [
 // "רצף 8" — 8 שבועות רצופים פעילים
 // "רצף 16" — 16 שבועות רצופים פעילים
 
+// === גרף פעילות — טאבים כמו אייפון ===
+function ActivityChart({ events, stats, diffPct, isBestMonth, sessionsToBest, disciplinesThisMonth }) {
+  const [view, setView] = useState('week')
+
+  const TABS = [
+    { id: 'week', label: 'שבוע' },
+    { id: 'month', label: 'חודש' },
+    { id: '6m',   label: '6 חו׳' },
+    { id: 'year', label: 'שנה' },
+  ]
+
+  const chartData = useMemo(() => {
+    const now = new Date()
+    const DAY = 24 * 3600 * 1000
+    const MONTH_HE_SHORT = ['ינו','פבר','מרץ','אפר','מאי','יוני','יולי','אוג','ספט','אוק','נוב','דצמ']
+
+    const byDay = new Map()
+    for (const e of events) {
+      byDay.set(e.dateKey, (byDay.get(e.dateKey) || 0) + 1)
+    }
+
+    if (view === 'week') {
+      const DAY_HE = ['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳']
+      const bars = []
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * DAY)
+        d.setHours(0,0,0,0)
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+        bars.push({ label: DAY_HE[d.getDay()], value: byDay.get(key) || 0, isToday: i === 0 })
+      }
+      const total = bars.reduce((s,b)=>s+b.value,0)
+      return { bars, summary: `ממוצע ${(total/7).toFixed(1)} ביום`, period: '7 ימים אחרונים' }
+    }
+
+    if (view === 'month') {
+      const bars = []
+      for (let w = 3; w >= 0; w--) {
+        let count = 0
+        const startDay = new Date(now.getTime() - (w * 7 + 6) * DAY)
+        startDay.setHours(0,0,0,0)
+        for (let i = 0; i <= 6; i++) {
+          const d = new Date(startDay.getTime() + i * DAY)
+          const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+          count += byDay.get(key) || 0
+        }
+        bars.push({ label: `${startDay.getDate()}/${startDay.getMonth()+1}`, value: count, isToday: w === 0 })
+      }
+      const total = bars.reduce((s,b)=>s+b.value,0)
+      return { bars, summary: `ממוצע ${(total/4).toFixed(1)} בשבוע`, period: '28 יום אחרון' }
+    }
+
+    if (view === '6m') {
+      const bars = []
+      for (let m = 5; m >= 0; m--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - m, 1)
+        const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+        let count = 0
+        for (const [k, v] of byDay.entries()) { if (k.startsWith(mk)) count += v }
+        bars.push({ label: MONTH_HE_SHORT[d.getMonth()], value: count, isToday: m === 0 })
+      }
+      const total = bars.reduce((s,b)=>s+b.value,0)
+      return { bars, summary: `ממוצע ${(total/6).toFixed(1)} בחודש`, period: '6 חודשים אחרונים' }
+    }
+
+    // year
+    const bars = []
+    for (let m = 11; m >= 0; m--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - m, 1)
+      const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+      let count = 0
+      for (const [k, v] of byDay.entries()) { if (k.startsWith(mk)) count += v }
+      bars.push({ label: MONTH_HE_SHORT[d.getMonth()], value: count, isToday: m === 0 })
+    }
+    const total = bars.reduce((s,b)=>s+b.value,0)
+    return { bars, summary: `ממוצע ${(total/12).toFixed(1)} בחודש`, period: '12 חודשים אחרונים' }
+  }, [events, view])
+
+  const maxVal = Math.max(...chartData.bars.map(b => b.value), 1)
+  const CHART_H = 90
+  const avgVal = chartData.bars.reduce((s,b)=>s+b.value,0) / chartData.bars.length
+
+  const tm = stats?.thisMonth
+  const MONTH_HE_LOCAL = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
+
+  return (
+    <div className="rounded-xl shadow-sm overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, #047857 0%, #059669 50%, #10b981 100%)' }}>
+
+      {/* כותרת + מספר החודש */}
+      <div className="px-5 pt-4 pb-3 text-white">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-bold text-base flex items-center gap-2">
+            <span>📊</span><span>ההתקדמות שלי</span>
+          </h3>
+          <div className="text-xs opacity-90 font-semibold">
+            {MONTH_HE_LOCAL[new Date().getMonth()]} {new Date().getFullYear()}
+          </div>
+        </div>
+
+        {/* מספר בולט */}
+        <div className="bg-white/15 backdrop-blur-sm rounded-lg p-4 mt-2 text-center">
+          <div className="text-5xl font-extrabold leading-none">{tm?.sessions ?? 0}</div>
+          <div className="text-xs opacity-90 mt-1.5">
+            {(tm?.sessions ?? 0) === 1 ? 'יחידת אימון' : 'יחידות אימון'} בחודש זה
+          </div>
+        </div>
+
+        {/* תחומים */}
+        {disciplinesThisMonth?.length === 1 && (
+          <div className="mt-3 flex justify-center">
+            <span className="inline-flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full text-xs font-semibold">
+              <span className="text-base leading-none">{DISCIPLINE_ICONS[disciplinesThisMonth[0].name]}</span>
+              <span>{disciplinesThisMonth[0].name}</span>
+            </span>
+          </div>
+        )}
+        {disciplinesThisMonth?.length >= 2 && (() => {
+          const total = disciplinesThisMonth.reduce((s,d)=>s+d.sessions,0)
+          return (
+            <div className="mt-3">
+              <div className="flex h-2.5 rounded-full overflow-hidden bg-white/20">
+                {disciplinesThisMonth.map(d => (
+                  <div key={d.name} style={{ width:`${(d.sessions/total)*100}%`, background: DISCIPLINE_COLORS[d.name] }} />
+                ))}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 mt-2 text-[11px]">
+                {disciplinesThisMonth.map(d => (
+                  <span key={d.name} className="inline-flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ background: DISCIPLINE_COLORS[d.name] }} />
+                    <span className="font-semibold">{DISCIPLINE_ICONS[d.name]} {d.name}: {d.sessions}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* אחוזים + שיא */}
+        {(diffPct !== null || isBestMonth) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            {isBestMonth && (
+              <span className="inline-flex items-center gap-1 bg-yellow-300 text-yellow-900 px-2 py-1 rounded-full font-bold">
+                🏆 שיא אישי
+              </span>
+            )}
+            {diffPct !== null && diffPct !== 0 && (
+              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full font-semibold ${
+                diffPct > 0 ? 'bg-emerald-300 text-emerald-900' : 'bg-orange-200 text-orange-900'
+              }`}>
+                {diffPct > 0 ? '↑' : '↓'} {Math.abs(diffPct)}% מהחודש שעבר (תקופה זהה)
+              </span>
+            )}
+            {!isBestMonth && stats?.bestMonth?.key && sessionsToBest > 0 && sessionsToBest <= 5 && (
+              <span className="inline-flex items-center gap-1 bg-white/25 px-2 py-1 rounded-full">
+                עוד {sessionsToBest} לשיא האישי
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* טאבים */}
+      <div className="flex gap-1 px-4 pb-2">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setView(t.id)}
+            className={`flex-1 text-[11px] font-semibold py-1.5 rounded-full transition-colors ${
+              view === t.id ? 'bg-white text-emerald-900' : 'bg-white/20 text-white'
+            }`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* גרף עמודות */}
+      <div className="px-4 pb-4">
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-[10px] text-white/70">{chartData.period}</div>
+          <div className="text-[10px] text-white/80 font-semibold">{chartData.summary}</div>
+        </div>
+        <div className="relative">
+          {maxVal > 0 && avgVal > 0 && (
+            <div className="absolute inset-x-0 pointer-events-none"
+              style={{ bottom: 20 + (avgVal / maxVal) * CHART_H, borderBottom: '1px dashed rgba(255,255,255,0.4)', zIndex: 1 }} />
+          )}
+          <div className="flex items-end gap-1" style={{ height: CHART_H + 20 }}>
+            {chartData.bars.map((bar, i) => {
+              const barH = maxVal > 0 ? Math.max((bar.value / maxVal) * CHART_H, bar.value > 0 ? 4 : 0) : 0
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center" style={{ height: CHART_H + 20 }}>
+                  <div className="flex-1 flex items-end w-full">
+                    <div className="w-full rounded-t transition-all duration-300"
+                      style={{
+                        height: barH,
+                        background: bar.isToday ? 'rgba(255,255,255,1)' : bar.value > 0 ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.1)',
+                      }} />
+                  </div>
+                  <div className="text-[9px] text-white/70 font-medium mt-1 leading-none" style={{ whiteSpace: 'nowrap' }}>
+                    {bar.label}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MyProgressSection({ profile, member }) {
   const [loading, setLoading] = useState(true)
   const [checkins, setCheckins] = useState([])
@@ -307,6 +516,14 @@ export default function MyProgressSection({ profile, member }) {
     const thisMonth = byMonth.get(thisMonthKey) || { sessions: 0, minutes: 0, byDiscipline: {}, days: new Set() }
     const lastMonthAgg = byMonth.get(lastMonthKey) || { sessions: 0, minutes: 0, byDiscipline: {}, days: new Set() }
 
+    // השוואה לתקופה מקבילה — ימים 1..dayOfMonth בחודש שעבר (הגין לתחילת חודש)
+    const dayOfMonth = now.getDate()
+    const lastMonthSamePeriod = events.filter(e => {
+      if (e.monthKey !== lastMonthKey) return false
+      const day = parseInt(e.dateKey.split('-')[2], 10)
+      return day <= dayOfMonth
+    }).length
+
     // שיא אישי — חודש עם הכי הרבה אימונים (לא כולל החודש הנוכחי אם הוא לא הכי גדול)
     let bestMonth = { key: null, sessions: 0, label: null }
     for (const [k, v] of byMonth.entries()) {
@@ -328,6 +545,7 @@ export default function MyProgressSection({ profile, member }) {
       bestMonth,
       allTimeHours,
       allTimeSessions: events.length,
+      lastMonthSamePeriod,
     }
   }, [events])
 
@@ -416,18 +634,19 @@ export default function MyProgressSection({ profile, member }) {
   // ── מסר אישי דינמי ─────────────────────────────────────────────
   const personalMessage = useMemo(() => {
     const tm = stats.thisMonth.sessions
-    const lm = stats.lastMonth.sessions
-    if (tm === 0 && lm === 0) return { text: 'בוא נתחיל. הצעד הראשון הוא פשוט להגיע לאימון הקרוב.', tone: 'neutral' }
-    if (tm === 0 && lm > 0) return { text: `החודש שעבר התאמנת ${lm} פעמים. אל תשבור את הרצף — היכנס ללוז ותירשם.`, tone: 'warn' }
+    const lm = stats.lastMonthSamePeriod // תקופה מקבילה — הגון
+    const lmFull = stats.lastMonth.sessions // כל החודש שעבר — לייחוס בלבד
+    if (tm === 0 && lmFull === 0) return { text: 'בוא נתחיל. הצעד הראשון הוא פשוט להגיע לאימון הקרוב.', tone: 'neutral' }
+    if (tm === 0 && lmFull > 0) return { text: `החודש שעבר התאמנת ${lmFull} פעמים. אל תשבור את הרצף — היכנס ללוז ותירשם.`, tone: 'warn' }
     if (stats.bestMonth.key && stats.bestMonth.sessions > 0 && tm >= stats.bestMonth.sessions && monthKey(new Date()) === stats.bestMonth.key) {
       return { text: '🏆 שיא אישי חדש החודש. לא היית מעולם כל כך עקבי.', tone: 'best' }
     }
     if (lm > 0 && tm > lm) {
       const pct = Math.round(((tm - lm) / lm) * 100)
-      return { text: `עליה של ${pct}% מהחודש שעבר. כל הכבוד — תמשיך ככה.`, tone: 'up' }
+      return { text: `עליה של ${pct}% לעומת תקופה זהה בחודש שעבר. כל הכבוד — תמשיך ככה.`, tone: 'up' }
     }
     if (lm > 0 && tm < lm * 0.5) {
-      return { text: 'ירידה משמעותית החודש. בוא נחזור למסלול — הירשם לאימון הקרוב.', tone: 'warn' }
+      return { text: 'ירידה משמעותית לעומת תקופה זהה בחודש שעבר. בוא נחזור למסלול — הירשם לאימון הקרוב.', tone: 'warn' }
     }
     if (streaks.current >= 8) {
       return { text: `${streaks.current} שבועות רצוף — זה כבר הרגל. 🔥`, tone: 'best' }
@@ -543,7 +762,9 @@ export default function MyProgressSection({ profile, member }) {
   const tmHours = stats.thisMonthHours
   const lm = stats.lastMonth
   const lmSessions = lm.sessions
-  const diffPct = lmSessions > 0 ? Math.round(((tm.sessions - lmSessions) / lmSessions) * 100) : null
+  // השוואה לתקופה המקבילה בחודש שעבר (ימים 1..היום) — הגון לתחילת חודש
+  const samePeriodSessions = stats.lastMonthSamePeriod
+  const diffPct = samePeriodSessions > 0 ? Math.round(((tm.sessions - samePeriodSessions) / samePeriodSessions) * 100) : null
   const isBestMonth = stats.bestMonth.key === monthKey(new Date()) && tm.sessions > 0
   const sessionsToBest = stats.bestMonth.sessions > tm.sessions ? stats.bestMonth.sessions - tm.sessions : 0
 
@@ -913,91 +1134,8 @@ export default function MyProgressSection({ profile, member }) {
         )
       })()}
 
-      {/* ===== Hero card — כותרת + מספר החודש + פילוח תחום קומפקטי ===== */}
-      <div className="rounded-xl shadow-sm overflow-hidden"
-        style={{ background: 'linear-gradient(135deg, #047857 0%, #059669 50%, #10b981 100%)' }}>
-        <div className="p-5 text-white">
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="font-bold text-base flex items-center gap-2">
-              <span>📊</span>
-              <span>ההתקדמות שלי</span>
-            </h3>
-            <div className="text-xs opacity-95 font-semibold">
-              {MONTH_HE[new Date().getMonth()]} {new Date().getFullYear()}
-            </div>
-          </div>
-
-          {/* מספר אימוני החודש — בולט במרכז */}
-          <div className="bg-white/15 backdrop-blur-sm rounded-lg p-4 mt-3 text-center">
-            <div className="text-5xl font-extrabold leading-none">{tm.sessions}</div>
-            <div className="text-xs opacity-90 mt-1.5">
-              {tm.sessions === 1 ? 'יחידת אימון' : 'יחידות אימון'} בחודש זה
-            </div>
-          </div>
-
-          {/* פילוח לפי תחום — קומפקטי ומותאם לכמות התחומים */}
-          {disciplinesThisMonth.length === 1 && (
-            // תחום אחד — תווית קטנה בלבד, חוסך מקום
-            <div className="mt-3 flex justify-center">
-              <span className="inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-semibold">
-                <span className="text-base leading-none">{DISCIPLINE_ICONS[disciplinesThisMonth[0].name]}</span>
-                <span>{disciplinesThisMonth[0].name}</span>
-              </span>
-            </div>
-          )}
-          {disciplinesThisMonth.length >= 2 && (() => {
-            // 2+ תחומים — בר אופקי stacked + תוויות מתחת
-            const total = disciplinesThisMonth.reduce((s, d) => s + d.sessions, 0)
-            return (
-              <div className="mt-3">
-                <div className="flex h-2.5 rounded-full overflow-hidden bg-white/20">
-                  {disciplinesThisMonth.map(d => (
-                    <div key={d.name}
-                      style={{
-                        width: `${(d.sessions / total) * 100}%`,
-                        background: DISCIPLINE_COLORS[d.name],
-                      }}
-                      title={`${d.name}: ${d.sessions}`}
-                    />
-                  ))}
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-2 mt-2 text-[11px]">
-                  {disciplinesThisMonth.map(d => (
-                    <span key={d.name} className="inline-flex items-center gap-1">
-                      <span style={{ background: DISCIPLINE_COLORS[d.name] }} className="w-2 h-2 rounded-full inline-block"></span>
-                      <span className="font-semibold">{DISCIPLINE_ICONS[d.name]} {d.name}: {d.sessions}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
-          {/* השוואה */}
-          {(diffPct !== null || isBestMonth) && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              {isBestMonth && (
-                <span className="inline-flex items-center gap-1 bg-yellow-300 text-yellow-900 px-2 py-1 rounded-full font-bold">
-                  🏆 שיא אישי
-                </span>
-              )}
-              {diffPct !== null && diffPct !== 0 && (
-                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full font-semibold ${
-                  diffPct > 0 ? 'bg-emerald-300 text-emerald-900' : 'bg-orange-200 text-orange-900'
-                }`}>
-                  {diffPct > 0 ? '↑' : '↓'} {Math.abs(diffPct)}% מהחודש שעבר
-                </span>
-              )}
-              {!isBestMonth && stats.bestMonth.key && sessionsToBest > 0 && sessionsToBest <= 5 && (
-                <span className="inline-flex items-center gap-1 bg-white/25 px-2 py-1 rounded-full">
-                  עוד {sessionsToBest} לשיא האישי
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* פילוח לפי תחום מוצג עכשיו בתוך ה-Hero card למעלה — קומפקטי וחוסך מקום */}
+      {/* ===== גרף פעילות עם טאבים (במקום ה-Hero card הירוק) ===== */}
+      <ActivityChart events={events} stats={stats} diffPct={diffPct} isBestMonth={isBestMonth} sessionsToBest={sessionsToBest} disciplinesThisMonth={disciplinesThisMonth} />
 
       {/* ===== לוח 28 ימים אחרונים ===== */}
       <div className="bg-white rounded-xl border shadow-sm p-3">

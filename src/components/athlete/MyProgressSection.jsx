@@ -113,210 +113,245 @@ const HOUR_BADGES = [
 // "רצף 8" — 8 שבועות רצופים פעילים
 // "רצף 16" — 16 שבועות רצופים פעילים
 
-// === גרף פעילות — טאבים כמו אייפון ===
-function ActivityChart({ events, stats, diffPct, isBestMonth, sessionsToBest, disciplinesThisMonth }) {
+// === גרף פעילות ===
+function ActivityChart({ events, stats, isBestMonth, disciplinesThisMonth }) {
   const [view, setView] = useState('week')
+  const [selectedBar, setSelectedBar] = useState(null)
 
   const TABS = [
-    { id: 'week', label: 'שבוע' },
+    { id: 'week',  label: 'שבוע' },
     { id: 'month', label: 'חודש' },
     { id: '6m',   label: '6 חו׳' },
-    { id: 'year', label: 'שנה' },
+    { id: 'year',  label: 'שנה' },
   ]
+  const MHS = ['ינו','פבר','מרץ','אפר','מאי','יוני','יולי','אוג','ספט','אוק','נוב','דצמ']
+  const MHL = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
 
   const chartData = useMemo(() => {
     const now = new Date()
     const DAY = 24 * 3600 * 1000
-    const MONTH_HE_SHORT = ['ינו','פבר','מרץ','אפר','מאי','יוני','יולי','אוג','ספט','אוק','נוב','דצמ']
-
     const byDay = new Map()
-    for (const e of events) {
-      byDay.set(e.dateKey, (byDay.get(e.dateKey) || 0) + 1)
-    }
+    for (const e of events) byDay.set(e.dateKey, (byDay.get(e.dateKey) || 0) + 1)
+    const dk = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 
     if (view === 'week') {
-      const DAY_HE = ['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳']
-      const bars = []
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date(now.getTime() - i * DAY)
-        d.setHours(0,0,0,0)
-        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-        bars.push({ label: DAY_HE[d.getDay()], value: byDay.get(key) || 0, isToday: i === 0 })
-      }
-      const total = bars.reduce((s,b)=>s+b.value,0)
-      return { bars, summary: `ממוצע ${(total/7).toFixed(1)} ביום`, period: '7 ימים אחרונים' }
+      // 7 ימים אחרונים — תווית = d/m
+      const bars = Array.from({length:7}, (_,i) => {
+        const d = new Date(now.getTime() - (6-i)*DAY); d.setHours(0,0,0,0)
+        return {
+          label: `${d.getDate()}/${d.getMonth()+1}`,
+          value: byDay.get(dk(d)) || 0,
+          isToday: i === 6,
+          isFuture: false,
+        }
+      })
+      // השוואה שבוע שעבר (אותם 7 ימים, -7)
+      const prevTotal = Array.from({length:7}, (_,i) => {
+        const d = new Date(now.getTime() - (13-i)*DAY); d.setHours(0,0,0,0)
+        return byDay.get(dk(d)) || 0
+      }).reduce((s,v)=>s+v,0)
+      const thisTotal = bars.reduce((s,b)=>s+b.value,0)
+      const diff = thisTotal - prevTotal
+      return { bars, avg: thisTotal/7, thisTotal, prevTotal, diff,
+               compareLabel: `שבוע שעבר: ${prevTotal}`, periodLabel: '7 ימים אחרונים' }
     }
 
     if (view === 'month') {
-      const bars = []
-      for (let w = 3; w >= 0; w--) {
+      // 4 שבועות — תווית = d/m של תחילת השבוע
+      const bars = Array.from({length:4}, (_,w) => {
+        const start = new Date(now.getTime() - (3-w)*7*DAY - 6*DAY); start.setHours(0,0,0,0)
         let count = 0
-        const startDay = new Date(now.getTime() - (w * 7 + 6) * DAY)
-        startDay.setHours(0,0,0,0)
-        for (let i = 0; i <= 6; i++) {
-          const d = new Date(startDay.getTime() + i * DAY)
-          const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-          count += byDay.get(key) || 0
-        }
-        bars.push({ label: `${startDay.getDate()}/${startDay.getMonth()+1}`, value: count, isToday: w === 0 })
-      }
-      const total = bars.reduce((s,b)=>s+b.value,0)
-      return { bars, summary: `ממוצע ${(total/4).toFixed(1)} בשבוע`, period: '28 יום אחרון' }
+        for (let i=0;i<7;i++) { const d=new Date(start.getTime()+i*DAY); count+=byDay.get(dk(d))||0 }
+        return { label: `${start.getDate()}/${start.getMonth()+1}`, value: count, isToday: w===3 }
+      })
+      // חודש שעבר (4 שבועות, -28)
+      const prevTotal = Array.from({length:4}, (_,w) => {
+        const start = new Date(now.getTime() - (3-w)*7*DAY - 6*DAY - 28*DAY); start.setHours(0,0,0,0)
+        let count = 0
+        for (let i=0;i<7;i++) { const d=new Date(start.getTime()+i*DAY); count+=byDay.get(dk(d))||0 }
+        return count
+      }).reduce((s,v)=>s+v,0)
+      const thisTotal = bars.reduce((s,b)=>s+b.value,0)
+      const diff = thisTotal - prevTotal
+      return { bars, avg: thisTotal/4, thisTotal, prevTotal, diff,
+               compareLabel: `4 שבועות קודמים: ${prevTotal}`, periodLabel: '28 יום אחרון' }
     }
 
     if (view === '6m') {
-      const bars = []
-      for (let m = 5; m >= 0; m--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - m, 1)
+      const bars = Array.from({length:6}, (_,i) => {
+        const d = new Date(now.getFullYear(), now.getMonth()-(5-i), 1)
         const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
         let count = 0
-        for (const [k, v] of byDay.entries()) { if (k.startsWith(mk)) count += v }
-        bars.push({ label: MONTH_HE_SHORT[d.getMonth()], value: count, isToday: m === 0 })
-      }
-      const total = bars.reduce((s,b)=>s+b.value,0)
-      return { bars, summary: `ממוצע ${(total/6).toFixed(1)} בחודש`, period: '6 חודשים אחרונים' }
+        for (const [k,v] of byDay) if (k.startsWith(mk)) count+=v
+        return { label: MHS[d.getMonth()], value: count, isToday: i===5 }
+      })
+      const thisTotal = bars.reduce((s,b)=>s+b.value,0)
+      return { bars, avg: thisTotal/6, thisTotal, prevTotal: null, diff: null,
+               compareLabel: null, periodLabel: '6 חודשים אחרונים' }
     }
 
     // year
-    const bars = []
-    for (let m = 11; m >= 0; m--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - m, 1)
+    const bars = Array.from({length:12}, (_,i) => {
+      const d = new Date(now.getFullYear(), now.getMonth()-(11-i), 1)
       const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
       let count = 0
-      for (const [k, v] of byDay.entries()) { if (k.startsWith(mk)) count += v }
-      bars.push({ label: MONTH_HE_SHORT[d.getMonth()], value: count, isToday: m === 0 })
-    }
-    const total = bars.reduce((s,b)=>s+b.value,0)
-    return { bars, summary: `ממוצע ${(total/12).toFixed(1)} בחודש`, period: '12 חודשים אחרונים' }
+      for (const [k,v] of byDay) if (k.startsWith(mk)) count+=v
+      return { label: MHS[d.getMonth()], value: count, isToday: i===11 }
+    })
+    const thisTotal = bars.reduce((s,b)=>s+b.value,0)
+    return { bars, avg: thisTotal/12, thisTotal, prevTotal: null, diff: null,
+             compareLabel: null, periodLabel: '12 חודשים אחרונים' }
   }, [events, view])
 
-  const maxVal = Math.max(...chartData.bars.map(b => b.value), 1)
-  const CHART_H = 90
-  const avgVal = chartData.bars.reduce((s,b)=>s+b.value,0) / chartData.bars.length
+  const rawMax = Math.max(...chartData.bars.map(b=>b.value), 2)
+  const yMax   = Math.ceil(rawMax / 2) * 2
+  const yTicks = Array.from({length: yMax/2 + 1}, (_,i) => i*2)
+  const sel    = selectedBar !== null ? chartData.bars[selectedBar] : null
+  const tm     = stats?.thisMonth
 
-  const tm = stats?.thisMonth
-  const MONTH_HE_LOCAL = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
+  // SVG
+  const VW=300, VH=130, YW=18, XH=16, PT=16, PR=2
+  const CX=YW, CY=PT, CW=VW-YW-PR, CH=VH-XH-PT
+  const n=chartData.bars.length, slot=CW/n
+  const bw=Math.min(slot*0.52, 24)
 
   return (
-    <div className="rounded-xl shadow-sm overflow-hidden"
-      style={{ background: 'linear-gradient(135deg, #047857 0%, #059669 50%, #10b981 100%)' }}>
+    <div className="rounded-2xl overflow-hidden" style={{ background:'#fff', boxShadow:'0 1px 4px rgba(0,0,0,0.08)', border:'1px solid #e5e7eb' }}>
 
-      {/* כותרת + מספר החודש */}
-      <div className="px-5 pt-4 pb-3 text-white">
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="font-bold text-base flex items-center gap-2">
-            <span>📊</span><span>ההתקדמות שלי</span>
-          </h3>
-          <div className="text-xs opacity-90 font-semibold">
-            {MONTH_HE_LOCAL[new Date().getMonth()]} {new Date().getFullYear()}
-          </div>
+      {/* ══ HEADER ══ */}
+      <div style={{ background:'linear-gradient(135deg,#047857 0%,#059669 55%,#10b981 100%)' }} className="px-4 pt-4 pb-4 text-white">
+        <div className="flex items-center justify-between mb-2">
+          <span style={{ fontSize:10, fontWeight:600, letterSpacing:'0.06em', opacity:0.7, textTransform:'uppercase' }}>ההתקדמות שלי</span>
+          <span style={{ fontSize:11, opacity:0.6 }}>{MHL[new Date().getMonth()]} {new Date().getFullYear()}</span>
         </div>
 
-        {/* מספר בולט */}
-        <div className="bg-white/15 backdrop-blur-sm rounded-lg p-4 mt-2 text-center">
-          <div className="text-5xl font-extrabold leading-none">{tm?.sessions ?? 0}</div>
-          <div className="text-xs opacity-90 mt-1.5">
-            {(tm?.sessions ?? 0) === 1 ? 'יחידת אימון' : 'יחידות אימון'} בחודש זה
+        <div className="flex items-end gap-3">
+          {/* מספר גדול */}
+          <div style={{ lineHeight:1 }}>
+            <div style={{ fontSize:50, fontWeight:900, lineHeight:1, letterSpacing:'-0.02em' }}>{tm?.sessions ?? 0}</div>
+            <div style={{ fontSize:11, opacity:0.6, marginTop:4 }}>יחידות החודש</div>
           </div>
-        </div>
 
-        {/* תחומים */}
-        {disciplinesThisMonth?.length === 1 && (
-          <div className="mt-3 flex justify-center">
-            <span className="inline-flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full text-xs font-semibold">
-              <span className="text-base leading-none">{DISCIPLINE_ICONS[disciplinesThisMonth[0].name]}</span>
-              <span>{disciplinesThisMonth[0].name}</span>
-            </span>
-          </div>
-        )}
-        {disciplinesThisMonth?.length >= 2 && (() => {
-          const total = disciplinesThisMonth.reduce((s,d)=>s+d.sessions,0)
-          return (
-            <div className="mt-3">
-              <div className="flex h-2.5 rounded-full overflow-hidden bg-white/20">
-                {disciplinesThisMonth.map(d => (
-                  <div key={d.name} style={{ width:`${(d.sessions/total)*100}%`, background: DISCIPLINE_COLORS[d.name] }} />
-                ))}
-              </div>
-              <div className="flex flex-wrap justify-center gap-2 mt-2 text-[11px]">
-                {disciplinesThisMonth.map(d => (
-                  <span key={d.name} className="inline-flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full" style={{ background: DISCIPLINE_COLORS[d.name] }} />
-                    <span className="font-semibold">{DISCIPLINE_ICONS[d.name]} {d.name}: {d.sessions}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* אחוזים + שיא */}
-        {(diffPct !== null || isBestMonth) && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          {/* תחומים + שיא */}
+          <div className="flex-1 flex flex-col gap-1 items-start pb-1">
+            {disciplinesThisMonth?.slice(0,2).map(d => (
+              <span key={d.name} style={{ display:'inline-flex', alignItems:'center', gap:5, background:'rgba(255,255,255,0.18)', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                {DISCIPLINE_ICONS[d.name]} {d.name} <span style={{ opacity:0.65 }}>· {d.sessions}</span>
+              </span>
+            ))}
             {isBestMonth && (
-              <span className="inline-flex items-center gap-1 bg-yellow-300 text-yellow-900 px-2 py-1 rounded-full font-bold">
+              <span style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(251,191,36,0.85)', color:'#78350f', fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, marginTop:2 }}>
                 🏆 שיא אישי
               </span>
             )}
-            {diffPct !== null && diffPct !== 0 && (
-              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full font-semibold ${
-                diffPct > 0 ? 'bg-emerald-300 text-emerald-900' : 'bg-orange-200 text-orange-900'
-              }`}>
-                {diffPct > 0 ? '↑' : '↓'} {Math.abs(diffPct)}% מהחודש שעבר (תקופה זהה)
-              </span>
-            )}
-            {!isBestMonth && stats?.bestMonth?.key && sessionsToBest > 0 && sessionsToBest <= 5 && (
-              <span className="inline-flex items-center gap-1 bg-white/25 px-2 py-1 rounded-full">
-                עוד {sessionsToBest} לשיא האישי
-              </span>
-            )}
+          </div>
+        </div>
+
+        {/* השוואה */}
+        {chartData.compareLabel && chartData.diff !== null && (
+          <div style={{ marginTop:10, display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:11, opacity:0.65 }}>{chartData.compareLabel}</span>
+            <span style={{
+              fontSize:11, fontWeight:700, padding:'2px 10px', borderRadius:20,
+              background: chartData.diff > 0 ? 'rgba(255,255,255,0.25)' : chartData.diff < 0 ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)',
+            }}>
+              {chartData.diff > 0 ? `↑ +${chartData.diff}` : chartData.diff < 0 ? `↓ ${chartData.diff}` : '= זהה'}
+            </span>
           </div>
         )}
       </div>
 
-      {/* טאבים */}
-      <div className="flex gap-1 px-4 pb-2">
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setView(t.id)}
-            className={`flex-1 text-[11px] font-semibold py-1.5 rounded-full transition-colors ${
-              view === t.id ? 'bg-white text-emerald-900' : 'bg-white/20 text-white'
-            }`}>
-            {t.label}
-          </button>
-        ))}
+      {/* ══ TABS ══ */}
+      <div style={{ padding:'10px 12px 6px', background:'#fafafa', borderBottom:'1px solid #f3f4f6' }}>
+        <div style={{ display:'flex', background:'#f3f4f6', borderRadius:8, padding:2, gap:2 }}>
+          {TABS.map(t => (
+            <button key={t.id}
+              onClick={() => { setView(t.id); setSelectedBar(null) }}
+              style={{
+                flex:1, fontSize:11, fontWeight:600, padding:'5px 2px', border:'none', cursor:'pointer',
+                borderRadius:6, transition:'all 0.15s',
+                background: view===t.id ? '#fff' : 'transparent',
+                color: view===t.id ? '#047857' : '#9ca3af',
+                boxShadow: view===t.id ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* גרף עמודות */}
-      <div className="px-4 pb-4">
-        <div className="flex items-center justify-between mb-1">
-          <div className="text-[10px] text-white/70">{chartData.period}</div>
-          <div className="text-[10px] text-white/80 font-semibold">{chartData.summary}</div>
-        </div>
-        <div className="relative">
-          {maxVal > 0 && avgVal > 0 && (
-            <div className="absolute inset-x-0 pointer-events-none"
-              style={{ bottom: 20 + (avgVal / maxVal) * CHART_H, borderBottom: '1px dashed rgba(255,255,255,0.4)', zIndex: 1 }} />
+      {/* ══ INFO ROW ══ */}
+      <div style={{ padding:'8px 16px 0', display:'flex', alignItems:'baseline', gap:6 }}>
+        {sel ? (
+          <>
+            <span style={{ fontSize:18, fontWeight:800, color:'#111827' }}>{sel.value}</span>
+            <span style={{ fontSize:11, color:'#9ca3af' }}>אימונים · {sel.label}</span>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize:12, color:'#6b7280', fontWeight:500 }}>{chartData.periodLabel}</span>
+            <span style={{ fontSize:11, color:'#9ca3af', marginRight:'auto' }}>
+              ממוצע {Number.isInteger(chartData.avg) ? chartData.avg : chartData.avg.toFixed(1)}
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* ══ SVG CHART ══ */}
+      <div style={{ padding:'4px 10px 12px 6px' }}>
+        <svg width="100%" viewBox={`0 0 ${VW} ${VH}`} style={{ display:'block', overflow:'visible' }}>
+
+          {/* Y axis + grid */}
+          {yTicks.map(v => {
+            const y = CY + CH*(1-v/yMax)
+            return (
+              <g key={v}>
+                <line x1={CX} y1={y} x2={VW-PR} y2={y}
+                  stroke={v===0 ? '#e5e7eb' : '#f9fafb'} strokeWidth={v===0 ? 1 : 1} />
+                <text x={CX-4} y={y+3.5} textAnchor="end" fontSize="9" fill="#d1d5db">
+                  {v}
+                </text>
+              </g>
+            )
+          })}
+
+          {/* avg line */}
+          {chartData.avg > 0 && chartData.avg <= yMax && (
+            <line
+              x1={CX} x2={VW-PR}
+              y1={CY+CH*(1-chartData.avg/yMax)} y2={CY+CH*(1-chartData.avg/yMax)}
+              stroke="#10b981" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.55"
+            />
           )}
-          <div className="flex items-end gap-1" style={{ height: CHART_H + 20 }}>
-            {chartData.bars.map((bar, i) => {
-              const barH = maxVal > 0 ? Math.max((bar.value / maxVal) * CHART_H, bar.value > 0 ? 4 : 0) : 0
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center" style={{ height: CHART_H + 20 }}>
-                  <div className="flex-1 flex items-end w-full">
-                    <div className="w-full rounded-t transition-all duration-300"
-                      style={{
-                        height: barH,
-                        background: bar.isToday ? 'rgba(255,255,255,1)' : bar.value > 0 ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.1)',
-                      }} />
-                  </div>
-                  <div className="text-[9px] text-white/70 font-medium mt-1 leading-none" style={{ whiteSpace: 'nowrap' }}>
-                    {bar.label}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+
+          {/* bars */}
+          {chartData.bars.map((bar, i) => {
+            const bh  = yMax>0 ? Math.max((bar.value/yMax)*CH, bar.value>0 ? 3 : 0) : 0
+            const bx  = CX + i*slot + (slot-bw)/2
+            const by  = CY + CH - bh
+            const isSel = selectedBar === i
+            const fill = isSel       ? '#065f46'
+                       : bar.isToday ? '#059669'
+                       : bar.value>0  ? '#6ee7b7'
+                       :                '#f3f4f6'
+            return (
+              <g key={i} onClick={()=>setSelectedBar(isSel?null:i)} style={{cursor:'pointer'}}>
+                <rect x={CX+i*slot} y={CY} width={slot} height={CH+XH} fill="transparent"/>
+                <rect x={bx} y={by} width={bw} height={bh} rx="4" fill={fill}/>
+                {isSel && bar.value>0 && (
+                  <text x={bx+bw/2} y={by-5} textAnchor="middle" fontSize="11" fill="#065f46" fontWeight="800">
+                    {bar.value}
+                  </text>
+                )}
+                <text x={bx+bw/2} y={VH-1} textAnchor="middle" fontSize="8.5"
+                  fill={isSel||bar.isToday ? '#047857' : '#c4c4c4'}
+                  fontWeight={isSel||bar.isToday ? '700' : '400'}>
+                  {bar.label}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
       </div>
     </div>
   )
@@ -1135,7 +1170,7 @@ export default function MyProgressSection({ profile, member }) {
       })()}
 
       {/* ===== גרף פעילות עם טאבים (במקום ה-Hero card הירוק) ===== */}
-      <ActivityChart events={events} stats={stats} diffPct={diffPct} isBestMonth={isBestMonth} sessionsToBest={sessionsToBest} disciplinesThisMonth={disciplinesThisMonth} />
+      <ActivityChart events={events} stats={stats} isBestMonth={isBestMonth} sessionsToBest={sessionsToBest} disciplinesThisMonth={disciplinesThisMonth} />
 
       {/* ===== לוח 28 ימים אחרונים ===== */}
       <div className="bg-white rounded-xl border shadow-sm p-3">

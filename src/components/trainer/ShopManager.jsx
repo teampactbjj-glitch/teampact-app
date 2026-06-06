@@ -129,6 +129,23 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       .eq('product_id', product.id)
       .order('created_at', { ascending: true })
     setVariants(vars || [])
+
+    // auto-populate: אם available_colors/sizes ריקים — מלא מהוריאנטים הקיימים
+    const existingColors = [...new Set((vars || []).map(v => v.color).filter(Boolean))]
+    const existingLengths = [...new Set((vars || []).map(v => v.length).filter(Boolean))]
+    const SIZE_ORDER_FORM = ['XXXS','XXS','XS','S','M','L','XL','XXL','XXXL','A0','A1','A2','A3','A4']
+    const existingSizes = [...new Set((vars || []).map(v => v.size).filter(Boolean))].sort((a,b) => {
+      const ai = SIZE_ORDER_FORM.indexOf(a), bi = SIZE_ORDER_FORM.indexOf(b)
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+    })
+    setForm(prev => ({
+      ...prev,
+      has_variants: prev.has_variants || (vars || []).length > 0,
+      available_colors: prev.available_colors.length ? prev.available_colors : existingColors,
+      available_lengths: prev.available_lengths.length ? prev.available_lengths : existingLengths,
+      available_sizes: prev.available_sizes.length ? prev.available_sizes : existingSizes,
+    }))
+
     setShowForm(true)
   }
 
@@ -938,9 +955,11 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                   return { comp, groups }
                 })
               }
-              // מוצר רגיל — קיבוץ לפי מידה (עדיפות) ואם אין — לפי צבע
+              // מוצר רגיל — קיבוץ לפי צבע (עדיפות) ואם אין — לפי מידה
               let groups = {}
-              if (hasSizes) {
+              if (hasColors) {
+                allVars.forEach(v => { if (v.color) groups[v.color] = (groups[v.color] || 0) + (parseInt(v.stock) || 0) })
+              } else if (hasSizes) {
                 const SIZE_ORDER = ['XXXS','XXS','XS','S','M','L','XL','XXL','XXXL','A0','A1','A2','A3','A4']
                 const sizeGroups = {}
                 allVars.forEach(v => { if (v.size) sizeGroups[v.size] = (sizeGroups[v.size] || 0) + (parseInt(v.stock) || 0) })
@@ -949,8 +968,6 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                   const ai = SIZE_ORDER.indexOf(a), bi = SIZE_ORDER.indexOf(b)
                   return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
                 }).forEach(k => { groups[k] = sizeGroups[k] })
-              } else if (hasColors) {
-                allVars.forEach(v => { if (v.color) groups[v.color] = (groups[v.color] || 0) + (parseInt(v.stock) || 0) })
               }
               return Object.keys(groups).length ? [{ comp: null, groups }] : null
             })()
@@ -961,11 +978,22 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
             const activeColor = filter.color ?? null
             const activeLength = filter.length ?? null
 
-            // הגדרת הרכיב הפעיל מ-purchase_options
+            // הגדרת הרכיב הפעיל — עדיפות: purchase_options → localSetup → available_* → חילוץ מהוריאנטים הקיימים
             const compDef = getCompDef(product, activeComp)
-            const compColors = compDef.colors || []
-            const compLengths = compDef.lengths || []
-            const compSizes = compDef.sizes || []
+            const setup = getComponentSetup(product.id, activeComp)
+            const SIZE_ORDER_DEF = ['XXXS','XXS','XS','S','M','L','XL','XXL','XXXL','A0','A1','A2','A3','A4']
+            // חילוץ צבעים/אורכים/מידות ישירות מהוריאנטים הקיימים (הכי אמין)
+            const compVarsForActive = allVars.filter(v => (v.component_name || null) === activeComp)
+            const colorsFromVars = [...new Set(compVarsForActive.map(v => v.color).filter(Boolean))]
+            const lengthsFromVars = [...new Set(compVarsForActive.map(v => v.length).filter(Boolean))]
+            const sizesFromVarsRaw = [...new Set(compVarsForActive.map(v => v.size).filter(Boolean))]
+            const sizesFromVars = sizesFromVarsRaw.sort((a,b) => {
+              const ai = SIZE_ORDER_DEF.indexOf(a), bi = SIZE_ORDER_DEF.indexOf(b)
+              return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+            })
+            const compColors = compDef.colors?.length ? compDef.colors : (setup.colors?.length ? setup.colors : (product.available_colors?.length ? product.available_colors : colorsFromVars))
+            const compLengths = compDef.lengths?.length ? compDef.lengths : (setup.lengths?.length ? setup.lengths : (product.available_lengths?.length ? product.available_lengths : lengthsFromVars))
+            const compSizes = compDef.sizes?.length ? compDef.sizes : (setup.sizes?.length ? setup.sizes : (product.available_sizes?.length ? product.available_sizes : sizesFromVars))
             const hasLengths = compLengths.length > 0
 
             // וריאנטים מסוננים לפי רכיב + צבע + אורך
@@ -1696,73 +1724,38 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                 </button>
               </div>
 
-              {/* וריאנטים - מידות וצבעים */}
+              {/* וריאנטים - מידות, צבעים, טעמים */}
               <div className="space-y-2 bg-blue-50 rounded-lg p-3 border border-blue-100">
                 <label className="flex items-center gap-2 text-sm font-bold text-blue-900">
                   <input type="checkbox" checked={form.has_variants}
                     onChange={e => setForm(p => ({ ...p, has_variants: e.target.checked }))} />
-                  למוצר יש מידות / צבעים (וריאנטים)
+                  למוצר יש וריאנטים (מידות / צבעים / טעמים)
                 </label>
+                {!form.has_variants && (
+                  <p className="text-[11px] text-blue-600 pr-6">סמן כדי להגדיר מלאי לפי מידה, צבע או טעם</p>
+                )}
 
                 {form.has_variants && (
-                  <div className="space-y-3 pt-2">
-                    {/* מידות זמינות */}
-                    <div>
-                      <label className="text-xs text-gray-600 block mb-1">
-                        מידות זמינות - הקלד מידה ולחץ Enter (או פסיק)
-                      </label>
-                      <div className="flex flex-wrap gap-1 mb-1 min-h-[28px]">
-                        {form.available_sizes.map((size, idx) => (
-                          <span key={idx} className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 rounded-full px-2 py-0.5 text-xs">
-                            {size}
-                            <button type="button" className="text-blue-600 hover:text-red-500 font-bold"
-                              onClick={() => setForm(p => ({ ...p, available_sizes: p.available_sizes.filter((_, i) => i !== idx) }))}>×</button>
-                          </span>
-                        ))}
-                      </div>
-                      <input className="w-full border rounded-lg px-3 py-1.5 text-sm"
-                        placeholder="לדוגמה: A1 ואז Enter"
-                        onKeyDown={e => {
-                          // Enter, Tab, או כל סוג של פסיק/רווח מוסיפים תג
-                          if (['Enter', 'Tab', ',', '،', '、'].includes(e.key) || (e.key === ' ' && e.target.value.trim())) {
-                            e.preventDefault()
-                            const val = e.target.value.trim()
-                            if (val && !form.available_sizes.includes(val)) {
-                              setForm(p => ({ ...p, available_sizes: [...p.available_sizes, val] }))
-                            }
-                            e.target.value = ''
-                          } else if (e.key === 'Backspace' && !e.target.value && form.available_sizes.length) {
-                            setForm(p => ({ ...p, available_sizes: p.available_sizes.slice(0, -1) }))
-                          }
-                        }}
-                        onBlur={e => {
-                          // גם כשיוצאים מהשדה - להוסיף מה שכתוב
-                          const val = e.target.value.trim()
-                          if (val && !form.available_sizes.includes(val)) {
-                            setForm(p => ({ ...p, available_sizes: [...p.available_sizes, val] }))
-                          }
-                          e.target.value = ''
-                        }} />
-                    </div>
+                  <div className="space-y-4 pt-2">
 
-                    {/* צבעים זמינים */}
+                    {/* צבעים / טעמים */}
                     <div>
-                      <label className="text-xs text-gray-600 block mb-1">
-                        צבעים זמינים - הקלד צבע ולחץ Enter
+                      <label className="text-xs font-bold text-gray-700 block mb-1">
+                        🎨 צבעים / טעמים <span className="font-normal text-gray-400">(אופציונלי)</span>
                       </label>
-                      <div className="flex flex-wrap gap-1 mb-1 min-h-[28px]">
+                      <div className="flex flex-wrap gap-1 mb-2 min-h-[28px]">
                         {form.available_colors.map((color, idx) => (
-                          <span key={idx} className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 rounded-full px-2 py-0.5 text-xs">
+                          <span key={idx} className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 rounded-full px-2 py-0.5 text-xs font-medium">
                             {color}
                             <button type="button" className="text-purple-600 hover:text-red-500 font-bold"
                               onClick={() => setForm(p => ({ ...p, available_colors: p.available_colors.filter((_, i) => i !== idx) }))}>×</button>
                           </span>
                         ))}
                       </div>
-                      <input className="w-full border rounded-lg px-3 py-1.5 text-sm"
-                        placeholder="לדוגמה: שחור ואז Enter"
+                      <input className="w-full border rounded-lg px-3 py-1.5 text-sm bg-white"
+                        placeholder="לדוגמה: שחור, לבן / blueberry, mango — Enter להוספה"
                         onKeyDown={e => {
-                          if (['Enter', 'Tab', ',', '،', '、'].includes(e.key)) {
+                          if (['Enter', 'Tab', ',', '،'].includes(e.key)) {
                             e.preventDefault()
                             const val = e.target.value.trim()
                             if (val && !form.available_colors.includes(val)) {
@@ -1781,6 +1774,77 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                           e.target.value = ''
                         }} />
                     </div>
+
+                    {/* מידות זמינות */}
+                    <div>
+                      <label className="text-xs font-bold text-gray-700 block mb-1">
+                        📏 מידות <span className="font-normal text-gray-400">(אופציונלי)</span>
+                      </label>
+                      {/* quick-add מידות נפוצות */}
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {['XS','S','M','L','XL','XXL','XXXL','A0','A1','A2','A3','A4'].map(sz => {
+                          const isAdded = form.available_sizes.includes(sz)
+                          return (
+                            <button key={sz} type="button"
+                              onClick={() => setForm(p => ({
+                                ...p,
+                                available_sizes: isAdded
+                                  ? p.available_sizes.filter(s => s !== sz)
+                                  : [...p.available_sizes, sz]
+                              }))}
+                              className={`px-2 py-0.5 rounded-full text-[11px] font-bold border transition ${
+                                isAdded ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-300 hover:border-blue-400'
+                              }`}
+                            >{sz}</button>
+                          )
+                        })}
+                      </div>
+                      <div className="flex flex-wrap gap-1 mb-1 min-h-[24px]">
+                        {form.available_sizes.filter(s => !['XS','S','M','L','XL','XXL','XXXL','A0','A1','A2','A3','A4'].includes(s)).map((size, idx) => (
+                          <span key={idx} className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 rounded-full px-2 py-0.5 text-xs font-medium">
+                            {size}
+                            <button type="button" className="text-blue-600 hover:text-red-500 font-bold"
+                              onClick={() => setForm(p => ({ ...p, available_sizes: p.available_sizes.filter(s => s !== size) }))}>×</button>
+                          </span>
+                        ))}
+                      </div>
+                      <input className="w-full border rounded-lg px-3 py-1.5 text-sm bg-white"
+                        placeholder="מידה מותאמת אישית — Enter להוספה"
+                        onKeyDown={e => {
+                          if (['Enter', 'Tab', ',', '،'].includes(e.key) || (e.key === ' ' && e.target.value.trim())) {
+                            e.preventDefault()
+                            const val = e.target.value.trim()
+                            if (val && !form.available_sizes.includes(val)) {
+                              setForm(p => ({ ...p, available_sizes: [...p.available_sizes, val] }))
+                            }
+                            e.target.value = ''
+                          } else if (e.key === 'Backspace' && !e.target.value && form.available_sizes.length) {
+                            setForm(p => ({ ...p, available_sizes: p.available_sizes.slice(0, -1) }))
+                          }
+                        }}
+                        onBlur={e => {
+                          const val = e.target.value.trim()
+                          if (val && !form.available_sizes.includes(val)) {
+                            setForm(p => ({ ...p, available_sizes: [...p.available_sizes, val] }))
+                          }
+                          e.target.value = ''
+                        }} />
+                    </div>
+
+                    {/* preview שורות מלאי */}
+                    {(form.available_colors.length > 0 || form.available_sizes.length > 0) && (() => {
+                      const c = form.available_colors.length || 1
+                      const s = form.available_sizes.length || 1
+                      const total = c * s
+                      return (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-800">
+                          📦 יוצר <strong>{total}</strong> שורות מלאי
+                          {form.available_colors.length > 0 && form.available_sizes.length > 0 && (
+                            <span className="text-emerald-600"> ({form.available_colors.length} צבעים × {form.available_sizes.length} מידות)</span>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {/* אורך זמין - ארוך/קצר */}
                     <div>

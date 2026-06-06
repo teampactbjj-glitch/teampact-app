@@ -208,6 +208,11 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   const hasSizes = sizes.length > 0
   const hasColors = colors.length > 0
   const hasLengths = lengths.length > 0
+  // כשהטעמים/אפשרויות הם בדיוק המידות (למשל אמינו עם blueberry/mango כ-size וגם כ-option)
+  // → לא מציגים size picker נפרד, ומשתמשים ב-selectedOption לחישוב מלאי
+  const sizesAreOptions = hasOptions && hasSizes && options.every(o =>
+    sizes.some(s => s.toLowerCase().trim() === (o.name || '').toLowerCase().trim())
+  )
 
   // ברירת מחדל: אם מצב עריכה — שחזר אפשרות מה-notes, אחרת האפשרות המומלצת
   const initialOption = (() => {
@@ -269,6 +274,16 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
     if (!hasVariantData) return Infinity
     const cv = getCompVars(null)
     if (cv.length === 0) return Infinity
+
+    // כשהטעמים/אפשרויות הם המידות — השתמש ב-selectedOption לחיפוש וריאנט
+    if (sizesAreOptions && selectedOption?.name) {
+      const optName = selectedOption.name.toLowerCase().trim()
+      const matched = cv.filter(v =>
+        (v.size  && v.size.toLowerCase().trim()  === optName) ||
+        (v.color && v.color.toLowerCase().trim() === optName)
+      )
+      if (matched.length > 0) return matched.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
+    }
 
     if (!hasSizes && !hasColors && !hasLengths) {
       // מוצר ללא בחירות מידה/צבע/אורך — אם יש אפשרות נבחרת (למשל: blueberry/mango)
@@ -337,7 +352,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
       onOrder(product, selectedOption, null, null, null, componentSelections, quantity)
       return
     }
-    if (hasSizes && !selectedSize) { setValidationError('יש לבחור מידה'); return }
+    if (hasSizes && !sizesAreOptions && !selectedSize) { setValidationError('יש לבחור מידה'); return }
     if (hasColors && !selectedColor) { setValidationError('יש לבחור צבע'); return }
     if (hasLengths && !selectedLength) { setValidationError('יש לבחור אורך (ארוך / קצר)'); return }
     setValidationError('')
@@ -681,7 +696,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
           </div>
         </div>
       )}
-      {hasOptions && !hasComponents && hasSizes && (
+      {hasOptions && !hasComponents && hasSizes && !sizesAreOptions && (
         <div role="group" aria-labelledby="size-heading2">
           <div className="flex items-center justify-between mb-2">
             <h3 id="size-heading2" className="font-bold text-sm text-gray-800">📏 בחר מידה</h3>
@@ -920,7 +935,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
               <div>📦 אפשרות: <span className="font-bold text-gray-800">{selectedOption.name}</span></div>
             )}
             {/* סיכום לוריאציה פשוטה */}
-            {!hasComponents && hasSizes && (
+            {!hasComponents && hasSizes && !sizesAreOptions && (
               <div>📏 מידה: <span className="font-bold text-gray-800">{selectedSize || '— לא נבחר'}</span></div>
             )}
             {!hasComponents && hasColors && (

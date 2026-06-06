@@ -14,6 +14,35 @@ export function normalizeColorName(s) {
     .toLowerCase()
 }
 
+// סדר תצוגת חגורות: בוגרים (לבנה→שחורה) ואז ילדים (אפור→ירוק שחור).
+// מנורמל כדי להתאים גם לכתיב זכר/נקבה ומקפים בנתוני המלאי.
+const BELT_COLOR_ORDER = [
+  'לבנה', 'כחולה', 'סגולה', 'חומה', 'שחורה',
+  'לבן אפור', 'אפור', 'אפור שחור',
+  'צהוב לבן', 'צהוב', 'צהוב שחור',
+  'כתום לבן', 'כתום', 'כתום שחור',
+  'ירוק לבן', 'ירוק', 'ירוק שחור',
+].map(normalizeColorName)
+
+function beltColorIndex(c) {
+  const i = BELT_COLOR_ORDER.indexOf(normalizeColorName(c))
+  return i === -1 ? 999 : i
+}
+
+// סדר מידות: XXXS→XXXL, A0→A4, ואז מידות ס"מ (ילדים) לפי מספר.
+const SIZE_ORDER = ['XXXS','XXS','XS','S','M','L','XL','XXL','XXXL','A0','A1','A2','A3','A4']
+function sizeIndex(s) {
+  const str = (s || '').trim()
+  const i = SIZE_ORDER.indexOf(str)
+  if (i !== -1) return i
+  const cm = str.match(/(\d+)/)        // "100ס\"מ" וכד'
+  if (cm) return 100 + parseInt(cm[1], 10)
+  return 999
+}
+function sortSizes(arr) {
+  return [...arr].sort((a, b) => sizeIndex(a) - sizeIndex(b))
+}
+
 /**
  * דף פירוט מוצר למתאמן - נפתח כמסך מלא כשלוחצים על מוצר בחנות.
  * מציג: תמונה, תיאור קצר, תיאור מלא, תכונות בולטות, ואפשרויות רכישה.
@@ -693,10 +722,14 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
             const compProductData = !hasCV ? getCompProductData(comp.name) : { sizes: [], colors: [], lengths: [] }
 
             // צבעים — מ-variants → מוצר מתאים → JSON
-            const compColors = hasCV
+            let compColors = hasCV
               ? [...new Set(cVars.map(v => v.color).filter(Boolean))]
               : compProductData.colors.length > 0 ? compProductData.colors
               : Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
+            // חגורה: סידור לפי דרגות (בוגרים לבנה→שחורה, ואז ילדים)
+            if ((comp.name || '').includes('חגורה')) {
+              compColors = [...compColors].sort((a, b) => beltColorIndex(a) - beltColorIndex(b))
+            }
 
             // אורכים — מסוננים לפי צבע שנבחר
             const lengthVars = (hasCV && sel.color)
@@ -714,10 +747,10 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                   (!sel.length || v.length === sel.length)
                 )
               : cVars
-            const compSizes = hasCV
+            const compSizes = sortSizes(hasCV
               ? [...new Set(sizeVars.map(v => v.size).filter(Boolean))]
               : compProductData.sizes.length > 0 ? compProductData.sizes
-              : Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
+              : Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : [])
 
             const needsColor = compColors.length > 0
             const needsLength = compLengths.length > 0
@@ -731,40 +764,65 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                 </h3>
 
                 {/* שלב 1: צבע */}
-                {compColors.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-bold text-gray-700">🎨 צבע</span>
-                      {sel.color && <span className="text-xs text-emerald-600 font-bold">{sel.color}</span>}
+                {compColors.length > 0 && (() => {
+                  const isBelt = (comp.name || '').includes('חגורה')
+                  const renderColorBtn = (color) => {
+                    const isSelected = sel.color === color
+                    const inStock = colorHasStock(color, cName)
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        aria-pressed={isSelected}
+                        aria-label={`${comp.name} צבע ${color}${!inStock ? ' - אזל' : ''}`}
+                        disabled={!inStock}
+                        onClick={() => updateComponentSelection(idx, 'color', color)}
+                        className={`py-1.5 px-3 rounded-lg border-2 text-xs font-bold transition ${
+                          !inStock
+                            ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                            : isSelected
+                              ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                        }`}
+                      >
+                        {color}
+                        {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
+                      </button>
+                    )
+                  }
+                  const adults = isBelt ? compColors.filter(c => beltColorIndex(c) < 5) : []
+                  const kids   = isBelt ? compColors.filter(c => { const i = beltColorIndex(c); return i >= 5 && i < 999 }) : []
+                  const others = isBelt ? compColors.filter(c => beltColorIndex(c) === 999) : compColors
+                  return (
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-gray-700">🎨 צבע</span>
+                        {sel.color && <span className="text-xs text-emerald-600 font-bold">{sel.color}</span>}
+                      </div>
+                      {isBelt ? (
+                        <div className="space-y-2">
+                          {adults.length > 0 && (
+                            <div>
+                              <p className="text-[11px] font-bold text-gray-500 mb-1">👤 חגורות בוגרים</p>
+                              <div className="flex flex-wrap gap-1.5">{adults.map(renderColorBtn)}</div>
+                            </div>
+                          )}
+                          {kids.length > 0 && (
+                            <div>
+                              <p className="text-[11px] font-bold text-gray-500 mb-1">🧒 חגורות ילדים</p>
+                              <div className="flex flex-wrap gap-1.5">{kids.map(renderColorBtn)}</div>
+                            </div>
+                          )}
+                          {others.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">{others.map(renderColorBtn)}</div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">{compColors.map(renderColorBtn)}</div>
+                      )}
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {compColors.map(color => {
-                        const isSelected = sel.color === color
-                        const inStock = colorHasStock(color, cName)
-                        return (
-                          <button
-                            key={color}
-                            type="button"
-                            aria-pressed={isSelected}
-                            aria-label={`${comp.name} צבע ${color}${!inStock ? ' - אזל' : ''}`}
-                            disabled={!inStock}
-                            onClick={() => updateComponentSelection(idx, 'color', color)}
-                            className={`py-1.5 px-3 rounded-lg border-2 text-xs font-bold transition ${
-                              !inStock
-                                ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                                : isSelected
-                                  ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
-                            }`}
-                          >
-                            {color}
-                            {!inStock && <span className="block text-[8px] font-normal">אזל</span>}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
+                  )
+                })()}
 
                 {/* שלב 2: אורך (מסונן לפי צבע) */}
                 {compLengths.length > 0 && (
@@ -908,8 +966,9 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
               <span className="w-8 text-center font-bold text-gray-900">{quantity}</span>
               <button
                 type="button"
-                onClick={() => setQuantity(q => q + 1)}
-                className="w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold text-lg flex items-center justify-center hover:bg-gray-100 transition"
+                onClick={() => setQuantity(q => Math.min(maxQty, q + 1))}
+                disabled={quantity >= maxQty}
+                className="w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold text-lg flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 transition"
               >+</button>
             </div>
           </div>

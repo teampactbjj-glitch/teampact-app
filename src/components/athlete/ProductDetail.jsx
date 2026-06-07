@@ -385,7 +385,11 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         const sel = componentSelections[i] || {}
         const compSizes = Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
         const compColors = Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
-        const compLengths = Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
+        // ולידציה: סמוך על DB (כמו הrender) ולא על JSON — מכנס עם length=null לא יחייב בחירת אורך
+        const cVarsForVal = getCompVars(comp.name || null)
+        const compLengths = cVarsForVal.length > 0
+          ? [...new Set(cVarsForVal.map(v => v.length).filter(Boolean))]
+          : Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
         if (compSizes.length && !sel.size) { setValidationError(`יש לבחור מידה עבור "${comp.name}"`); return }
         if (compColors.length && !sel.color) { setValidationError(`יש לבחור צבע עבור "${comp.name}"`); return }
         if (compLengths.length && !sel.length) { setValidationError(`יש לבחור אורך (ארוך/קצר) עבור "${comp.name}"`); return }

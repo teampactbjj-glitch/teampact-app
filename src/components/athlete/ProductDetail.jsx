@@ -215,14 +215,15 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   )
 
   // ברירת מחדל: אם מצב עריכה — שחזר אפשרות מה-notes, אחרת האפשרות המומלצת
+  const cheapestOption = hasOptions ? [...options].sort((a,b)=>(a.price||0)-(b.price||0))[0] : null
   const initialOption = (() => {
-    if (!editMode || !initialNotes || !hasOptions) return hasOptions ? (options.find(o => o.is_featured) || options[0]) : null
+    if (!editMode || !initialNotes || !hasOptions) return cheapestOption
     const match = initialNotes.match(/אפשרות: ([^·]+)/)
     if (match) {
       const name = match[1].trim()
-      return options.find(o => o.name === name) || (hasOptions ? (options.find(o => o.is_featured) || options[0]) : null)
+      return options.find(o => o.name === name) || cheapestOption
     }
-    return hasOptions ? (options.find(o => o.is_featured) || options[0]) : null
+    return cheapestOption
   })()
   const [selectedOption, setSelectedOption] = useState(initialOption)
   const [selectedSize, setSelectedSize] = useState(initialSize)
@@ -522,27 +523,6 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         </div>
       )}
 
-      {/* הוסף חגורה — מוצג רק אחרי בחירת צבע + מידה לחליפה */}
-      {canShowBeltAddon && (
-        <div className={`rounded-xl border-2 transition p-3 ${addBelt ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
-          <button type="button" onClick={toggleBelt} className="w-full flex items-center gap-3 text-right">
-            <div className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition ${addBelt ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300'}`}>
-              {addBelt && <span className="text-white text-xs font-bold">✓</span>}
-            </div>
-            <div className="flex-1">
-              <span className="font-bold text-gray-800 text-sm">הוסף חגורה</span>
-              {addOnOpt && baseOpt && (
-                <span className="text-xs text-gray-500 mr-2">
-                  <span className="text-emerald-600 font-bold">₪{addOnDiff}</span>
-                  {' '}
-                  <span className="line-through text-gray-400">במקום ₪{addOnDiff != null && addOnOpt.original_price ? addOnOpt.original_price - baseOpt.price : 100}</span>
-                </span>
-              )}
-            </div>
-          </button>
-        </div>
-      )}
-
       {/* סדר בחירה: קודם אפשרות רכישה, אחר כך צבע/מידה — ראה למטה אחרי בחירת האפשרות */}
 
       {/* צבע — רק כשאין components ואין options (מוצר פשוט לחלוטין) */}
@@ -688,6 +668,25 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         )
       })()}
 
+      {/* הוסף חגורה — אחרי בחירת מידה */}
+      {canShowBeltAddon && (
+        <div className={`rounded-xl border-2 transition p-3 ${addBelt ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
+          <button type="button" onClick={toggleBelt} className="w-full flex items-center gap-3 text-right">
+            <div className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition ${addBelt ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300'}`}>
+              {addBelt && <span className="text-white text-xs font-bold">✓</span>}
+            </div>
+            <div className="flex-1">
+              <span className="font-bold text-gray-800 text-sm">הוסף חגורה</span>
+              <span className="text-xs text-gray-500 mr-2">
+                <span className="text-emerald-600 font-bold">₪{addOnDiff}</span>
+                {' '}
+                <span className="line-through text-gray-400">במקום ₪{addOnOpt?.original_price ? addOnOpt.original_price - (baseOpt?.price || 0) : 100}</span>
+              </span>
+            </div>
+          </button>
+        </div>
+      )}
+
       {/* צבע/אורך/מידה לאפשרות ללא רכיבים (תיק בלבד, חליפה בלבד וכו') */}
       {hasOptions && !hasComponents && hasColors && (
         isBeltProduct
@@ -830,12 +829,6 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                 </h3>
 
                 {/* שלב 1: צבע — נסתר לרכיב ראשון כשיש quick picker */}
-                {compColors.length > 0 && idx === 0 && product.color_images && Object.keys(product.color_images).length > 0 && sel.color && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="font-bold text-gray-700">🎨 צבע:</span>
-                    <span className="text-emerald-600 font-bold">{sel.color}</span>
-                  </div>
-                )}
                 {compColors.length > 0 && !(idx === 0 && product.color_images && Object.keys(product.color_images).length > 0) && (() => {
                   const isBelt = (comp.name || '').includes('חגורה')
                   const renderColorBtn = (color) => {

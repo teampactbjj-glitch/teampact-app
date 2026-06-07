@@ -198,13 +198,26 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   // fallback ל-variants אם available_* ריק (מוצר ישן ללא הגדרה ידנית)
   const variantSizes   = [...new Set(variants.map(v => v.size).filter(Boolean))]
   const variantColors  = [...new Set(variants.map(v => v.color).filter(Boolean))]
-  const variantLengths = [...new Set(variants.map(v => v.length).filter(Boolean))]
+  // variantLengths: רק מוריאנטים ללא component_name — כדי שארוך/קצר של ראשגארד לא יזלג לתצוגת המכנס
+  const variantLengths = [...new Set(variants.filter(v => !v.component_name).map(v => v.length).filter(Boolean))]
   const sizes   = Array.isArray(product.available_sizes)   && product.available_sizes.filter(Boolean).length   > 0
     ? product.available_sizes.filter(Boolean)   : variantSizes
   const colors  = Array.isArray(product.available_colors)  && product.available_colors.filter(Boolean).length  > 0
     ? product.available_colors.filter(Boolean)  : variantColors
-  const lengths = Array.isArray(product.available_lengths) && product.available_lengths.filter(Boolean).length > 0
-    ? product.available_lengths.filter(Boolean) : variantLengths
+  // lengths: מ-available_lengths אבל מסונן לאורכים שיש להם וריאנט אמיתי בDB.
+  // אם כל הוריאנטים עם length=null — לא מציגים בחירת אורך כלל.
+  const lengths = (() => {
+    const configured = Array.isArray(product.available_lengths) && product.available_lengths.filter(Boolean).length > 0
+      ? product.available_lengths.filter(Boolean) : variantLengths
+    if (variants.length > 0 && configured.length > 0) {
+      const withVariants = configured.filter(len => variants.some(v => v.length === len))
+      // אם אחרי הסינון יש אורכים — החזר רק אותם
+      if (withVariants.length > 0) return withVariants
+      // כל הוריאנטים ללא length → אין מושג אורך בפועל, לא מציגים
+      return []
+    }
+    return configured
+  })()
   const hasSizes = sizes.length > 0
   const hasColors = colors.length > 0
   const hasLengths = lengths.length > 0
@@ -777,19 +790,19 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
               compColors = [...compColors].sort((a, b) => beltColorIndex(a) - beltColorIndex(b))
             }
 
-            // אורכים — מסוננים לפי צבע שנבחר
+            // אורכים — מסוננים לפי צבע שנבחר (colorsMatch לנרמול לבן/לבנה וכו')
             const lengthVars = (hasCV && sel.color)
-              ? cVars.filter(v => v.color === sel.color)
+              ? cVars.filter(v => colorsMatch(v.color, sel.color))
               : cVars
             const compLengths = hasCV
               ? [...new Set(lengthVars.map(v => v.length).filter(Boolean))]
               : compProductData.lengths.length > 0 ? compProductData.lengths
               : Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
 
-            // מידות — מסוננות לפי צבע + אורך שנבחרו
+            // מידות — מסוננות לפי צבע + אורך שנבחרו (colorsMatch לנרמול)
             const sizeVars = hasCV
               ? cVars.filter(v =>
-                  (!sel.color || v.color === sel.color) &&
+                  (!sel.color || colorsMatch(v.color, sel.color)) &&
                   (!sel.length || v.length === sel.length)
                 )
               : cVars

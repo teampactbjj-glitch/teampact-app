@@ -1003,8 +1003,14 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
               const ai = SIZE_ORDER_DEF.indexOf(a), bi = SIZE_ORDER_DEF.indexOf(b)
               return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
             })
-            const compColors = compDef.colors?.length ? compDef.colors : (setup.colors?.length ? setup.colors : (product.available_colors?.length ? product.available_colors : colorsFromVars))
-            const compLengths = compDef.lengths?.length ? compDef.lengths : (setup.lengths?.length ? setup.lengths : (product.available_lengths?.length ? product.available_lengths : lengthsFromVars))
+            const compColors = compVarsForActive.length > 0
+              ? (colorsFromVars.length > 0 ? colorsFromVars : (compDef.colors?.length ? compDef.colors : (product.available_colors?.length ? product.available_colors : [])))
+              : (compDef.colors?.length ? compDef.colors : (setup.colors?.length ? setup.colors : (product.available_colors?.length ? product.available_colors : colorsFromVars)))
+            // כשיש וריאנטים לרכיב — סמוך על lengthsFromVars (ה-DB) ולא על הגדרת JSON/מוצר
+            // כך מכנס שאין לו length=null לא יקבל picker של 'קצר' מה-JSON
+            const compLengths = compVarsForActive.length > 0
+              ? lengthsFromVars
+              : (compDef.lengths?.length ? compDef.lengths : (setup.lengths?.length ? setup.lengths : (product.available_lengths?.length ? product.available_lengths : [])))
             const compSizes = compDef.sizes?.length ? compDef.sizes : (setup.sizes?.length ? setup.sizes : (product.available_sizes?.length ? product.available_sizes : sizesFromVars))
             const hasLengths = compLengths.length > 0
 

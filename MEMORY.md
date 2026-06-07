@@ -1,5 +1,78 @@
 # MEMORY - TeamPact App
 
+## ✅ My last completed task — Session 07.06.2026 (עדכון רביעי)
+
+### באג מלאי מכנס בנו-גי — ShopManager + ProductDetail
+
+**הבאג:** מוצר "TeamPact נו-גי" — בממשק המנהל (ShopManager), לחיצה על מכנס + צבע שחור/לבן הציגה "אין שורות מלאי לשילוב זה" למרות 110 יחידות מלאי. בנוסף, הוצג picker אורך "קצר" למכנס (שאין לו אורך).
+
+**סיבה:**
+- `ShopManager.jsx` שורה 1007: `compLengths` נבנה לפי סדר עדיפויות: `compDef.lengths` (JSON) → `setup.lengths` → `product.available_lengths` → DB.
+- ה-JSON של purchase_options לרכיב מכנס הכיל `lengths: ["קצר"]`.
+- אז ShopManager הציג picker "קצר", ואחר כך חיפש `v.length === 'קצר'` — אבל וריאנטי מכנס ב-DB יש להם `length = null`.
+- תוצאה: filteredVars = [] → "אין שורות מלאי".
+
+**תיקון (`ShopManager.jsx`):**
+כשיש וריאנטים ממשיים לרכיב (`compVarsForActive.length > 0`), לסמוך על `lengthsFromVars` (ה-DB) ולא על הגדרת JSON:
+```javascript
+const compLengths = compVarsForActive.length > 0
+  ? lengthsFromVars
+  : (compDef.lengths?.length ? compDef.lengths : ...)
+```
+מכנס וריאנטים: `length=null` → `lengthsFromVars=[]` → אין picker → grid מידות ישיר ✓
+ראשגארד: `length='ארוך'/'קצר'` → `lengthsFromVars=['ארוך','קצר']` → picker תקין ✓
+
+**כלל לעתיד:** כשרכיב בחבילה מציג "אין שורות מלאי" למרות שיש וריאנטים — לחפש מחלוקת בין הגדרת lengths ב-JSON/purchase_options לבין `length` הממשי ב-DB.
+
+---
+
+## ✅ My last completed task — Session 07.06.2026 (עדכון שלישי)
+
+### תיקון תצוגת אופציות נו-גי בחנות — הושלם במלואו
+
+**הבאג:** בממשק המתאמן, מוצר נו-גי הציג רק "ראשגארד". מכנס (₪180) וסט שלם (₪300) נעלמו.
+
+**סיבה:** `ProductDetail.jsx` שורה 277 — `addOnOpt = sortedOpts[1]` לקח תמיד את האופציה השנייה (מכנס) וסימן אותה כ"תוספת חגורה". כי `addOnOpt` היה truthy, התנאי `hasOptions && !addOnOpt` = false הסתיר את כל בלוק האופציות.
+
+**תיקון:**
+1. `addOnOpt` מוגדר רק כשיש **בדיוק 2 אופציות**: `sortedOpts.length === 2 ? sortedOpts[1] : null`
+2. כשיש 3+ אופציות (`isMulti=true`) — כולן כלחצני רדיו עם מחיר מלא. 2 אופציות — נשמר toggle החגורה הקיים.
+
+**קומיט:** `d5c37b9` → main → Vercel ✅
+
+---
+
+## ✅ My last completed task — Session 07.06.2026 (עדכון שני)
+
+### באג אישור שינוי מנוי — הושלם במלואו
+
+**הבאג:** כשמנהל/מזכירה אישרו בקשת שינוי מנוי, הממשק עדיין הציג את המנוי הישן.
+
+**סיבה:** `ProfileChangeRequests.jsx` עדכן רק `subscription_type` אבל לא `membership_type`. הממשק של המנהל (`AthleteManagement.jsx`) קורא `membership_type` ראשון, ולכן לא ראה את השינוי.
+
+**תיקון:** שורה 76 ב-`ProfileChangeRequests.jsx` — הוסף `membership_type: req.requested_value` לצד `subscription_type`.
+
+**טיפול ב-DB:** מתן אוקס תוקן ידנית ב-SQL Editor (disable trigger → update → enable trigger).
+
+**נדחף ל-main ועלה לפרודקשן. ✅**
+
+---
+
+## ✅ My last completed task — Session 07.06.2026
+
+### שכחתי סיסמה + עיניות סיסמה — הושלם במלואו
+
+**מה בוצע:**
+1. `ResetPasswordPage.jsx` (חדש) — מסך שינוי סיסמה עם 2 שדות + עיניות הצג/הסתר + וולידציה + הודעת הצלחה.
+2. `App.jsx` — זיהוי `PASSWORD_RECOVERY` מ-Supabase: בדיקה סינכרונית מה-URL hash (`IS_RECOVERY`) + האזנה ל-`onAuthStateChange`. תוקן באג שבו `INITIAL_SESSION` / `SIGNED_IN` איפסו את הדגל ל-`false`.
+3. `AthleteLogin.jsx` — `redirectTo` עודכן.
+4. `AthleteDashboard.jsx` — נוספו עיניות להצג/הסתר בטופס שינוי סיסמה בהגדרות.
+5. `TrainerProfile.jsx` — נוספו עיניות להצג/הסתר בטופס שינוי סיסמה.
+
+**הכל נדחף ל-main ועלה לפרודקשן (Vercel). ✅**
+
+---
+
 ## ⚠️ My last pending task — Session 06.06.2026 (עדכון אחרון)
 
 ### מצב סופי בסשן הזה — חשוב!

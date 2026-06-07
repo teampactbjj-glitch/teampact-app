@@ -397,16 +397,20 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
       </div>
 
       {/* תמונה */}
-      {(product.color_images?.[selectedColor] || product.image_url) && (
-        <div className="bg-gray-50 rounded-xl overflow-hidden">
-          <img
-            src={product.color_images?.[selectedColor] || product.image_url}
-            alt={product.title}
-            className="w-full h-auto max-h-[400px] object-contain"
-            loading="lazy"
-          />
-        </div>
-      )}
+      {(() => {
+        const displayColor = selectedColor || componentSelections?.[0]?.color || null
+        const imgSrc = (product.color_images && displayColor && product.color_images[displayColor]) || product.image_url
+        return imgSrc ? (
+          <div className="bg-gray-50 rounded-xl overflow-hidden">
+            <img
+              src={imgSrc}
+              alt={product.title}
+              className="w-full h-auto max-h-[400px] object-contain"
+              loading="lazy"
+            />
+          </div>
+        ) : null
+      })()}
 
       {/* כותרת + תיאור קצר */}
       <div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ADULT_BELTS, KIDS_BELTS } from '../../lib/belts'
 
 // נרמול שם לצורך השוואה: רווחים, מקפים, גרשיים, זכר/נקבה
@@ -231,6 +231,8 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   const [quantity, setQuantity] = useState(initialQuantity)
   const [validationError, setValidationError] = useState('')
   const [showDetails, setShowDetails] = useState(false)
+  const [addBelt, setAddBelt] = useState(false)
+  const skipResetRef = useRef(false)
 
   // בחירות לכל פריט בחבילה: { [product_id]: { size, color, length } }
   const [bundleSelections, setBundleSelections] = useState(() =>
@@ -254,6 +256,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
 
   // איפוס בחירות הרכיבים כשמשנים אפשרות רכישה
   useEffect(() => {
+    if (skipResetRef.current) { skipResetRef.current = false; return }
     if (hasComponents) {
       setComponentSelections(optionComponents.map(() => ({ size: null, color: null, length: null })))
     } else {
@@ -266,6 +269,30 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   const features = Array.isArray(product.features)
     ? product.features.filter(f => f && f.trim())
     : []
+
+  // אופציות מסודרות לפי מחיר — לזיהוי בסיס + תוספת
+  const sortedOpts = hasOptions ? [...options].sort((a,b) => (a.price||0)-(b.price||0)) : []
+  const baseOpt   = sortedOpts[0] || null
+  const addOnOpt  = sortedOpts[1] || null  // תוספת (למשל חגורה)
+  const addOnDiff = (addOnOpt?.price != null && baseOpt?.price != null) ? addOnOpt.price - baseOpt.price : null
+
+  function toggleBelt() {
+    const giSel = componentSelections[0] || { size: null, color: null, length: null }
+    skipResetRef.current = true
+    if (!addBelt && addOnOpt) {
+      setSelectedOption(addOnOpt)
+      setComponentSelections([giSel, { size: null, color: null, length: null }])
+    } else if (addBelt && baseOpt) {
+      setSelectedOption(baseOpt)
+      setComponentSelections([giSel])
+    }
+    setAddBelt(v => !v)
+  }
+
+  // האם המשתמש בחר צבע ומידה לרכיב הראשון (חליפה) — להציג אופציית הוספת חגורה
+  const giColorDone = !!(selectedColor || componentSelections[0]?.color)
+  const giSizeDone  = !!componentSelections[0]?.size
+  const canShowBeltAddon = hasOptions && addOnOpt && (giColorDone && giSizeDone)
 
   const displayPrice = selectedOption?.price ?? product.price
   const displayTotal = displayPrice != null ? displayPrice * quantity : null
@@ -495,6 +522,27 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         </div>
       )}
 
+      {/* הוסף חגורה — מוצג רק אחרי בחירת צבע + מידה לחליפה */}
+      {canShowBeltAddon && (
+        <div className={`rounded-xl border-2 transition p-3 ${addBelt ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
+          <button type="button" onClick={toggleBelt} className="w-full flex items-center gap-3 text-right">
+            <div className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition ${addBelt ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300'}`}>
+              {addBelt && <span className="text-white text-xs font-bold">✓</span>}
+            </div>
+            <div className="flex-1">
+              <span className="font-bold text-gray-800 text-sm">הוסף חגורה</span>
+              {addOnOpt && baseOpt && (
+                <span className="text-xs text-gray-500 mr-2">
+                  <span className="text-emerald-600 font-bold">₪{addOnDiff}</span>
+                  {' '}
+                  <span className="line-through text-gray-400">במקום ₪{addOnDiff != null && addOnOpt.original_price ? addOnOpt.original_price - baseOpt.price : 100}</span>
+                </span>
+              )}
+            </div>
+          </button>
+        </div>
+      )}
+
       {/* סדר בחירה: קודם אפשרות רכישה, אחר כך צבע/מידה — ראה למטה אחרי בחירת האפשרות */}
 
       {/* צבע — רק כשאין components ואין options (מוצר פשוט לחלוטין) */}
@@ -596,8 +644,8 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         </div>
       )}
 
-      {/* אפשרויות רכישה — סגנון AliExpress: בסיס + תוספות */}
-      {hasOptions && (() => {
+      {/* אפשרויות רכישה — נסתר כשיש toggle חגורה */}
+      {hasOptions && !addOnOpt && (() => {
         const sorted = [...options].sort((a,b) => (a.price||0)-(b.price||0))
         const base = sorted[0]
         const addOns = sorted.slice(1)
@@ -770,6 +818,9 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
             const needsColor = compColors.length > 0
             const needsLength = compLengths.length > 0
             const showSizes = compSizes.length > 0 && (!needsColor || sel.color) && (!needsLength || sel.length)
+
+            // רכיב חגורה (idx>0) — מוצג רק כשהמשתמש בחר להוסיף
+            if (idx > 0 && addOnOpt && !addBelt) return null
 
             return (
               <div key={idx} className="bg-gradient-to-br from-blue-50 to-emerald-50 border border-blue-200 rounded-xl p-3 space-y-3">

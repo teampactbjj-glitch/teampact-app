@@ -230,6 +230,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   const [selectedLength, setSelectedLength] = useState(initialLength)
   const [quantity, setQuantity] = useState(initialQuantity)
   const [validationError, setValidationError] = useState('')
+  const [showDetails, setShowDetails] = useState(false)
 
   // בחירות לכל פריט בחבילה: { [product_id]: { size, color, length } }
   const [bundleSelections, setBundleSelections] = useState(() =>
@@ -412,6 +413,34 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         ) : null
       })()}
 
+      {/* בוחר צבע מהיר — מיד מתחת לתמונה, רק למוצרים עם color_images */}
+      {product.color_images && Object.keys(product.color_images).length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {Object.keys(product.color_images).map(color => {
+            const activeColor = selectedColor || componentSelections?.[0]?.color || null
+            const isSelected = activeColor === color
+            return (
+              <button key={color} type="button"
+                onClick={() => {
+                  if (hasComponents) {
+                    updateComponentSelection(0, 'color', color)
+                  } else {
+                    setSelectedColor(isSelected ? null : color)
+                    setSelectedSize(null); setSelectedLength(null); setValidationError('')
+                  }
+                }}
+                className={`py-1.5 px-4 rounded-xl border-2 text-sm font-bold transition ${
+                  isSelected
+                    ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                }`}>
+                {color}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* כותרת + תיאור קצר */}
       <div>
         <h2 className="text-2xl font-bold text-gray-900">{product.title}</h2>
@@ -432,27 +461,40 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         )}
       </div>
 
-      {/* תיאור מלא */}
-      {product.description_long && (
-        <div className="bg-gray-50 rounded-xl p-4">
-          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-            {product.description_long}
-          </p>
-        </div>
-      )}
-
-      {/* תכונות בולטות */}
-      {features.length > 0 && (
+      {/* תיאור מלא + תכונות — מתחת ל"קרא עוד" */}
+      {(product.description_long || features.length > 0) && (
         <div>
-          <h3 className="font-bold text-sm text-gray-800 mb-2">✨ תכונות בולטות</h3>
-          <ul className="space-y-1.5 bg-white rounded-xl border p-3">
-            {features.map((f, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                <span className="text-emerald-600 mt-0.5 flex-shrink-0">✓</span>
-                <span>{f}</span>
-              </li>
-            ))}
-          </ul>
+          <button
+            type="button"
+            onClick={() => setShowDetails(v => !v)}
+            className="text-sm text-emerald-600 font-bold flex items-center gap-1"
+          >
+            {showDetails ? '▲ הסתר פרטים' : '▼ קרא עוד על המוצר'}
+          </button>
+          {showDetails && (
+            <div className="mt-3 space-y-3">
+              {product.description_long && (
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {product.description_long}
+                  </p>
+                </div>
+              )}
+              {features.length > 0 && (
+                <div>
+                  <h3 className="font-bold text-sm text-gray-800 mb-2">✨ תכונות בולטות</h3>
+                  <ul className="space-y-1.5 bg-white rounded-xl border p-3">
+                    {features.map((f, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                        <span className="text-emerald-600 mt-0.5 flex-shrink-0">✓</span>
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -795,7 +837,12 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                         aria-pressed={isSelected}
                         aria-label={`${comp.name} צבע ${color}${!inStock ? ' - אזל' : ''}`}
                         disabled={!inStock}
-                        onClick={() => updateComponentSelection(idx, 'color', color)}
+                        onClick={() => {
+                          updateComponentSelection(idx, 'color', color)
+                          if (idx === 0 && product.color_images?.[color]) {
+                            setTimeout(() => document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' }), 50)
+                          }
+                        }}
                         className={`py-1.5 px-3 rounded-lg border-2 text-xs font-bold transition ${
                           !inStock
                             ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'

@@ -73,7 +73,7 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
       const { error } = await supabase.from('members').update({ email: req.requested_value }).eq('id', req.athlete_id)
       memberError = error
     } else if (req.change_type === 'subscription') {
-      const update = { subscription_type: req.requested_value }
+      const update = { subscription_type: req.requested_value, membership_type: req.requested_value }
       if (Array.isArray(req.requested_branch_ids) && req.requested_branch_ids.length > 0) {
         update.branch_ids = req.requested_branch_ids
       }

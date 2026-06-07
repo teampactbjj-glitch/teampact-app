@@ -16,6 +16,9 @@ import ResetPasswordPage from './components/auth/ResetPasswordPage'
 // ובמקרה כזה לדלג על מסך הלוגין ולעבור ישר לטעינת הדשבורד —
 // בדיוק כמו אפליקציה native שלא "יוצאת" כשסוגרים אותה.
 // המפתח 'teampact-session' מוגדר ב-src/lib/supabase.js (storageKey).
+// בדיקה סינכרונית: האם ה-URL מכיל קישור איפוס סיסמה של Supabase
+const IS_RECOVERY = window.location.hash.includes('type=recovery')
+
 const HAS_CACHED_SESSION = (() => {
   try {
     const raw = window.localStorage.getItem('teampact-session')
@@ -37,7 +40,7 @@ export default function App() {
   const [memberStatus, setMemberStatus] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
-  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(IS_RECOVERY)
   // Version counter למניעת race condition: כשהsession מתחלף מהר, fetchProfile ישן לא ידרוס פרופיל חדש
   const fetchVersionRef = useRef(0)
 

@@ -274,7 +274,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   // אופציות מסודרות לפי מחיר — לזיהוי בסיס + תוספת
   const sortedOpts = hasOptions ? [...options].sort((a,b) => (a.price||0)-(b.price||0)) : []
   const baseOpt   = sortedOpts[0] || null
-  const addOnOpt  = sortedOpts[1] || null  // תוספת (למשל חגורה)
+  const addOnOpt  = sortedOpts.length === 2 ? (sortedOpts[1] || null) : null  // תוספת (למשל חגורה) — רק כשיש בדיוק 2 אופציות
   const addOnDiff = (addOnOpt?.price != null && baseOpt?.price != null) ? addOnOpt.price - baseOpt.price : null
 
   function toggleBelt() {
@@ -624,14 +624,15 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         </div>
       )}
 
-      {/* אפשרויות רכישה — נסתר כשיש toggle חגורה */}
+      {/* אפשרויות רכישה — נסתר כשיש toggle חגורה (בדיוק 2 אופציות) */}
       {hasOptions && !addOnOpt && (() => {
         const sorted = [...options].sort((a,b) => (a.price||0)-(b.price||0))
         const base = sorted[0]
-        const addOns = sorted.slice(1)
+        const isMulti = sorted.length >= 3  // 3+ אופציות → כולן כרדיו לחיצות
+        const visibleOpts = isMulti ? sorted : sorted.slice(1)
         return (
         <div className="space-y-2">
-          {addOns.map((opt, i) => {
+          {visibleOpts.map((opt, i) => {
               const selected = selectedOption?.name === opt.name && selectedOption?.price === opt.price
               const diff = opt.price != null && base.price != null ? opt.price - base.price : null
               let saving = 0
@@ -642,7 +643,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                       key={i}
                       type="button"
                       aria-pressed={selected}
-                      onClick={() => setSelectedOption(selected ? base : opt)}
+                      onClick={() => setSelectedOption(isMulti ? opt : (selected ? base : opt))}
                       className={`w-full text-right p-3 rounded-xl border-2 transition flex items-center gap-3 ${
                         selected ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 bg-white hover:border-emerald-300'
                       }`}
@@ -658,8 +659,10 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                           <p className="text-xs text-orange-600 font-bold mt-0.5">חסכון של ₪{saving}</p>
                         )}
                       </div>
-                      {diff != null && diff > 0 && (
-                        <span className="text-sm font-bold text-emerald-600 flex-shrink-0">+₪{diff}</span>
+                      {isMulti ? (
+                        opt.price != null && <span className="text-sm font-bold text-emerald-600 flex-shrink-0">₪{opt.price}</span>
+                      ) : (
+                        diff != null && diff > 0 && <span className="text-sm font-bold text-emerald-600 flex-shrink-0">+₪{diff}</span>
                       )}
                     </button>
                   )

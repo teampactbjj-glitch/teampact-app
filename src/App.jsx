@@ -58,11 +58,9 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true)
-        setSession(session)
-        setSessionChecked(true)
-        return
+      } else if (event === 'SIGNED_OUT') {
+        setIsPasswordRecovery(false)
       }
-      setIsPasswordRecovery(false)
       setSession(session)
       setSessionChecked(true)
     })

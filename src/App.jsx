@@ -9,6 +9,7 @@ import PendingApprovalScreen from './components/PendingApprovalScreen'
 import AccessibilityPage from './components/AccessibilityPage'
 import AccessibilityWidget from './components/AccessibilityWidget'
 import { SkipLink } from './components/a11y'
+import ResetPasswordPage from './components/auth/ResetPasswordPage'
 
 // קריאה סינכרונית של ה-cache של Supabase — לפני שה-React מרנדר אפילו פעם אחת.
 // זה מאפשר לנו לדעת מיד אם המשתמש "סגר את האפליקציה כשהוא היה מחובר",
@@ -36,6 +37,7 @@ export default function App() {
   const [memberStatus, setMemberStatus] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
   // Version counter למניעת race condition: כשהsession מתחלף מהר, fetchProfile ישן לא ידרוס פרופיל חדש
   const fetchVersionRef = useRef(0)
 
@@ -50,7 +52,14 @@ export default function App() {
       // גם בכשל — מסמנים שבדקנו כדי לא להיתקע על splash לנצח
       setSessionChecked(true)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true)
+        setSession(session)
+        setSessionChecked(true)
+        return
+      }
+      setIsPasswordRecovery(false)
       setSession(session)
       setSessionChecked(true)
     })
@@ -201,6 +210,11 @@ export default function App() {
       </div>
     </div>
   ) : null
+
+  // מצב שחזור סיסמה — מגיע מקישור המייל של Supabase
+  if (isPasswordRecovery) return (
+    <ResetPasswordPage onDone={() => setIsPasswordRecovery(false)} />
+  )
 
   // נתיבים ציבוריים — אחרי כל ה-hooks כדי לקיים את Rules of Hooks (Bug 1.7).
   if (window.location.pathname === '/register') return (<><RegisterPage /><AccessibilityWidget /></>)

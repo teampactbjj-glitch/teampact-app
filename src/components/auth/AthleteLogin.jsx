@@ -24,7 +24,7 @@ export default function AthleteLogin() {
     if (!email.trim()) { setError('הזן מייל קודם'); return }
     setLoading(true)
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: window.location.origin,
+      redirectTo: window.location.origin + '/',
     })
     setLoading(false)
     if (error) setError(error.message)

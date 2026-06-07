@@ -1040,8 +1040,8 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
               <div key={item.id} className="w-full text-right bg-white rounded-xl border shadow-sm overflow-hidden">
                 <div
                   role="button" tabIndex={0}
-                  onClick={() => { if (!isPending && !isDone) setSelectedProductId(item.id) }}
-                  onKeyDown={e => e.key === 'Enter' && !isPending && !isDone && setSelectedProductId(item.id)}
+                  onClick={() => { if (!isPending && !isDone) { setSelectedProductId(item.id); window.scrollTo({ top: 0, behavior: 'smooth' }) } }}
+                  onKeyDown={e => e.key === 'Enter' && !isPending && !isDone && (setSelectedProductId(item.id), window.scrollTo({ top: 0, behavior: 'smooth' }))}
                   className={!isPending && !isDone ? 'cursor-pointer hover:shadow-md transition' : ''}
                 >
                   {item.image_url && (

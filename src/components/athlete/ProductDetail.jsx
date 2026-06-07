@@ -778,8 +778,14 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                   {comp.name}
                 </h3>
 
-                {/* שלב 1: צבע */}
-                {compColors.length > 0 && (() => {
+                {/* שלב 1: צבע — נסתר לרכיב ראשון כשיש quick picker */}
+                {compColors.length > 0 && idx === 0 && product.color_images && Object.keys(product.color_images).length > 0 && sel.color && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-bold text-gray-700">🎨 צבע:</span>
+                    <span className="text-emerald-600 font-bold">{sel.color}</span>
+                  </div>
+                )}
+                {compColors.length > 0 && !(idx === 0 && product.color_images && Object.keys(product.color_images).length > 0) && (() => {
                   const isBelt = (comp.name || '').includes('חגורה')
                   const renderColorBtn = (color) => {
                     const isSelected = sel.color === color

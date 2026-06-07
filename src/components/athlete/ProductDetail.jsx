@@ -397,10 +397,10 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
       </div>
 
       {/* תמונה */}
-      {product.image_url && (
+      {(product.color_images?.[selectedColor] || product.image_url) && (
         <div className="bg-gray-50 rounded-xl overflow-hidden">
           <img
-            src={product.image_url}
+            src={product.color_images?.[selectedColor] || product.image_url}
             alt={product.title}
             className="w-full h-auto max-h-[400px] object-contain"
             loading="lazy"

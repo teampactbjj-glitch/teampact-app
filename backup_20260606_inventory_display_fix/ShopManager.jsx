@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../../lib/supabase'
 import { useToast, useConfirm } from '../a11y'
@@ -58,14 +58,12 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   const [tab, setTab] = useState(isAdmin ? 'orders' : 'products')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  const formRef = useRef(null)
   const [form, setForm] = useState({
     title: '',
     content: '',
     description_long: '',
     price: '',
     image_url: '',
-    color_images: {},       // { 'שחור': 'https://...', 'לבן': 'https://...' }
     features: [],           // רשימת תכונות (bullets)
     has_variants: false,    // האם יש מידות/צבעים/אורך
     available_sizes: [],    // ['A0','A1','A2','A3','A4']
@@ -117,7 +115,6 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       description_long: product.description_long || '',
       price: product.price != null ? String(product.price) : '',
       image_url: product.image_url || '',
-      color_images: (product.color_images && typeof product.color_images === 'object') ? product.color_images : {},
       features: Array.isArray(product.features) ? product.features : [],
       has_variants: !!product.has_variants,
       available_sizes: product.available_sizes || [],
@@ -150,7 +147,6 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     }))
 
     setShowForm(true)
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
   function openAdd(restoreDraft = false) {
@@ -305,6 +301,41 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   }
 
   // ─── ניהול מלאי ───────────────────────────────────────────────
+
+  // מזהה אם מוצר הוא חבילה שמכילה מוצרים חיצוניים
+  // זיהוי: product_id על הרכיב, או שם הרכיב שמופיע כמוצר קיים בחנות
+  function getBundleExternalComponents(product) {
+    const compNames = new Set()
+    for (const opt of (product.purchase_options || [])) {
+      for (const comp of (opt.components || [])) {
+        if (comp && comp.name) compNames.add(comp.name)
+      }
+    }
+    if (compNames.size === 0) return []
+
+    const result = []
+    for (const compName of compNames) {
+      // חיפוש מוצר קיים שהשם שלו מכיל את שם הרכיב או להפך
+      const normalize = s => s?.replace(/\s+/g, ' ').trim().toLowerCase() || ''
+      const nc = normalize(compName)
+      const matchedProduct = products.find(p => {
+        if (p.id === product.id) return false
+        const np = normalize(p.title)
+        return np.includes(nc) || nc.includes(np)
+      })
+      // גם אם product_id מוגדר ישירות על הרכיב
+      const directId = (product.purchase_options || []).flatMap(o => o.components || [])
+        .find(c => c.name === compName)?.product_id
+      if (matchedProduct || directId) {
+        result.push({
+          name: compName,
+          product_id: directId || matchedProduct?.id || null,
+          matchedTitle: matchedProduct?.title || compName,
+        })
+      }
+    }
+    return result // ריק = לא חבילה חיצונית, יש לנהל מלאי רגיל
+  }
 
   // מחלץ שמות פריטים ייחודיים מה-purchase_options
   // מחזיר [null] למוצר פשוט, או ['מכנס','ראשגארד'] למוצר עם חבילות
@@ -598,7 +629,6 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       status: 'approved',           // חשוב: ברירת מחדל ב-DB היא 'pending' וזה מסתיר מתצוגת המתאמן
       price: form.price ? parseFloat(form.price) : null,
       image_url: form.image_url || null,
-      color_images: form.color_images || {},
       trainer_id: trainerId || null,
       features: form.features || [],
       has_variants: !!form.has_variants,
@@ -650,30 +680,24 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
         await supabase.from('product_variants').delete().eq('product_id', productId)
       }
 
-      // upsert כל הוריאנטים בקריאה אחת
-      const toUpdate = variants.filter(v => v.id).map(v => ({
-        id: v.id,
-        product_id: productId,
-        size: v.size || null,
-        color: v.color || null,
-        length: v.length || null,
-        sku: v.sku || null,
-        stock: parseInt(v.stock) || 0,
-        price_override: v.price_override ? parseFloat(v.price_override) : null,
-        active: v.active !== false,
-      }))
-      const toInsert = variants.filter(v => !v.id).map(v => ({
-        product_id: productId,
-        size: v.size || null,
-        color: v.color || null,
-        length: v.length || null,
-        sku: v.sku || null,
-        stock: parseInt(v.stock) || 0,
-        price_override: v.price_override ? parseFloat(v.price_override) : null,
-        active: v.active !== false,
-      }))
-      if (toUpdate.length) await supabase.from('product_variants').upsert(toUpdate)
-      if (toInsert.length) await supabase.from('product_variants').insert(toInsert)
+      // upsert לכל וריאנט
+      for (const v of variants) {
+        const row = {
+          product_id: productId,
+          size: v.size || null,
+          color: v.color || null,
+          length: v.length || null,
+          sku: v.sku || null,
+          stock: parseInt(v.stock) || 0,
+          price_override: v.price_override ? parseFloat(v.price_override) : null,
+          active: v.active !== false,
+        }
+        if (v.id) {
+          await supabase.from('product_variants').update(row).eq('id', v.id)
+        } else {
+          await supabase.from('product_variants').insert(row)
+        }
+      }
     } else if (productId && editingId) {
       // בוטלו הוריאנטים - מנקים אותם
       await supabase.from('product_variants').delete().eq('product_id', productId)
@@ -681,7 +705,6 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
     setForm({
       title: '', content: '', description_long: '', price: '', image_url: '',
-      color_images: {},
       features: [], has_variants: false, available_sizes: [], available_colors: [],
       available_lengths: [],
       purchase_options: [],
@@ -726,11 +749,16 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
         // חבילה עם רכיבים — מנכים לכל רכיב בנפרד
         if (Array.isArray(order.component_selections) && order.component_selections.length > 0) {
           for (const comp of order.component_selections) {
-            if (!comp.component_name) continue
+            // product_id של הרכיב (חבילת bundle) או של המוצר הראשי (purchase_option components)
+            const targetPid = comp.product_id || order.product_id
+            if (!targetPid) continue
+            // חבילות bundle: אין component_name, מוצרים עם purchase_options: יש component_name
+            if (!comp.product_id && !comp.component_name) continue
             let q = supabase.from('product_variants')
               .select('id, stock')
-              .eq('product_id', order.product_id)
-              .eq('component_name', comp.component_name)
+              .eq('product_id', targetPid)
+            if (comp.component_name) q = q.eq('component_name', comp.component_name)
+            else                     q = q.is('component_name', null)
             if (comp.size)   q = q.eq('size', comp.size)
             else             q = q.is('size', null)
             if (comp.color)  q = q.eq('color', comp.color)
@@ -743,9 +771,8 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
               const newStock = Math.max(0, (parseInt(v.stock) || 0) - (order.quantity || 1))
               await supabase.from('product_variants').update({ stock: newStock }).eq('id', v.id)
               setInventoryData(prev => {
-                const pid = order.product_id
-                if (!prev[pid]) return prev
-                return { ...prev, [pid]: prev[pid].map(x => x.id === v.id ? { ...x, stock: newStock } : x) }
+                if (!prev[targetPid]) return prev
+                return { ...prev, [targetPid]: prev[targetPid].map(x => x.id === v.id ? { ...x, stock: newStock } : x) }
               })
             }
           }
@@ -940,6 +967,8 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
             const hasAnyVars = allVars.length > 0
             const comps = getProductComponents(product) // [null] או ['ראשגארד','מכנס']
             const isMultiComp = comps.length > 1 || comps[0] !== null
+            // חבילה חיצונית: המלאי מנוהל דרך המוצרים הנפרדים
+            const externalComps = getBundleExternalComponents(product)
 
             // סיכום וריאנטים לתצוגה סגורה — קיבוץ לפי ממד עיקרי
             const variantSummary = (() => {
@@ -1079,7 +1108,37 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                 {/* ─ תוכן מורחב ─ */}
                 {isOpen && (
                   <div className="border-t px-4 pb-5 pt-4 space-y-4">
-                    {inventoryLoading ? (
+                    {/* חבילה חיצונית — המלאי מנוהל דרך המוצרים הנפרדים */}
+                    {externalComps.length > 0 ? (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                        <p className="text-sm font-bold text-amber-800">🎁 מוצר חבילה</p>
+                        <p className="text-xs text-amber-700">
+                          המלאי של הרכיבים מנוהל דרך <strong>המוצרים הנפרדים</strong> — אין צורך לנהל מלאי כפול כאן.
+                          כשמאשרים הזמנה, המלאי יורד אוטומטית מכל מוצר בחבילה.
+                        </p>
+                        <div className="space-y-1.5">
+                          {externalComps.map(ec => {
+                            const refProduct = products.find(p => p.id === ec.product_id)
+                            const refVars = ec.product_id ? (inventoryData[ec.product_id] || []) : []
+                            const refStock = refVars.reduce((s, v) => s + (parseInt(v.stock) || 0), 0)
+                            return (
+                              <div key={ec.name} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-amber-100">
+                                <div>
+                                  <span className="text-xs font-bold text-gray-700">{ec.matchedTitle || ec.name}</span>
+                                </div>
+                                {ec.product_id && inventoryData[ec.product_id] !== undefined ? (
+                                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${refStock > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-500'}`}>
+                                    {refStock > 0 ? `${refStock} יח'` : 'אזל'}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-gray-400">ראה מוצר נפרד</span>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : inventoryLoading ? (
                       <p className="text-center text-sm text-gray-400 py-3">טוען...</p>
                     ) : (
                       <>
@@ -1352,7 +1411,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
           })()}
 
           {showForm && (
-            <div ref={formRef} className="bg-white border rounded-xl p-4 space-y-4 shadow-sm">
+            <div className="bg-white border rounded-xl p-4 space-y-4 shadow-sm">
               {/* פרטים בסיסיים */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-gray-600 border-b pb-1">פרטים בסיסיים</h4>
@@ -1419,39 +1478,6 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                 <input className="w-full border rounded-lg px-3 py-2 text-xs text-gray-500" placeholder="או קישור חיצוני (אופציונלי)"
                   value={form.image_url} onChange={e => setForm(p => ({ ...p, image_url: e.target.value }))} />
               </div>
-
-              {/* תמונות לפי צבע */}
-              {form.available_colors && form.available_colors.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-gray-600 border-b pb-1">תמונה לפי צבע (אופציונלי)</h4>
-                  <p className="text-[10px] text-gray-400">אם תעלה תמונה לצבע מסוים, היא תוצג כשהמשתמש בוחר אותו.</p>
-                  {form.available_colors.map(color => (
-                    <div key={color} className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-gray-700 w-16 shrink-0">{color}</span>
-                      <input type="file" accept="image/*"
-                        onChange={async e => {
-                          const f = e.target.files?.[0]
-                          if (!f) return
-                          const url = await uploadImage(f)
-                          if (url) setForm(p => ({ ...p, color_images: { ...p.color_images, [color]: url } }))
-                        }}
-                        className="flex-1 text-xs" />
-                      {form.color_images?.[color] && (
-                        <div className="flex items-center gap-1">
-                          <img src={form.color_images[color]} alt={color} className="w-10 h-10 rounded object-cover border" />
-                          <button type="button"
-                            onClick={() => setForm(p => {
-                              const ci = { ...p.color_images }
-                              delete ci[color]
-                              return { ...p, color_images: ci }
-                            })}
-                            className="text-[10px] text-red-500">✕</button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
 
               {/* אפשרויות רכישה (לדוגמה: סט נו-גי = מכנס + ראשגארד בהנחה) */}
               <div className="space-y-2 bg-amber-50 rounded-lg p-3 border border-amber-200">

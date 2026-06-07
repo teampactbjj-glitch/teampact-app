@@ -668,25 +668,6 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         )
       })()}
 
-      {/* הוסף חגורה — אחרי בחירת מידה */}
-      {canShowBeltAddon && (
-        <div className={`rounded-xl border-2 transition p-3 ${addBelt ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
-          <button type="button" onClick={toggleBelt} className="w-full flex items-center gap-3 text-right">
-            <div className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition ${addBelt ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300'}`}>
-              {addBelt && <span className="text-white text-xs font-bold">✓</span>}
-            </div>
-            <div className="flex-1">
-              <span className="font-bold text-gray-800 text-sm">הוסף חגורה</span>
-              <span className="text-xs text-gray-500 mr-2">
-                <span className="text-emerald-600 font-bold">₪{addOnDiff}</span>
-                {' '}
-                <span className="line-through text-gray-400">במקום ₪{addOnOpt?.original_price ? addOnOpt.original_price - (baseOpt?.price || 0) : 100}</span>
-              </span>
-            </div>
-          </button>
-        </div>
-      )}
-
       {/* צבע/אורך/מידה לאפשרות ללא רכיבים (תיק בלבד, חליפה בלבד וכו') */}
       {hasOptions && !hasComponents && hasColors && (
         isBeltProduct
@@ -973,6 +954,25 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* הוסף חגורה — אחרי קופסת המידות */}
+      {canShowBeltAddon && (
+        <div className={`rounded-xl border-2 transition p-3 ${addBelt ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
+          <button type="button" onClick={toggleBelt} className="w-full flex items-center gap-3 text-right">
+            <div className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition ${addBelt ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300'}`}>
+              {addBelt && <span className="text-white text-xs font-bold">✓</span>}
+            </div>
+            <div className="flex-1">
+              <span className="font-bold text-gray-800 text-sm">הוסף חגורה</span>
+              <span className="text-xs text-gray-500 mr-2">
+                <span className="text-emerald-600 font-bold">₪{addOnDiff}</span>
+                {' '}
+                <span className="line-through text-gray-400">במקום ₪{addOnOpt?.original_price ? addOnOpt.original_price - (baseOpt?.price||0) : 100}</span>
+              </span>
+            </div>
+          </button>
         </div>
       )}
 

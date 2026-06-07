@@ -413,52 +413,49 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         ) : null
       })()}
 
-      {/* בוחר צבע מהיר — מיד מתחת לתמונה, רק למוצרים עם color_images */}
+      {/* צבעים מהירים מתחת לתמונה */}
       {product.color_images && Object.keys(product.color_images).length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {Object.keys(product.color_images).map(color => {
-            const activeColor = selectedColor || componentSelections?.[0]?.color || null
-            const isSelected = activeColor === color
-            return (
-              <button key={color} type="button"
-                onClick={() => {
-                  if (hasComponents) {
-                    updateComponentSelection(0, 'color', color)
-                  } else {
-                    setSelectedColor(isSelected ? null : color)
-                    setSelectedSize(null); setSelectedLength(null); setValidationError('')
-                  }
-                }}
-                className={`py-1.5 px-4 rounded-xl border-2 text-sm font-bold transition ${
-                  isSelected
-                    ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
-                }`}>
-                {color}
-              </button>
-            )
-          })}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-bold text-gray-700">🎨 צבע</span>
+            {(selectedColor || componentSelections?.[0]?.color) && (
+              <span className="text-xs text-emerald-600 font-bold">
+                נבחר: {selectedColor || componentSelections?.[0]?.color}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {Object.keys(product.color_images).map(color => {
+              const activeColor = selectedColor || componentSelections?.[0]?.color
+              const isSelected = activeColor === color
+              return (
+                <button key={color} type="button"
+                  onClick={() => {
+                    if (hasComponents) updateComponentSelection(0, 'color', color)
+                    else { setSelectedColor(isSelected ? null : color); setSelectedSize(null); setSelectedLength(null); setValidationError('') }
+                  }}
+                  className={`py-2 px-4 rounded-xl border-2 text-sm font-bold transition ${
+                    isSelected ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                  }`}>
+                  {color}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 
-      {/* כותרת + תיאור קצר */}
+      {/* כותרת + מחיר */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">{product.title}</h2>
+        <h2 className="text-xl font-bold text-gray-900">{product.title}</h2>
         {product.content && (
-          <p className="text-sm text-gray-600 mt-1.5 leading-relaxed">{product.content}</p>
+          <p className="text-sm text-gray-500 mt-1 leading-relaxed">{product.content}</p>
         )}
-        {!hasOptions && product.price != null && (
-          <div className="mt-2">
-            <span className="text-2xl font-bold text-emerald-600">₪{product.price}</span>
-          </div>
-        )}
-        {hasOptions && (
-          <div className="mt-2 text-sm text-gray-500">
-            החל מ־<span className="text-emerald-600 font-bold">
-              ₪{Math.min(...options.filter(o => o.price != null).map(o => o.price))}
-            </span>
-          </div>
-        )}
+        <div className="mt-2">
+          <span className="text-3xl font-bold text-emerald-600">
+            ₪{selectedOption?.price ?? product.price ?? (hasOptions ? Math.min(...options.filter(o=>o.price!=null).map(o=>o.price)) : '')}
+          </span>
+        </div>
       </div>
 
       {/* תיאור מלא + תכונות — מתחת ל"קרא עוד" */}
@@ -599,92 +596,49 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         </div>
       )}
 
-      {/* אפשרויות רכישה — קודם לבחור חבילה, ואז יופיעו שדות הרכיבים */}
-      {hasOptions && (
-        <div role="group" aria-labelledby="purchase-option-heading">
-          <h3 id="purchase-option-heading" className="font-bold text-sm text-gray-800 mb-2">💰 בחר אפשרות רכישה</h3>
-          <div className="space-y-2">
-            {options.map((opt, i) => {
-              const selected = selectedOption && (
-                selectedOption.name === opt.name && selectedOption.price === opt.price
-              )
-              return (() => {
-                  // חישוב אחוז הנחה — קודם מ-original_price, אחר כך מה-note
-                  let saving = 0
-                  if (opt.original_price != null && opt.price != null) {
-                    saving = parseFloat(opt.original_price) - parseFloat(opt.price)
-                    if (saving < 0) saving = 0
-                  } else {
-                    const savingMatch = (opt.note || '').match(/(\d+(?:\.\d+)?)/)
-                    saving = savingMatch ? parseFloat(savingMatch[1]) : 0
-                  }
-                  const originalPrice = opt.original_price != null ? parseFloat(opt.original_price) : (opt.price + saving)
-                  const discountPct = (saving > 0 && originalPrice > 0)
-                    ? Math.round((saving / originalPrice) * 100)
-                    : 0
-                  const isBundle = discountPct > 0
-
-                  return (
+      {/* אפשרויות רכישה — סגנון AliExpress: בסיס + תוספות */}
+      {hasOptions && (() => {
+        const sorted = [...options].sort((a,b) => (a.price||0)-(b.price||0))
+        const base = sorted[0]
+        const addOns = sorted.slice(1)
+        return (
+        <div className="space-y-2">
+          {addOns.map((opt, i) => {
+              const selected = selectedOption?.name === opt.name && selectedOption?.price === opt.price
+              const diff = opt.price != null && base.price != null ? opt.price - base.price : null
+              let saving = 0
+              if (opt.original_price != null && opt.price != null) saving = parseFloat(opt.original_price) - parseFloat(opt.price)
+              else { const m = (opt.note||'').match(/(\d+(?:\.\d+)?)/); saving = m ? parseFloat(m[1]) : 0 }
+              return (
                     <button
                       key={i}
                       type="button"
                       aria-pressed={selected}
-                      onClick={() => setSelectedOption(opt)}
-                      className={`w-full text-right p-3 rounded-xl border-2 transition relative overflow-hidden ${
-                        selected
-                          ? 'border-emerald-500 bg-emerald-50 shadow-sm'
-                          : isBundle
-                          ? 'border-orange-200 bg-orange-50 hover:border-orange-400'
-                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      onClick={() => setSelectedOption(selected ? base : opt)}
+                      className={`w-full text-right p-3 rounded-xl border-2 transition flex items-center gap-3 ${
+                        selected ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 bg-white hover:border-emerald-300'
                       }`}
                     >
-                      {/* רצועת אחוז הנחה בפינה */}
-                      {discountPct > 0 && (
-                        <div className="absolute top-0 left-0 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-br-lg">
-                          -{discountPct}%
-                        </div>
-                      )}
-
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-sm flex-shrink-0 ${selected ? 'text-emerald-600' : 'text-gray-300'}`}>
-                              {selected ? '●' : '○'}
-                            </span>
-                            <span className="font-bold text-gray-800">{opt.name}</span>
-                            {opt.is_featured && (
-                              <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                                ⭐ מומלץ
-                              </span>
-                            )}
-                          </div>
-                          {saving > 0 && (
-                            <p className="text-xs text-orange-600 font-bold mt-1 pr-6">
-                              💰 חסכו ₪{saving} לעומת קנייה בנפרד
-                            </p>
-                          )}
-                          {opt.note && saving === 0 && (
-                            <p className="text-xs text-gray-500 mt-1 pr-6">{opt.note}</p>
-                          )}
-                        </div>
-                        {opt.price != null && (
-                          <div className="flex-shrink-0 text-right">
-                            {saving > 0 && (
-                              <p className="text-[10px] text-gray-400 line-through leading-none">
-                                ₪{opt.price + saving}
-                              </p>
-                            )}
-                            <span className="text-lg font-bold text-emerald-600">₪{opt.price}</span>
-                          </div>
+                      <div className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition ${
+                        selected ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300'
+                      }`}>
+                        {selected && <span className="text-white text-xs font-bold">✓</span>}
+                      </div>
+                      <div className="flex-1 min-w-0 text-right">
+                        <span className="font-bold text-gray-800 text-sm">{opt.name}</span>
+                        {saving > 0 && (
+                          <p className="text-xs text-orange-600 font-bold mt-0.5">חסכון של ₪{saving}</p>
                         )}
                       </div>
+                      {diff != null && diff > 0 && (
+                        <span className="text-sm font-bold text-emerald-600 flex-shrink-0">+₪{diff}</span>
+                      )}
                     </button>
                   )
-              })()
             })}
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* צבע/אורך/מידה לאפשרות ללא רכיבים (תיק בלבד, חליפה בלבד וכו') */}
       {hasOptions && !hasComponents && hasColors && (
@@ -824,16 +778,8 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                   {comp.name}
                 </h3>
 
-                {/* שלב 1: צבע — אם יש quick picker למעלה (color_images) ורכיב ראשון, מציגים רק תווית */}
-                {idx === 0 && product.color_images && Object.keys(product.color_images).length > 0 && compColors.length > 0 && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="font-bold text-gray-700">🎨 צבע:</span>
-                    {sel.color
-                      ? <span className="text-emerald-600 font-bold">{sel.color}</span>
-                      : <span className="text-gray-400">בחר צבע למעלה</span>}
-                  </div>
-                )}
-                {compColors.length > 0 && !(idx === 0 && product.color_images && Object.keys(product.color_images).length > 0) && (() => {
+                {/* שלב 1: צבע */}
+                {compColors.length > 0 && (() => {
                   const isBelt = (comp.name || '').includes('חגורה')
                   const renderColorBtn = (color) => {
                     const isSelected = sel.color === color
@@ -845,12 +791,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                         aria-pressed={isSelected}
                         aria-label={`${comp.name} צבע ${color}${!inStock ? ' - אזל' : ''}`}
                         disabled={!inStock}
-                        onClick={() => {
-                          updateComponentSelection(idx, 'color', color)
-                          if (idx === 0 && product.color_images?.[color]) {
-                            setTimeout(() => document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' }), 50)
-                          }
-                        }}
+                        onClick={() => updateComponentSelection(idx, 'color', color)}
                         className={`py-1.5 px-3 rounded-lg border-2 text-xs font-bold transition ${
                           !inStock
                             ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'

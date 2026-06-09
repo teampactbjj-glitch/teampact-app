@@ -3297,3 +3297,62 @@ WHERE id = '4d7d3cab-e89b-4cd9-a3f7-a79a3c6a165e';
 - להוסיף UI בניהול המוצרים (ShopManager) שיאפשר להגדיר `components` לכל purchase_option ללא SQL
 - לחשוב אם להשתמש ב-`product_variants` table (קיים במיגרציה) במקום ב-JSONB
 - לשקול הוספת `quantity` כפרמטר בבחירה (כרגע ברירת מחדל 1)
+
+---
+
+# 📚 סשן 09.06.2026 — אורחי רשת, מע"מ דינמי, דף הגדרות מנהל
+
+## מה בוצע בסשן זה (הכל דחוף לפרודקשן ✅)
+
+### A. אורח רשת (Network Visitor)
+מתאמן שמנוי בסניף א' יכול להגיע לסניף ב' — נספר במכסת המנוי שלו ולא נחשב לחיוב הסניף המארח.
+
+**קבצים שהשתנו:**
+- `supabase/migrations/network_visit_flag.sql` — הוסף `is_network_visit boolean` ל-`checkins` ו-`class_registrations`
+- `src/components/trainer/TodayClasses.jsx` — חיפוש ללא סינון סניף, סימון אורחי רשת בכחול, שמירת הדגל ב-DB
+
+**SQL שצריך לרוץ ב-Supabase (אם לא רץ):**
+```sql
+ALTER TABLE public.checkins ADD COLUMN IF NOT EXISTS is_network_visit boolean NOT NULL DEFAULT false;
+ALTER TABLE public.class_registrations ADD COLUMN IF NOT EXISTS is_network_visit boolean NOT NULL DEFAULT false;
+```
+
+### B. מע"מ דינמי לפי סוג עוסק
+- `supabase/migrations/coach_vat_type.sql` — הוסף `vat_type ('murshe'/'patur')` לטבלת `coaches`
+- `supabase/migrations/app_settings.sql` — טבלת `app_settings` (שורה יחידה id=1) עם `vat_rate numeric`
+- `src/components/trainer/SalaryReport.jsx` — חישוב שכר: עוסק פטור מקבל `salary / (1 + vat_rate/100)`
+- `src/components/trainer/BranchSettings.jsx` — UI לעריכת אחוז מע"מ גלובלי (עבר ל-AdminSettings)
+
+**SQL שצריך לרוץ ב-Supabase (אם לא רץ):**
+```sql
+ALTER TABLE public.coaches ADD COLUMN IF NOT EXISTS vat_type text NOT NULL DEFAULT 'murshe' CHECK (vat_type IN ('murshe', 'patur'));
+
+CREATE TABLE IF NOT EXISTS public.app_settings (
+  id int PRIMARY KEY DEFAULT 1, vat_rate numeric(5,2) NOT NULL DEFAULT 18,
+  CONSTRAINT single_row CHECK (id = 1)
+);
+INSERT INTO public.app_settings (id, vat_rate) VALUES (1, 18) ON CONFLICT (id) DO NOTHING;
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "app_settings_read" ON public.app_settings FOR SELECT USING (true);
+CREATE POLICY "app_settings_update" ON public.app_settings FOR UPDATE USING (auth.role() = 'authenticated');
+```
+
+### C. דף הגדרות מנהל (AdminSettings)
+**קובץ חדש:** `src/components/trainer/AdminSettings.jsx`
+- עיצוב iOS Settings — שורות מקובצות לפי נושא, כל שורה נפתחת inline
+- 3 סעיפים: חשבון (שינוי סיסמה) | מערכת (מע"מ) | סניפים (ניכוי/הוצאות/חלוקת רווח)
+- כרטיס מנהל בראש עם כפתור יציאה
+
+**שינויים נלווים:**
+- `src/components/BottomNav.jsx` — הוסף טאב ⚙️ הגדרות למנהל, הסיר טאב פרופיל למנהל
+- `src/components/trainer/TrainerDashboard.jsx` — רנדר `<AdminSettings>` בטאב settings, ייבוא AdminSettings
+
+### D. סניף קאנטרי
+הסניף "חולון - קאנטרי" כבר קיים בDB. נמחק סניף כפול "קאנטרי" שנוסף בטעות:
+```sql
+DELETE FROM public.branches WHERE name = 'קאנטרי';
+```
+
+## My last pending task
+**אין משימות תלויות** — הכל דחוף לפרודקשן ומוכן.
+Commits: `a8e7dfc` (feat: network visitors, dynamic VAT) + commit הגדרות מנהל (ממתין לאישור דחיפה מהמשתמש).

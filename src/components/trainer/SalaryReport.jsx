@@ -83,10 +83,12 @@ export default function SalaryReport({ isAdmin }) {
   const [expenses,        setExpenses]        = useState([])
   const [fixedExp,        setFixedExp]        = useState([])
   const [branchPricesRaw, setBranchPricesRaw] = useState([])
+  const [vatRate,         setVatRate]         = useState(18) // % — נטען מ-app_settings
   const [loading,         setLoading]         = useState(true)
   const [error,           setError]           = useState(null)
 
   const [editCoachRate,   setEditCoachRate]   = useState({})
+  const [editVatType,     setEditVatType]     = useState({}) // coachId → 'murshe'|'patur'
   const [editPlatformCut, setEditPlatformCut] = useState({})
   const [editOwner,       setEditOwner]       = useState({})
   const [saving,          setSaving]          = useState(null)
@@ -114,8 +116,8 @@ export default function SalaryReport({ isAdmin }) {
     const { from, to } = monthRange(selectedMonth.year, selectedMonth.month)
 
     const [coachesRes, checkinsRes, classesRes, membersRes, branchesRes,
-           ownerRes, expRes, fixedRes, pricesRes] = await Promise.all([
-      supabase.from('coaches').select('id, name, branch_id, payment_rate').order('name'),
+           ownerRes, expRes, fixedRes, pricesRes, appSettingsRes] = await Promise.all([
+      supabase.from('coaches').select('id, name, branch_id, payment_rate, vat_type').order('name'),
       supabase.from('checkins').select('class_id, athlete_id, checkin_date, status')
         .gte('checkin_date', from).lte('checkin_date', to).eq('status', 'present'),
       supabase.from('classes').select('id, coach_id, branch_id').is('deleted_at', null),
@@ -132,6 +134,7 @@ export default function SalaryReport({ isAdmin }) {
         .select('id, branch_id, label, amount, active').eq('active', true),
       supabase.from('branch_subscription_prices')
         .select('branch_id, subscription_type, price'),
+      supabase.from('app_settings').select('vat_rate').eq('id', 1).maybeSingle(),
     ])
 
     const err = [coachesRes, checkinsRes, classesRes, membersRes, branchesRes,
@@ -145,6 +148,7 @@ export default function SalaryReport({ isAdmin }) {
     setBranches(branchesRes.data     || [])
     setOwnerSettings(ownerRes.data   || [])
     setExpenses(expRes.data          || [])
+    if (appSettingsRes.data?.vat_rate != null) setVatRate(Number(appSettingsRes.data.vat_rate))
     setFixedExp(fixedRes.data        || [])
     setBranchPricesRaw(pricesRes.data || [])
     setLoading(false)
@@ -159,7 +163,7 @@ export default function SalaryReport({ isAdmin }) {
 
   // ─── חישוב ────────────────────────────────────────────────
 
-  const { salaryData, revenueByBranch, coachSalaryByBranch } = useMemo(() => {
+  const { salaryData, revenueByBranch, coachSalaryByBranch } = useMemo(() => { // eslint-disable-next-line react-hooks/exhaustive-deps
     const classById  = new Map(classes.map(c => [c.id, c]))
     const memberById = new Map(members.map(m => [m.id, m]))
     const branchById = new Map(branches.map(b => [b.id, b]))
@@ -188,8 +192,11 @@ export default function SalaryReport({ isAdmin }) {
     }
 
     const coachSalaryByBranch = new Map()
+    const VAT_RATE = 1 + vatRate / 100 // נטען מ-app_settings (ברירת מחדל 18%)
+
     const salaryData = coaches.map(coach => {
       const coachRate = (coach.payment_rate ?? 50) / 100
+      const isPatur   = (coach.vat_type ?? 'murshe') === 'patur'
       const byBranch  = coachBranchAthleteCheckins.get(coach.id) || new Map()
       const branchBreakdowns = []
       let totalSalary = 0
@@ -208,11 +215,13 @@ export default function SalaryReport({ isAdmin }) {
           if (!price) continue
           const totalSessions = athleteTotalCheckins.get(athleteId) || 1
           const fraction      = sessionsHere / totalSessions
-          const salary        = price * netRate * coachRate * fraction
+          // עוסק פטור: מחיר המנוי כולל מע"מ → מורידים מע"מ מהשכר
+          const salaryGross   = price * netRate * coachRate * fraction
+          const salary        = isPatur ? salaryGross / VAT_RATE : salaryGross
           branchSalary += salary
           athletes.push({
             athleteId, name: member.full_name, subType: member.subscription_type,
-            price, sessionsHere, totalSessions, fraction, salary,
+            price, sessionsHere, totalSessions, fraction, salary, salaryGross,
             customPrice: member.custom_price, discountPct: member.discount_pct,
           })
         }
@@ -230,6 +239,7 @@ export default function SalaryReport({ isAdmin }) {
       return {
         coachId: coach.id, coachName: coach.name,
         coachRate: coach.payment_rate ?? 50,
+        vatType: coach.vat_type ?? 'murshe',
         totalSalary, branchBreakdowns,
         totalAthletes: branchBreakdowns.reduce((s, b) => s + b.athleteCount, 0),
       }
@@ -244,7 +254,7 @@ export default function SalaryReport({ isAdmin }) {
     .sort((a, b) => b.totalSalary - a.totalSalary)
 
     return { salaryData, revenueByBranch: revenueMap, coachSalaryByBranch }
-  }, [coaches, checkins, classes, members, branches, branchFilter, branchPricesMap])
+  }, [coaches, checkins, classes, members, branches, branchFilter, branchPricesMap, vatRate])
 
   // ─── שמירות ───────────────────────────────────────────────
 
@@ -256,6 +266,15 @@ export default function SalaryReport({ isAdmin }) {
     if (error) alert('שגיאה: ' + error.message)
     setSaving(null)
     setEditCoachRate(p => { const n={...p}; delete n[coachId]; return n })
+    fetchAll()
+  }
+
+  async function saveVatType(coachId, vatType) {
+    setSaving(`vat-${coachId}`)
+    const { error } = await supabase.from('coaches').update({ vat_type: vatType }).eq('id', coachId)
+    if (error) alert('שגיאה: ' + error.message)
+    setSaving(null)
+    setEditVatType(p => { const n={...p}; delete n[coachId]; return n })
     fetchAll()
   }
 
@@ -734,6 +753,7 @@ export default function SalaryReport({ isAdmin }) {
           {salaryData.map(coach => (
             <CoachCard key={coach.coachId} coach={coach}
               editCoachRate={editCoachRate} setEditCoachRate={setEditCoachRate}
+              editVatType={editVatType} setEditVatType={setEditVatType} saveVatType={saveVatType}
               saving={saving} saveCoachRate={saveCoachRate}
               onExport={() => exportCoach(coach)} />
           ))}
@@ -886,10 +906,12 @@ function OwnerShare({ name, pct, amount }) {
   )
 }
 
-function CoachCard({ coach, editCoachRate, setEditCoachRate, saving, saveCoachRate, onExport }) {
+function CoachCard({ coach, editCoachRate, setEditCoachRate, editVatType, setEditVatType, saveVatType, saving, saveCoachRate, onExport }) {
   const [expanded, setExpanded] = useState(false)
-  const isEdit = editCoachRate[coach.coachId] !== undefined
-  const isSav  = saving === `coach-${coach.coachId}`
+  const isEdit    = editCoachRate[coach.coachId] !== undefined
+  const isSav     = saving === `coach-${coach.coachId}`
+  const isVatSav  = saving === `vat-${coach.coachId}`
+  const isPatur   = (editVatType[coach.coachId] ?? coach.vatType) === 'patur'
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
@@ -929,8 +951,26 @@ function CoachCard({ coach, editCoachRate, setEditCoachRate, saving, saveCoachRa
               </button>
             )}
           </div>
+          {/* סוג עוסק — מורשה / פטור */}
+          <button
+            onClick={() => {
+              const next = isPatur ? 'murshe' : 'patur'
+              setEditVatType(p => ({ ...p, [coach.coachId]: next }))
+              saveVatType(coach.coachId, next)
+            }}
+            disabled={isVatSav}
+            title={isPatur ? 'עוסק פטור — לחץ לשינוי' : 'עוסק מורשה — לחץ לשינוי'}
+            className={`text-xs font-bold px-2 py-0.5 rounded-lg border transition ${
+              isPatur
+                ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+            }`}
+          >
+            {isVatSav ? '...' : isPatur ? 'פטור מע"מ' : 'מורשה מע"מ'}
+          </button>
           <div className="text-xl font-black text-green-700 bg-green-50 px-3 py-1 rounded-xl border border-green-200">
             {fmt(coach.totalSalary)}
+            {isPatur && <span className="text-xs font-medium text-amber-600 mr-1"> (נטו)</span>}
           </div>
           <button onClick={onExport} title="ייצא לאקסל"
             className="text-xs bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 font-bold px-2 py-1 rounded-lg">

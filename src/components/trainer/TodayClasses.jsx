@@ -335,7 +335,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     })()
     const { data: regRows, error: regErr } = await supabase
       .from('class_registrations')
-      .select('athlete_id')
+      .select('athlete_id, is_network_visit')
       .eq('class_id', classId)
       .eq('week_start', weekStartStr)
     if (regErr) console.error('class_registrations error:', regErr)
@@ -343,6 +343,10 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     const regMemberIds = Array.from(new Set(
       (regRows || []).map(r => r.athlete_id).filter(Boolean)
     ))
+    // מיפוי: athlete_id → האם אורח רשת
+    const networkVisitorIds = new Set(
+      (regRows || []).filter(r => r.is_network_visit).map(r => r.athlete_id).filter(Boolean)
+    )
     let weeklyRegistrants = []
     if (regMemberIds.length > 0) {
       const { data: regMembers, error: rmErr } = await supabase
@@ -350,8 +354,11 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
         .select('id, full_name, membership_type, subscription_type, group_name')
         .in('id', regMemberIds)
       if (rmErr) console.error('weekly reg members error:', rmErr)
-      // רק מתאמנים שקיימים ב-members (מסנן IDs יתומים)
-      weeklyRegistrants = regMembers || []
+      // רק מתאמנים שקיימים ב-members (מסנן IDs יתומים) — מסמנים אורחי רשת
+      weeklyRegistrants = (regMembers || []).map(m => ({
+        ...m,
+        isNetworkVisitor: networkVisitorIds.has(m.id),
+      }))
     }
 
     // 3. Weekly checkin counts per member (for over-limit detection)
@@ -432,7 +439,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
   // הוספת תלמיד רשום של המועדון לשיעור — אקוויוולנט להרשמה עצמית של המתאמן.
   // יוצר רשומת class_registrations של השבוע + checkin אוטומטי 'present'.
   // בודק מכסה שבועית לפני (אלא אם זה שיעור "מזרן פתוח"/ספארינג שלא נספר במכסה).
-  async function addRegisteredMember(cls, member) {
+  async function addRegisteredMember(cls, member, isNetworkVisit = false) {
     const classId = cls.id
     const openMat = isOpenMatClass(cls)
     const membershipType = member.membership_type || member.subscription_type
@@ -504,7 +511,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     const { error: regErr } = await supabase
       .from('class_registrations')
       .upsert(
-        { class_id: classId, athlete_id: member.id, week_start: weekStartStr },
+        { class_id: classId, athlete_id: member.id, week_start: weekStartStr, is_network_visit: isNetworkVisit },
         { onConflict: 'athlete_id,class_id,week_start' }
       )
     if (regErr) {
@@ -520,7 +527,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     const checkedAt = new Date(selectedDate); checkedAt.setHours(12, 0, 0, 0)
     const checkinDate = `${checkedAt.getFullYear()}-${String(checkedAt.getMonth() + 1).padStart(2, '0')}-${String(checkedAt.getDate()).padStart(2, '0')}`
     await supabase.from('checkins').upsert(
-      { class_id: classId, athlete_id: member.id, status: 'present', checked_in_at: checkedAt.toISOString(), checkin_date: checkinDate },
+      { class_id: classId, athlete_id: member.id, status: 'present', checked_in_at: checkedAt.toISOString(), checkin_date: checkinDate, is_network_visit: isNetworkVisit },
       { onConflict: 'class_id,athlete_id,checkin_date', ignoreDuplicates: true }
     )
 
@@ -535,7 +542,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
       const alreadyInWeekly = (current.weeklyRegistrants || []).some(m => m.id === member.id)
       const newWeeklyRegistrants = alreadyInWeekly
         ? (current.weeklyRegistrants || [])
-        : [...(current.weeklyRegistrants || []), member]
+        : [...(current.weeklyRegistrants || []), { ...member, isNetworkVisitor: isNetworkVisit }]
       const newCheckedIds = new Set(current.checkedIds || [])
       newCheckedIds.add(member.id)
       const newWeeklyCount = {
@@ -650,18 +657,16 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
 
     if (error) console.error('searchVisitor error:', error)
 
-    // סינון לפי סניף: מציגים רק מתאמנים שמנויים בסניף של השיעור
-    // (או אם לשיעור אין branch_id — מציגים הכל)
-    const data = !classBranchId
-      ? (allData || [])
-      : (allData || []).filter(m => {
-          // branch_ids הוא מערך — בדוק אם הסניף של השיעור נמצא בו
-          if (Array.isArray(m.branch_ids) && m.branch_ids.length > 0) {
-            return m.branch_ids.includes(classBranchId)
-          }
-          // פולבק: branch_id רגיל
-          return m.branch_id === classBranchId
-        }).slice(0, 8)
+    // מציגים כל מתאמן פעיל — גם ממנויי הסניף הנוכחי וגם ממנויי סניפים אחרים.
+    // מתאמן שמנוי בסניף אחר (לא בסניף השיעור) יסומן כ"אורח רשת".
+    const data = (allData || []).slice(0, 10).map(m => {
+      if (!classBranchId) return { ...m, isNetworkVisitor: false }
+      const memberBranches = Array.isArray(m.branch_ids) && m.branch_ids.length > 0
+        ? m.branch_ids
+        : m.branch_id ? [m.branch_id] : []
+      const isHomeMember = memberBranches.includes(classBranchId)
+      return { ...m, isNetworkVisitor: !isHomeMember }
+    })
 
     // לא מסננים — מציגים גם רשומים. מסמנים לכל תוצאה אם היא כבר רשומה
     // (כדי שב-UI נציג "רשום ✓" באפור במקום כפתור הוספה).
@@ -1392,14 +1397,20 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                             // מזרן פתוח: אין חריגה ממכסה כי השיעור לא נספר
                             const isOverLimit = !openMat && limit !== Infinity && weekCount > limit
                             const isWeekly = member._source === 'weekly'
+                            const isNetworkMember = member.isNetworkVisitor
 
                             return (
-                              <li key={member.id} className="py-3 px-3">
+                              <li key={member.id} className={`py-3 px-3 ${isNetworkMember ? 'bg-blue-50' : ''}`}>
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       <p className="text-sm font-medium text-gray-800">{member.full_name}</p>
-                                      {isWeekly && (
+                                      {isNetworkMember && (
+                                        <span className="text-[10px] bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">
+                                          🌐 אורח רשת
+                                        </span>
+                                      )}
+                                      {isWeekly && !isNetworkMember && (
                                         <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
                                           ✓ נרשם
                                         </span>
@@ -1482,15 +1493,23 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                           {visitorResults[cls.id].map(m => {
                             const mtype = m.membership_type || m.subscription_type
                             const isReg = m.isRegistered
+                            const isNet = m.isNetworkVisitor
                             return (
                               <li
                                 key={m.id}
-                                className={`flex items-center justify-between px-3 py-2 ${isReg ? 'bg-gray-50' : ''}`}
+                                className={`flex items-center justify-between px-3 py-2 ${isReg ? 'bg-gray-50' : isNet ? 'bg-blue-50' : ''}`}
                               >
                                 <div>
-                                  <p className={`text-sm font-medium ${isReg ? 'text-gray-400' : 'text-gray-800'}`}>
-                                    {m.full_name}
-                                  </p>
+                                  <div className="flex items-center gap-1.5">
+                                    <p className={`text-sm font-medium ${isReg ? 'text-gray-400' : 'text-gray-800'}`}>
+                                      {m.full_name}
+                                    </p>
+                                    {isNet && !isReg && (
+                                      <span className="text-[10px] bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded font-bold">
+                                        אורח רשת
+                                      </span>
+                                    )}
+                                  </div>
                                   <p className="text-xs text-gray-400">
                                     {mtype === '1x_week' ? '1× שבוע'
                                       : mtype === '2x_week' ? '2× שבוע'
@@ -1498,6 +1517,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                                       : mtype === 'unlimited' ? 'ללא הגבלה'
                                       : mtype === 'trial' ? 'ניסיון'
                                       : mtype || '—'}
+                                    {isNet && !isReg && <span className="mr-1 text-blue-500">· מנוי בסניף אחר</span>}
                                   </p>
                                 </div>
                                 {isReg ? (
@@ -1509,8 +1529,12 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                                   </span>
                                 ) : (
                                   <button
-                                    onClick={() => addRegisteredMember(cls, m)}
-                                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg font-bold transition"
+                                    onClick={() => addRegisteredMember(cls, m, isNet)}
+                                    className={`text-xs text-white px-2.5 py-1 rounded-lg font-bold transition ${
+                                      isNet
+                                        ? 'bg-blue-500 hover:bg-blue-600'
+                                        : 'bg-emerald-600 hover:bg-emerald-700'
+                                    }`}
                                   >
                                     + הוסף
                                   </button>

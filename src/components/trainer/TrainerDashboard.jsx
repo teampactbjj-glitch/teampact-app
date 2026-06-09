@@ -249,7 +249,7 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
   useEffect(() => {
     const TAB_HASHES = isSecretary
       ? ['athletes', 'announcements', 'profile']
-      : ['schedule', 'athletes', 'reports', 'coaches', 'shop', 'announcements', 'profile']
+      : ['schedule', 'athletes', 'reports', 'coaches', 'shop', 'announcements', 'profile', 'settings']
     function syncFromHash() {
       const h = (window.location.hash || '').replace('#', '')
       if (TAB_HASHES.includes(h)) setActiveTab(h)
@@ -492,6 +492,10 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
           {activeTab === 'announcements' && <AnnouncementsManager trainerId={profile?.id} isAdmin={isAdmin} onChange={refreshCounts} />}
 
           {activeTab === 'profile' && <TrainerProfile profile={profile} isAdmin={isAdmin} />}
+
+          {activeTab === 'settings' && isAdmin && (
+            <BranchSettings isAdmin={isAdmin} />
+          )}
         </div>
       </main>
 

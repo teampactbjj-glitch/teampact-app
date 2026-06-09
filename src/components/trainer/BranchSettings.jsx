@@ -22,12 +22,14 @@ export default function BranchSettings({ isAdmin, onClose }) {
   const [branches,      setBranches]      = useState([])
   const [fixedExp,      setFixedExp]      = useState([])   // branch_fixed_expenses
   const [ownerSettings, setOwnerSettings] = useState([])   // branch_owner_settings
+  const [appSettings,   setAppSettings]   = useState({ vat_rate: 18 })
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState(null)
   const [saving,        setSaving]        = useState(null)
 
   // עריכה inline
-  const [editCut,   setEditCut]   = useState({}) // { branch_id: '40' }
+  const [editCut,     setEditCut]     = useState({}) // { branch_id: '40' }
+  const [editVatRate, setEditVatRate] = useState(null) // string | null
   const [editOwner, setEditOwner] = useState({}) // { branch_id: { o1n,o1p,o2n,o2p } }
   const [newExp,    setNewExp]    = useState({}) // { branch_id: { label:'', amount:'' } }
   const [editExp,   setEditExp]   = useState({}) // { expense_id: { label, amount } }
@@ -35,16 +37,18 @@ export default function BranchSettings({ isAdmin, onClose }) {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const [brRes, feRes, owRes] = await Promise.all([
+    const [brRes, feRes, owRes, asRes] = await Promise.all([
       supabase.from('branches').select('id, name, platform_cut').order('name'),
       supabase.from('branch_fixed_expenses').select('id, branch_id, label, amount, active').order('label'),
       supabase.from('branch_owner_settings').select('branch_id, owner1_name, owner1_pct, owner2_name, owner2_pct'),
+      supabase.from('app_settings').select('vat_rate').eq('id', 1).maybeSingle(),
     ])
     const err = [brRes, feRes, owRes].find(r => r.error)?.error
     if (err) { setError(err.message); setLoading(false); return }
     setBranches(brRes.data      || [])
     setFixedExp(feRes.data      || [])
     setOwnerSettings(owRes.data || [])
+    if (asRes.data) setAppSettings(asRes.data)
     setLoading(false)
   }, [])
 
@@ -61,6 +65,20 @@ export default function BranchSettings({ isAdmin, onClose }) {
     if (error) alert('שגיאה: ' + error.message)
     setSaving(null)
     setEditCut(p => { const n = { ...p }; delete n[branchId]; return n })
+    fetchAll()
+  }
+
+  // ─── מע"מ גלובלי ─────────────────────────────────────────
+
+  async function saveVatRate() {
+    const val = parseFloat(editVatRate)
+    if (isNaN(val) || val < 0 || val > 50) return
+    setSaving('vat')
+    const { error } = await supabase.from('app_settings')
+      .update({ vat_rate: val }).eq('id', 1)
+    if (error) alert('שגיאה: ' + error.message)
+    setSaving(null)
+    setEditVatRate(null)
     fetchAll()
   }
 
@@ -151,6 +169,44 @@ export default function BranchSettings({ isAdmin, onClose }) {
       {error && (
         <div className="bg-red-50 border border-red-300 rounded-xl p-3 text-red-800 text-sm">
           ⚠️ {error}
+        </div>
+      )}
+
+      {/* ── הגדרות כלליות — מע"מ ── */}
+      {!loading && !error && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
+          <div className="font-black text-gray-900 text-sm mb-3">🧾 הגדרות כלליות</div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600">אחוז מע"מ (ישראל):</span>
+            {editVatRate === null ? (
+              <>
+                <span className="text-lg font-black text-purple-700 bg-purple-50 px-3 py-1 rounded-xl border border-purple-200">
+                  {appSettings.vat_rate}%
+                </span>
+                <button
+                  onClick={() => setEditVatRate(String(appSettings.vat_rate))}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                >✏️ ערוך</button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min="0" max="50" step="0.1"
+                  value={editVatRate}
+                  onChange={e => setEditVatRate(e.target.value)}
+                  className="w-16 text-sm border border-blue-400 rounded-lg px-2 py-1.5 text-center font-bold"
+                />
+                <span className="text-sm text-gray-500">%</span>
+                <button onClick={saveVatRate} disabled={saving === 'vat'}
+                  className="text-sm bg-blue-600 text-white font-bold px-3 py-1.5 rounded-lg">
+                  {saving === 'vat' ? '...' : '✓ שמור'}
+                </button>
+                <button onClick={() => setEditVatRate(null)}
+                  className="text-sm bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg">ביטול</button>
+              </div>
+            )}
+            <span className="text-xs text-gray-400">משפיע על חישוב שכר עוסקים פטורים</span>
+          </div>
         </div>
       )}
 

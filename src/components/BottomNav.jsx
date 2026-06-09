@@ -15,6 +15,7 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
         { id: 'shop',          icon: '🛒', label: 'חנות' },
         { id: 'announcements', icon: '📢', label: 'הודעות' },
         { id: 'profile',       icon: '👤', label: 'פרופיל' },
+        ...(isAdmin ? [{ id: 'settings', icon: '⚙️', label: 'הגדרות' }] : []),
       ]
     : [
         { id: 'schedule',      icon: '📅', label: 'לו״ז' },

@@ -10,6 +10,7 @@ import CoachesManager from './CoachesManager'
 import SalaryReport from './SalaryReport'
 import BranchSettings from './BranchSettings'
 import TrainerProfile from './TrainerProfile'
+import AdminSettings from './AdminSettings'
 import BottomNav from '../BottomNav'
 import InstallBanner from '../InstallBanner'
 import EnablePushBanner from '../EnablePushBanner'
@@ -494,7 +495,7 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
           {activeTab === 'profile' && <TrainerProfile profile={profile} isAdmin={isAdmin} />}
 
           {activeTab === 'settings' && isAdmin && (
-            <BranchSettings isAdmin={isAdmin} />
+            <AdminSettings profile={profile} isAdmin={isAdmin} />
           )}
         </div>
       </main>

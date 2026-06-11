@@ -162,7 +162,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
         userIds,
         title: item.type === 'seminar' ? '🎓 תזכורת: סמינר' : '📢 תזכורת: הודעה',
         body: item.title,
-        url: '/#announcements',
+        url: `/#announcements?focus=${item.id}`,
         tag: `announcement-resend:${Date.now()}`,
       })
       // דיאגנוסטיקה מלאה מהשרת — כדי שיהיה ברור איפה זה נתקע
@@ -291,7 +291,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
         status,
         ...(isAdmin ? { approved_by: trainerId, approved_at: new Date().toISOString() } : {}),
       }
-      await supabase.from('announcements').insert(insertPayload)
+      const { data: inserted } = await supabase.from('announcements').insert(insertPayload).select('id').single()
       if (status === 'approved') {
         // אדמין פרסם ישירות — התראה למתאמנים (לפי סניף או לכולם)
         const targetIdsPromise = branchIds.length
@@ -302,7 +302,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
             userIds,
             title: form.type === 'seminar' ? 'סמינר חדש' : 'הודעה חדשה',
             body: form.title,
-            url: '/#announcements',
+            url: `/#announcements${inserted?.id ? `?focus=${inserted.id}` : ''}`,
             tag: `announcement:${Date.now()}`,
           }))
           .catch(() => {})
@@ -351,7 +351,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
         userIds,
         title: item.type === 'seminar' ? 'סמינר חדש' : 'הודעה חדשה',
         body: item.title,
-        url: '/#announcements',
+        url: `/#announcements?focus=${item.id}`,
         tag: `announcement:${item.id}`,
       }))
       .catch(e => console.warn('notifyPush failed:', e))

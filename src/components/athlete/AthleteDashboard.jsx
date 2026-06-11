@@ -559,9 +559,26 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
   )
 }
 
-function AnnouncementsTab({ announcements, profile, member }) {
+function AnnouncementsTab({ announcements, profile, member, focusId = null, onFocusConsumed }) {
   const toast = useToast()
   const confirm = useConfirm()
+  // הדגשה זמנית של הודעה/סמינר שהגיעו אליהם מהתראת push
+  const [highlightId, setHighlightId] = useState(null)
+
+  useEffect(() => {
+    if (!focusId || announcements.length === 0) return
+    // ממתינים ל-render ואז גוללים להודעה ומדגישים אותה ל-3 שניות
+    const t = setTimeout(() => {
+      const el = document.getElementById(`announcement-${focusId}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setHighlightId(focusId)
+        setTimeout(() => setHighlightId(null), 3000)
+      }
+      onFocusConsumed?.()
+    }, 300)
+    return () => clearTimeout(t)
+  }, [focusId, announcements.length])
   const athleteName = member?.full_name || profile?.full_name || profile?.email || 'לא ידוע'
   const general = announcements.filter(a => a.type === 'general' || a.type === 'announcement' || a.type === 'promotion')
   const seminars = announcements.filter(a => a.type === 'seminar')
@@ -673,7 +690,9 @@ function AnnouncementsTab({ announcements, profile, member }) {
         <div className="space-y-3">
           <h2 className="font-bold text-gray-800 text-lg">הודעות</h2>
           {general.map(item => (
-            <div key={item.id} className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex gap-3 items-start shadow-sm">
+            <div key={item.id} id={`announcement-${item.id}`}
+              className={`bg-amber-50 border rounded-2xl p-4 flex gap-3 items-start shadow-sm transition-all duration-500 ${
+                highlightId === item.id ? 'border-blue-500 ring-2 ring-blue-300' : 'border-amber-300'}`}>
               <span className="text-2xl flex-shrink-0">📢</span>
               <div className="min-w-0">
                 <p className="font-bold text-amber-900 text-sm leading-snug">{item.title}</p>
@@ -691,7 +710,9 @@ function AnnouncementsTab({ announcements, profile, member }) {
               const pr = seminarPricing(item)
               const fmtD = d => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
               return (
-              <div key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              <div key={item.id} id={`announcement-${item.id}`}
+                className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ${
+                  highlightId === item.id ? 'border-blue-500 ring-2 ring-blue-300' : ''}`}>
                 {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" loading="lazy" />}
                 <div className="p-4">
                   <div className="flex items-center gap-2 mb-1">
@@ -2055,6 +2076,8 @@ export default function AthleteDashboard({ profile }) {
   const [registrationsNext, setRegistrationsNext] = useState(new Set())
   // welcome-back overlay — קופץ כשמגיעים מ-Push של "מתגעגעים אליך"
   const [welcomeBack, setWelcomeBack] = useState({ open: false, days: null })
+  // הודעה/סמינר שצריך לגלול אליהם בטאב ההודעות (מגיע מהתראת push: #announcements?focus=<id>)
+  const [focusAnnouncementId, setFocusAnnouncementId] = useState(null)
 
   // hash → tab/overlay (ניווט מהתראת push)
   useEffect(() => {
@@ -2072,6 +2095,14 @@ export default function AthleteDashboard({ profile }) {
         return
       }
       setWelcomeBack({ open: false, days: null })
+      // announcements?focus=<id> — פתיחת טאב הודעות וגלילה להודעה/סמינר ספציפיים (מהתראת push)
+      if (raw.startsWith('#announcements')) {
+        const qIdx = raw.indexOf('?')
+        const focus = qIdx > -1 ? new URLSearchParams(raw.slice(qIdx + 1)).get('focus') : null
+        setFocusAnnouncementId(focus || null)
+        setActiveTab('announcements')
+        return
+      }
       const h = raw.replace('#', '')
       if (TAB_HASHES.includes(h)) setActiveTab(h)
     }
@@ -2417,7 +2448,7 @@ export default function AthleteDashboard({ profile }) {
           </div>
           {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} registrationsNext={registrationsNext} onRegister={handleRegister} branchesMap={branchesMap} />}
           {activeTab === 'shop' && <ShopTab profile={profile} member={member} allAnnouncements={announcements} onCartCountChange={setCartCount} />}
-          {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} />}
+          {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} focusId={focusAnnouncementId} onFocusConsumed={() => setFocusAnnouncementId(null)} />}
           {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}
           {activeTab === 'settings' && <SettingsTab profile={profile} member={member} />}
         </div>

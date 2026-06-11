@@ -559,6 +559,25 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
   )
 }
 
+// ממיר טקסט חופשי לרכיבי React כשכל URL (http/https/www) הופך לקישור לחיץ שנפתח בטאב חדש.
+// בלי dangerouslySetInnerHTML — בטוח מ-XSS כי הטקסט נשאר טקסט והקישורים נבנים כ-<a> אמיתיים.
+function linkifyText(text) {
+  if (!text) return null
+  const parts = String(text).split(/((?:https?:\/\/|www\.)[^\s]+)/g)
+  return parts.map((part, i) => {
+    if (/^(https?:\/\/|www\.)/.test(part)) {
+      const href = part.startsWith('www.') ? `https://${part}` : part
+      return (
+        <a key={i} href={href} target="_blank" rel="noopener noreferrer"
+          className="text-blue-600 underline break-all" onClick={e => e.stopPropagation()}>
+          {part}
+        </a>
+      )
+    }
+    return part
+  })
+}
+
 function AnnouncementsTab({ announcements, profile, member, focusId = null, onFocusConsumed }) {
   const toast = useToast()
   const confirm = useConfirm()
@@ -691,12 +710,30 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
           <h2 className="font-bold text-gray-800 text-lg">הודעות</h2>
           {general.map(item => (
             <div key={item.id} id={`announcement-${item.id}`}
-              className={`bg-amber-50 border rounded-2xl p-4 flex gap-3 items-start shadow-sm transition-all duration-500 ${
-                highlightId === item.id ? 'border-blue-500 ring-2 ring-blue-300' : 'border-amber-300'}`}>
-              <span className="text-2xl flex-shrink-0">📢</span>
-              <div className="min-w-0">
-                <p className="font-bold text-amber-900 text-sm leading-snug">{item.title}</p>
-                {item.content && <p className="text-xs text-amber-800 mt-1 leading-relaxed">{item.content}</p>}
+              className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ${
+                highlightId === item.id ? 'border-blue-500 ring-2 ring-blue-300' : ''}`}>
+              {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" loading="lazy" />}
+              <div className="p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium">📢 הודעה</span>
+                  {item.created_at && (
+                    <span className="text-xs text-gray-400">
+                      {new Date(item.created_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
+                    </span>
+                  )}
+                </div>
+                <p className="font-semibold text-gray-800">{item.title}</p>
+                {item.content && <p className="text-xs text-gray-500 mt-1 leading-relaxed whitespace-pre-line">{linkifyText(item.content)}</p>}
+                {Array.isArray(item.links) && item.links.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {item.links.map((lnk, i) => (
+                      <a key={i} href={lnk.url} target="_blank" rel="noopener noreferrer"
+                        className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm">
+                        🔗 {lnk.label || lnk.url}
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -720,7 +757,17 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
                     {item.event_date && <span className="text-xs text-blue-600 font-medium">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}</span>}
                   </div>
                   <p className="font-semibold text-gray-800">{item.title}</p>
-                  {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
+                  {item.content && <p className="text-xs text-gray-500 mt-1 whitespace-pre-line">{linkifyText(item.content)}</p>}
+                  {Array.isArray(item.links) && item.links.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {item.links.map((lnk, i) => (
+                        <a key={i} href={lnk.url} target="_blank" rel="noopener noreferrer"
+                          className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-semibold">
+                          🔗 {lnk.label || lnk.url}
+                        </a>
+                      ))}
+                    </div>
+                  )}
                   {/* תמחור: אם יש מחיר מוקדם — מציגים את שני המחירים, הנוכחי מודגש והשני מחוק/אפור */}
                   {pr.early != null && pr.deadline && pr.regular != null ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
@@ -2208,8 +2255,8 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAnnouncements() {
     const statusFilter = 'status.eq.approved,status.is.null'
     const [itemsRes, generalRes] = await Promise.all([
-      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
-      supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
+      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items, links').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids, links').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
     ])
     setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])
   }

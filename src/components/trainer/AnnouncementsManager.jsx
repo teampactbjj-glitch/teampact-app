@@ -35,7 +35,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   const [resendingId, setResendingId] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [] })
+  const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [] })
   const [loading, setLoading]   = useState(true)
   const [uploading, setUploading] = useState(false)
   const [branches, setBranches] = useState([])
@@ -58,13 +58,14 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       early_price_deadline: item.early_price_deadline || '',
       image_url: item.image_url || '',
       branch_ids: Array.isArray(item.branch_ids) ? item.branch_ids : [],
+      links: Array.isArray(item.links) ? item.links : [],
     })
     setShowForm(true)
   }
 
   function openAdd() {
     setEditingId(null)
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [] })
+    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [] })
     setShowForm(true)
   }
 
@@ -115,7 +116,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   async function fetchAnnouncements() {
     setLoading(true)
-    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids')
+    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids, links')
       .in('type', ['general', 'announcement', 'seminar'])
       .order('created_at', { ascending: false })
     setItems(data || [])
@@ -266,6 +267,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       early_price_deadline: '',
       image_url: '',
       branch_ids: [],
+      links: [],
     })
     setShowForm(true)
   }
@@ -273,9 +275,15 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   async function handleSubmit(e) {
     e.preventDefault()
     const branchIds = Array.isArray(form.branch_ids) ? form.branch_ids.filter(Boolean) : []
+    // ניקוי קישורים: רק שורות עם URL, ונרמול https:// אם חסר
+    const cleanLinks = (Array.isArray(form.links) ? form.links : [])
+      .map(l => ({ label: (l.label || '').trim(), url: (l.url || '').trim() }))
+      .filter(l => l.url)
+      .map(l => ({ ...l, url: /^https?:\/\//i.test(l.url) ? l.url : `https://${l.url}` }))
     const payload = {
       title: form.title, content: form.content, type: form.type, trainer_id: trainerId,
       branch_ids: branchIds.length ? branchIds : null,
+      links: cleanLinks.length ? cleanLinks : null,
       ...(form.type === 'seminar' && form.event_date ? { event_date: form.event_date } : {}),
       ...(form.type === 'seminar' && form.price      ? { price: parseFloat(form.price) } : {}),
       ...(form.type === 'seminar' ? { early_price: form.early_price ? parseFloat(form.early_price) : null } : {}),
@@ -283,7 +291,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       ...(form.image_url ? { image_url: form.image_url } : {}),
     }
     if (editingId) {
-      await supabase.from('announcements').update(payload).eq('id', editingId)
+      const { error: updErr } = await supabase.from('announcements').update(payload).eq('id', editingId)
+      if (updErr) { toast.error('שגיאה בשמירה: ' + updErr.message); return }
     } else {
       const status = isAdmin ? 'approved' : 'pending'
       const insertPayload = {
@@ -291,7 +300,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
         status,
         ...(isAdmin ? { approved_by: trainerId, approved_at: new Date().toISOString() } : {}),
       }
-      const { data: inserted } = await supabase.from('announcements').insert(insertPayload).select('id').single()
+      const { data: inserted, error: insErr } = await supabase.from('announcements').insert(insertPayload).select('id').single()
+      if (insErr) { toast.error('שגיאה בפרסום: ' + insErr.message); return }
       if (status === 'approved') {
         // אדמין פרסם ישירות — התראה למתאמנים (לפי סניף או לכולם)
         const targetIdsPromise = branchIds.length
@@ -319,7 +329,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
           .catch(() => {})
       }
     }
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [] })
+    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [] })
     setEditingId(null)
     setShowForm(false)
     fetchAnnouncements()
@@ -477,6 +487,24 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
               )}
             </>
           )}
+          {/* קישורים מובנים — מוצגים למתאמן ככפתורים. אופציונלי: לינק שמודבק בטקסט התוכן ממילא הופך לחיץ אוטומטית. */}
+          <div className="space-y-2">
+            <label className="text-xs text-gray-500 block">🔗 כפתורי קישור (אופציונלי) — למשל "הרשמה" או "תשלום"</label>
+            {(form.links || []).map((lnk, idx) => (
+              <div key={idx} className="flex gap-2 items-center">
+                <input className="w-1/3 border rounded-lg px-2 py-2 text-sm" placeholder="תיאור (למשל: תשלום)"
+                  value={lnk.label || ''}
+                  onChange={e => setForm(p => { const links = [...p.links]; links[idx] = { ...links[idx], label: e.target.value }; return { ...p, links } })} />
+                <input className="flex-1 border rounded-lg px-2 py-2 text-sm" placeholder="https://..." dir="ltr"
+                  value={lnk.url || ''}
+                  onChange={e => setForm(p => { const links = [...p.links]; links[idx] = { ...links[idx], url: e.target.value }; return { ...p, links } })} />
+                <button type="button" onClick={() => setForm(p => ({ ...p, links: p.links.filter((_, i) => i !== idx) }))}
+                  className="text-red-400 hover:text-red-600 text-sm px-1">✕</button>
+              </div>
+            ))}
+            <button type="button" onClick={() => setForm(p => ({ ...p, links: [...(p.links || []), { label: '', url: '' }] }))}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium">+ הוסף קישור</button>
+          </div>
           <div className="space-y-2">
             <label className="text-xs text-gray-500">תמונה (אופציונלי)</label>
             <div className="flex gap-2 items-center">

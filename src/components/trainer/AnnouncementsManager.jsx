@@ -370,7 +370,20 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   }
 
   async function deleteItem(id) {
-    await supabase.from('announcements').delete().eq('id', id)
+    const item = items.find(i => i.id === id)
+    // אזהרה מוגברת לסמינר עם נרשמים
+    const regsCount = item?.type === 'seminar' ? requestsForSeminar(item).length : 0
+    const ok = await confirm({
+      title: item?.type === 'seminar' ? 'מחיקת סמינר' : 'מחיקת הודעה',
+      message: regsCount > 0
+        ? `לסמינר "${item?.title}" יש ${regsCount} נרשמים! למחוק בכל זאת? (ההרשמות יישארו אבל יאבדו את הקישור לסמינר)`
+        : `למחוק את "${item?.title || 'ההודעה'}"? פעולה זו אינה הפיכה.`,
+      confirmText: 'מחק',
+      danger: true,
+    })
+    if (!ok) return
+    const { error } = await supabase.from('announcements').delete().eq('id', id)
+    if (error) { toast.error('שגיאה במחיקה: ' + error.message); return }
     setItems(prev => prev.filter(i => i.id !== id))
     onChange?.()
   }

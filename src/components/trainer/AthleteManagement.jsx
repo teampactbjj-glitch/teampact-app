@@ -208,8 +208,13 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     if (isAdmin) {
       const ok = await confirm({ title: 'מחיקת מתאמן', message: 'למחוק את המתאמן לצמיתות?', confirmText: 'מחק', danger: true })
       if (!ok) return
-      const { error } = await supabase.from('members').delete().eq('id', id)
+      const { data: deleted, error } = await supabase.from('members').delete().eq('id', id).select('id')
       if (error) { toast.error('שגיאה במחיקה: ' + error.message); return }
+      if (!deleted || deleted.length === 0) {
+        toast.error('המחיקה נחסמה — אין הרשאת מחיקה (RLS). הרץ את מיגרציית הרשאות המחיקה ב-Supabase.')
+        return
+      }
+      toast.success('המתאמן נמחק')
     } else {
       const ok = await confirm({ title: 'בקשת מחיקה', message: 'לשלוח בקשת מחיקה למנהל?', confirmText: 'שלח בקשה' })
       if (!ok) return
@@ -234,8 +239,13 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   async function approveDeletion(id) {
     const ok = await confirm({ title: 'אישור מחיקה', message: 'לאשר מחיקה? המתאמן יימחק לצמיתות. הפעולה לא הפיכה.', confirmText: 'אשר מחיקה', danger: true })
     if (!ok) return
-    const { error } = await supabase.from('members').delete().eq('id', id)
+    const { data: deleted, error } = await supabase.from('members').delete().eq('id', id).select('id')
     if (error) { toast.error('שגיאה במחיקה: ' + error.message); return }
+    if (!deleted || deleted.length === 0) {
+      toast.error('המחיקה נחסמה — אין הרשאת מחיקה (RLS). הרץ את מיגרציית הרשאות המחיקה ב-Supabase.')
+      return
+    }
+    toast.success('המתאמן נמחק')
     fetchAthletes()
   }
 
@@ -333,10 +343,18 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       setBulkDeleting(true)
       try {
         const CHUNK = 200
+        let totalDeleted = 0
         for (let i = 0; i < ids.length; i += CHUNK) {
           const part = ids.slice(i, i + CHUNK)
-          const { error } = await supabase.from('members').delete().in('id', part)
+          const { data: deleted, error } = await supabase.from('members').delete().in('id', part).select('id')
           if (error) { console.error('bulk delete error:', error); toast.error('שגיאה במחיקה: ' + error.message); break }
+          totalDeleted += deleted?.length || 0
+        }
+        if (totalDeleted === 0) {
+          toast.error('אף מתאמן לא נמחק — אין הרשאת מחיקה (RLS). הרץ את מיגרציית הרשאות המחיקה ב-Supabase.')
+        } else {
+          if (totalDeleted < ids.length) toast.error(`נמחקו ${totalDeleted} מתוך ${ids.length} — חלק נחסמו ע"י הרשאות.`)
+          else toast.success(`${totalDeleted} מתאמנים נמחקו`)
         }
         clearSelection()
         await fetchAthletes()

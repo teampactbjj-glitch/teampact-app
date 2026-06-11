@@ -703,12 +703,14 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
     return <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">📭</div><p>אין הודעות כרגע</p></div>
   }
 
+  // פיד מאוחד — הודעות וסמינרים יחד, החדש ביותר תמיד ראשון (לפי תאריך פרסום)
+  const feed = [...general, ...seminars].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+
   return (
-    <div className="space-y-6">
-      {general.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="font-bold text-gray-800 text-lg">הודעות</h2>
-          {general.map(item => (
+    <div className="space-y-3">
+      <h2 className="font-bold text-gray-800 text-lg">הודעות ואירועים</h2>
+      {feed.map(item => {
+        if (item.type !== 'seminar') return (
             <div key={item.id} id={`announcement-${item.id}`}
               className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ${
                 highlightId === item.id ? 'border-blue-500 ring-2 ring-blue-300' : ''}`}>
@@ -736,17 +738,10 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
                 )}
               </div>
             </div>
-          ))}
-        </div>
-      )}
-      {seminars.length > 0 && (
-        <div>
-          <h3 className="font-bold text-gray-700 text-sm mb-3">🎓 סמינרים ואירועים</h3>
-          <div className="space-y-3">
-            {seminars.map(item => {
-              const pr = seminarPricing(item)
-              const fmtD = d => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
-              return (
+        )
+        const pr = seminarPricing(item)
+        const fmtD = d => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
+        return (
               <div key={item.id} id={`announcement-${item.id}`}
                 className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ${
                   highlightId === item.id ? 'border-blue-500 ring-2 ring-blue-300' : ''}`}>
@@ -794,10 +789,8 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
                   </button>
                 </div>
               </div>
-            )})}
-          </div>
-        </div>
-      )}
+        )
+      })}
     </div>
   )
 }

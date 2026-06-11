@@ -158,14 +158,21 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       const branchIds = Array.isArray(item.branch_ids) ? item.branch_ids.filter(Boolean) : []
       const userIds = await (branchIds.length ? athleteUserIdsForBranches(branchIds) : allActiveAthleteUserIds())
       if (!userIds.length) { toast.error('לא נמצאו מתאמנים פעילים לשליחה (בדוק שיוך סניפים)'); setResendingId(null); return }
-      await notifyPush({
+      const res = await notifyPush({
         userIds,
         title: item.type === 'seminar' ? '🎓 תזכורת: סמינר' : '📢 תזכורת: הודעה',
         body: item.title,
         url: '/#announcements',
         tag: `announcement-resend:${Date.now()}`,
       })
-      toast.success(`ההתראה נשלחה ל-${userIds.length} מתאמנים (תגיע רק למי שהפעיל התראות במכשיר שלו)`)
+      // דיאגנוסטיקה מלאה מהשרת — כדי שיהיה ברור איפה זה נתקע
+      if (res?.error) {
+        toast.error(`שגיאת שרת בשליחה: ${res.error}`)
+      } else if (res?.reason === 'no_subscriptions') {
+        toast.error(`נמענים: ${userIds.length}, אבל לאף אחד מהם אין מנוי התראות פעיל — צריך ללחוץ "הפעל התראות" במכשיר של המתאמן`)
+      } else {
+        toast.success(`נמענים: ${userIds.length} · נשלחו בפועל: ${res?.sent ?? '?'} · נכשלו: ${res?.failed ?? 0}`)
+      }
     } catch (e) {
       toast.error('שגיאה בשליחת ההתראה: ' + (e.message || 'לא ידוע'))
     }

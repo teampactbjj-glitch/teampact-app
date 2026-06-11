@@ -63,6 +63,10 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       allow_app_registration: item.allow_app_registration !== false,
     })
     setShowForm(true)
+    // גלילה אוטומטית לטופס העריכה אחרי שהוא מרונדר מתחת לאירוע
+    setTimeout(() => {
+      document.getElementById('announcement-edit-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
   }
 
   function openAdd() {
@@ -700,7 +704,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                 )
               })()}
               {/* טופס עריכה — נפתח מתחת לאירוע שנערך */}
-              {showForm && editingId === item.id && <div className="mt-3 border-t pt-3">{editorCard}</div>}
+              {showForm && editingId === item.id && <div id="announcement-edit-form" className="mt-3 border-t pt-3 scroll-mt-4">{editorCard}</div>}
               </div>
             </li>
           ))}

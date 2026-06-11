@@ -2448,7 +2448,15 @@ export default function AthleteDashboard({ profile }) {
           </div>
           {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} registrationsNext={registrationsNext} onRegister={handleRegister} branchesMap={branchesMap} />}
           {activeTab === 'shop' && <ShopTab profile={profile} member={member} allAnnouncements={announcements} onCartCountChange={setCartCount} />}
-          {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} focusId={focusAnnouncementId} onFocusConsumed={() => setFocusAnnouncementId(null)} />}
+          {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} focusId={focusAnnouncementId}
+            onFocusConsumed={() => {
+              setFocusAnnouncementId(null)
+              // מנקה את ?focus מהכתובת — בלי זה כל פתיחה חוזרת של הטאב גוללת שוב את המסך.
+              // replaceState לא מפעיל hashchange, אז אין לולאה.
+              if (window.location.hash.includes('?focus=')) {
+                history.replaceState(null, '', window.location.pathname + window.location.search + '#announcements')
+              }
+            }} />}
           {activeTab === 'profile' && <ProfileTab profile={profile} member={member} />}
           {activeTab === 'settings' && <SettingsTab profile={profile} member={member} />}
         </div>

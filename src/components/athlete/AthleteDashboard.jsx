@@ -752,6 +752,14 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
                     {item.event_date && <span className="text-xs text-blue-600 font-medium">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}</span>}
                   </div>
                   <p className="font-semibold text-gray-800">{item.title}</p>
+                  {/* מיקום האירוע — לחיץ, נפתח ב-Google Maps */}
+                  {item.event_location && (
+                    <a href={`https://maps.google.com/?q=${encodeURIComponent(item.event_location)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium mt-1">
+                      📍 {item.event_location}
+                    </a>
+                  )}
                   {item.content && <p className="text-xs text-gray-500 mt-1 whitespace-pre-line">{linkifyText(item.content)}</p>}
                   {Array.isArray(item.links) && item.links.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
@@ -2251,7 +2259,7 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAnnouncements() {
     const statusFilter = 'status.eq.approved,status.is.null'
     const [itemsRes, generalRes] = await Promise.all([
-      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items, links, allow_app_registration').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, event_location, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items, links, allow_app_registration').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
       supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids, links').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
     ])
     setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])

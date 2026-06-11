@@ -3424,4 +3424,15 @@ DELETE FROM public.branches WHERE name = 'קאנטרי';
 Build ✓ (vite, 111 מודולים, ל-outDir זמני — מחיקת dist חסומה ב-sandbox).
 
 ## My last pending task
-**שני תיקונים מוכנים, לא נדחפו:** (1) באדג' חנות סופר רק לא-מטופלות + realtime (אושר לוקאלית ע"י דודי), (2) טוגל הרשמה לסמינר + תמונה ברשימת מנהל (טרם נבדק). ממתין: (א) דודי יריץ את ה-SQL של `allow_app_registration` ב-Supabase, (ב) בדיקה לוקאלית של הטוגל והתמונה, (ג) אישור → commit+push של הכול יחד. פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ.
+**הכול נדחף — קומיט `976018b` ב-main + origin/main** (באדג' חנות + טוגל הרשמה לסמינר + תמונות ברשימת מנהל, 6 קבצים, +103/-27). נשאר לדודי:
+1. **למחוק קבצי lock של git** שנשארו מה-sandbox: `rm -f .git/HEAD.lock .git/index.lock` (יחסמו git אם לא יימחקו).
+2. לוודא שה-SQL של `allow_app_registration` הורץ ב-Supabase (אם לא — הכפתור הירוק פשוט יוצג תמיד, וה-select יחזיר שגיאת עמודה חסרה בקונסול). ה-SQL: `ALTER TABLE announcements ADD COLUMN IF NOT EXISTS allow_app_registration boolean NOT NULL DEFAULT true;`
+3. לבדוק build ירוק ב-Vercel + hard refresh (Cmd+Shift+R) + PWA: Service Worker Unregister.
+4. לכבות את הטוגל בסמינר האינטרקלאב (ערוך → בטל "הרשמה דרך האפליקציה").
+פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ.
+
+### המשך — שדה מיקום לסמינר/אירוע (לא נדחף!)
+- עמודה `event_location text` (מיגרציה: `src/lib/migration-seminar-event-location.sql` — **טרם הורצה ב-Supabase!**)
+- `AnnouncementsManager.jsx`: שדה "📍 מיקום" בטופס סמינר + payload + select + תצוגה ברשימה.
+- `AthleteDashboard.jsx`: select + קישור 📍 לחיץ ל-Google Maps בכרטיס הסמינר.
+- Build ✓. **ממתין: SQL ב-Supabase → בדיקה לוקאלית → אישור דחיפה.**

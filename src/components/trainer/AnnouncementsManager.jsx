@@ -53,6 +53,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       content: item.content || '',
       type: item.type || 'general',
       event_date: item.event_date ? new Date(item.event_date).toISOString().slice(0, 16) : '',
+      event_location: item.event_location || '',
       price: item.price != null ? String(item.price) : '',
       early_price: item.early_price != null ? String(item.early_price) : '',
       early_price_deadline: item.early_price_deadline || '',
@@ -66,7 +67,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   function openAdd() {
     setEditingId(null)
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [], allow_app_registration: true })
+    setForm({ title: '', content: '', type: 'general', event_date: '', event_location: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [], allow_app_registration: true })
     setShowForm(true)
   }
 
@@ -117,7 +118,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   async function fetchAnnouncements() {
     setLoading(true)
-    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids, links, allow_app_registration')
+    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, early_price, early_price_deadline, event_date, event_location, branch_ids, links, allow_app_registration')
       .in('type', ['general', 'announcement', 'seminar'])
       .order('created_at', { ascending: false })
     setItems(data || [])
@@ -263,6 +264,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       content,
       type: 'general',
       event_date: '',
+      event_location: '',
       price: '',
       early_price: '',
       early_price_deadline: '',
@@ -287,6 +289,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       branch_ids: branchIds.length ? branchIds : null,
       links: cleanLinks.length ? cleanLinks : null,
       ...(form.type === 'seminar' && form.event_date ? { event_date: form.event_date } : {}),
+      ...(form.type === 'seminar' ? { event_location: form.event_location?.trim() || null } : {}),
       ...(form.type === 'seminar' && form.price      ? { price: parseFloat(form.price) } : {}),
       ...(form.type === 'seminar' ? { early_price: form.early_price ? parseFloat(form.early_price) : null } : {}),
       ...(form.type === 'seminar' ? { early_price_deadline: form.early_price_deadline || null } : {}),
@@ -332,7 +335,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
           .catch(() => {})
       }
     }
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [], allow_app_registration: true })
+    setForm({ title: '', content: '', type: 'general', event_date: '', event_location: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [], allow_app_registration: true })
     setEditingId(null)
     setShowForm(false)
     fetchAnnouncements()
@@ -480,6 +483,11 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                   value={form.event_date} onChange={e => setForm(p => ({ ...p, event_date: e.target.value }))} />
               </div>
               <div>
+                <label className="text-xs text-gray-500 mb-1 block">📍 מיקום (אופציונלי)</label>
+                <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="למשל: Fight TLV, דרך מנחם בגין 150 תל אביב"
+                  value={form.event_location} onChange={e => setForm(p => ({ ...p, event_location: e.target.value }))} />
+              </div>
+              <div>
                 <label className="text-xs text-gray-500 mb-1 block">מחיר רגיל (₪)</label>
                 <input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0"
                   value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
@@ -578,6 +586,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                       {TYPE_LABELS[item.type] || item.type}
                     </span>
                     {item.event_date && <span className="text-xs text-gray-400">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</span>}
+                    {item.event_location && <span className="text-xs text-gray-500">📍 {item.event_location}</span>}
                     {item.price != null && <span className="text-xs font-bold text-green-600">₪{item.price}</span>}
                     {item.early_price != null && item.early_price_deadline && (
                       <span className="text-xs text-blue-600">

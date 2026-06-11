@@ -3436,3 +3436,11 @@ Build ✓ (vite, 111 מודולים, ל-outDir זמני — מחיקת dist חס
 - עמודה `event_location text` — ה-SQL הורץ ב-Supabase ע"י דודי (אומת בבדיקה הלוקאלית).
 - `AnnouncementsManager.jsx`: שדה "📍 מיקום" בטופס סמינר + תצוגה ברשימה. `AthleteDashboard.jsx`: קישור 📍 לחיץ ל-Google Maps.
 - קבצי ה-lock של git (HEAD.lock/index.lock שנשארו מהדחיפה הקודמת) נמחקו אחרי אישור הרשאת מחיקה ב-Cowork — git נקי.
+
+### המשך — טופס עריכה נפתח מתחת לאירוע — ✅ בפרודקשן
+- קומיט `b565821`. הבעיה: "ערוך" פתח את הטופס בראש הדף והמשתמש לא ראה אותו.
+- הפתרון: הטופס חולץ ל-`const editorCard` ב-`AnnouncementsManager.jsx` — מרונדר למעלה רק בהודעה חדשה (`!editingId`), ובעריכה מרונדר בתוך ה-li מתחת לאירוע. חשוב: לא להפוך לקומפוננטה פנימית (איבוד פוקוס בכל הקלדה) — חייב להישאר JSX const.
+- דודי בדק לוקאלית ואישר ("עובד") לפני הדחיפה.
+
+## My last pending task
+הכול בפרודקשן עד קומיט `b565821`, working tree נקי. פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ ב-Supabase.

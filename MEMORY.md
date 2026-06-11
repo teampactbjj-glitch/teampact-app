@@ -3442,5 +3442,8 @@ Build ✓ (vite, 111 מודולים, ל-outDir זמני — מחיקת dist חס
 - הפתרון: הטופס חולץ ל-`const editorCard` ב-`AnnouncementsManager.jsx` — מרונדר למעלה רק בהודעה חדשה (`!editingId`), ובעריכה מרונדר בתוך ה-li מתחת לאירוע. חשוב: לא להפוך לקומפוננטה פנימית (איבוד פוקוס בכל הקלדה) — חייב להישאר JSX const.
 - דודי בדק לוקאלית ואישר ("עובד") לפני הדחיפה.
 
+### המשך — גלילה אוטומטית לטופס העריכה — ✅ בפרודקשן
+- קומיט `e4b217f`: `openEdit` גולל ל-`#announcement-edit-form` (setTimeout 100ms + scrollIntoView smooth + scroll-mt-4).
+
 ## My last pending task
-הכול בפרודקשן עד קומיט `b565821`, working tree נקי. פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ ב-Supabase.
+הכול בפרודקשן עד קומיט `e4b217f`, working tree נקי. פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ ב-Supabase.

@@ -3397,5 +3397,31 @@ DELETE FROM public.branches WHERE name = 'קאנטרי';
 - `75a2ec7` — לחיצה על התראה פותחת את ההודעה/סמינר הספציפיים: url=`/#announcements?focus=<id>`, גלילה + הדגשה כחולה 3 שניות.
 - `657e3f6` — באג: ה-`?focus` נשאר בכתובת וגרם לגלילה אוטומטית בכל פתיחת הטאב. תוקן עם history.replaceState אחרי הצריכה.
 
+---
+
+## סשן 11.06.2026 (המשך) — באדג' התראות בטאב חנות (מנהל) סופר גם מה שטופל
+
+### הבעיה
+הבאדג' על טאב החנות אצל המנהל הראה 4 למרות שחלק טופל. סיבה: `refreshCounts` ב-`TrainerDashboard.jsx` ספר את **כל** ה-`product_requests` במצב pending — כולל הרשמות לסמינרים (שמוצגות ומנוהלות בטאב ההודעות עם "סמן כשולם", לא בחנות), ובלי `product_orders`. בנוסף לא הייתה האזנת realtime על product_requests, אז סימון "שולם" בהודעות לא עדכן את הבאדג'.
+
+### מה תוקן (2 קבצים)
+| קובץ | מה שונה |
+|---|---|
+| `src/components/trainer/TrainerDashboard.jsx` | `refreshCounts`: באדג' חנות = product_requests pending **בלי הרשמות סמינר** (לפי שמות סמינרים פעילים + notes שמתחיל ב"הרשמה לסמינר") + product_orders pending (לא מחוקות). נוסף channel realtime על product_requests + product_orders. |
+| `src/components/trainer/ShopManager.jsx` | הוצאו helpers ברמת מודול: `isSeminarOrderRow`, `countShopPending`. הספירה שנשלחת ב-`onOrdersChange` (fetchAll / markDone / deleteOrder) מחריגה עכשיו הרשמות סמינר — עקבי עם המוצג בטאב. |
+
+### אימות
+`npx vite build --outDir /tmp/dist-check` — ✓ built ללא שגיאות (build רגיל ל-dist נכשל ב-sandbox על מחיקת dist — בעיית הרשאות בלבד, לא קוד).
+
+### המשך — טוגל "הרשמה דרך האפליקציה" + תמונה ברשימת המנהל
+דודי אישר שתיקון הבאדג' עובד לוקאלית ("יש רק התראה אחת"). בקשות חדשות:
+1. **טוגל הרשמה פנימית לסמינר** — לאירועים חיצוניים (תחרות/אינטרקלאב עם קישורי הרשמה/תשלום) לא צריך את הכפתור הירוק "להירשם לסמינר". נוסף:
+   - עמודה `allow_app_registration boolean NOT NULL DEFAULT true` (מיגרציה: `src/lib/migration-seminar-allow-app-registration.sql` — **טרם הורצה ב-Supabase!**)
+   - `AnnouncementsManager.jsx`: צ'קבוקס בטופס סמינר + payload + select + ערכי ברירת מחדל בכל ה-setForm.
+   - `AthleteDashboard.jsx`: select + הכפתור הירוק מוצג רק אם `allow_app_registration !== false`.
+2. **תמונה ברשימת ההודעות של המנהל** — `AnnouncementsManager.jsx`: ה-li עכשיו עם `overflow-hidden` + img בראש + עטיפת `p-4` לתוכן (כמו אצל המתאמן).
+
+Build ✓ (vite, 111 מודולים, ל-outDir זמני — מחיקת dist חסומה ב-sandbox).
+
 ## My last pending task
-**הכול דחוף ועובד (657e3f6).** פתוח: פיצ'ר היומולדת 🎂 ממתין להרצת `supabase/migrations/birthday_feature.sql` ב-Supabase — המשתמש טרם ביקש.
+**שני תיקונים מוכנים, לא נדחפו:** (1) באדג' חנות סופר רק לא-מטופלות + realtime (אושר לוקאלית ע"י דודי), (2) טוגל הרשמה לסמינר + תמונה ברשימת מנהל (טרם נבדק). ממתין: (א) דודי יריץ את ה-SQL של `allow_app_registration` ב-Supabase, (ב) בדיקה לוקאלית של הטוגל והתמונה, (ג) אישור → commit+push של הכול יחד. פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ.

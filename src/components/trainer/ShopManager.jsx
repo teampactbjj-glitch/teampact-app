@@ -50,6 +50,16 @@ function clearDraft() {
   try { localStorage.removeItem(DRAFT_KEY) } catch {}
 }
 
+// האם ההזמנה היא הרשמה לסמינר (מנוהלת בטאב ההודעות, לא נספרת בבאדג' החנות)
+function isSeminarOrderRow(o, seminarTitleSet) {
+  return o._source === 'request' && (seminarTitleSet.has(o.product_name) || (o.notes || '').startsWith('הרשמה לסמינר'))
+}
+
+// ספירת בקשות שלא טופלו לבאדג' — בלי הרשמות סמינר
+function countShopPending(list, seminarTitleSet) {
+  return list.filter(o => o.status === 'pending' && !isSeminarOrderRow(o, seminarTitleSet)).length
+}
+
 export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId = null }) {
   const toast = useToast()
   const confirm = useConfirm()
@@ -253,8 +263,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       })),
     ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     setOrders(merged)
-    const pending = merged.filter(o => o.status === 'pending').length
-    onOrdersChange?.(pending)
+    onOrdersChange?.(countShopPending(merged, new Set((sems || []).map(s => s.title))))
     // טעינת חבילות
     const { data: bundleData } = await supabase
       .from('announcements').select('id, title, price, bundle_items, created_at')
@@ -782,8 +791,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     }
 
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'done' } : o))
-    const pending = orders.filter(o => o.id !== order.id && o.status === 'pending').length
-    onOrdersChange?.(pending)
+    onOrdersChange?.(countShopPending(orders.filter(o => o.id !== order.id), new Set(seminars.map(s => s.title))))
   }
 
   async function deleteOrder(order) {
@@ -799,15 +807,14 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       return
     }
     setOrders(prev => prev.filter(o => o.id !== order.id))
-    const pending = orders.filter(o => o.id !== order.id && o.status === 'pending').length
-    onOrdersChange?.(pending)
+    onOrdersChange?.(countShopPending(orders.filter(o => o.id !== order.id), new Set(seminars.map(s => s.title))))
   }
 
   if (loading) return <p className="text-center text-gray-400 py-10">טוען...</p>
 
   // הפרדת הרשמות סמינר מהזמנות מוצרים: לפי התאמת שם לסמינר קיים או לפי notes של הרשמה.
   const seminarTitles = new Set(seminars.map(s => s.title))
-  const isSeminarOrder = o => o._source === 'request' && (seminarTitles.has(o.product_name) || (o.notes || '').startsWith('הרשמה לסמינר'))
+  const isSeminarOrder = o => isSeminarOrderRow(o, seminarTitles)
   const productOrders = orders.filter(o => !isSeminarOrder(o))
   const pendingProductOrders = productOrders.filter(o => o.status === 'pending').length
 

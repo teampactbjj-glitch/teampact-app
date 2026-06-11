@@ -777,16 +777,19 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
                   ) : pr.current != null && (
                     <p className="text-sm font-bold text-emerald-600 mt-2">₪{pr.current}</p>
                   )}
-                  <button onClick={() => handleOrder(item)} disabled={orderingId === item.id}
-                    className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${
-                      orderedDone.has(item.id) ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                      : ordered.has(item.id) ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
-                    {orderingId === item.id ? '...'
-                      : orderedDone.has(item.id) ? '✅ נרשמת — התשלום אושר'
-                      : ordered.has(item.id) ? '⏳ נרשמת — ממתין לאישור (לחץ לביטול)'
-                      : `להירשם לסמינר${pr.current != null ? ` · ₪${pr.current}` : ''}`}
-                  </button>
+                  {/* כפתור הרשמה פנימי — מוצג רק אם המנהל לא כיבה "הרשמה דרך האפליקציה" (אירוע חיצוני עם קישורי הרשמה/תשלום) */}
+                  {item.allow_app_registration !== false && (
+                    <button onClick={() => handleOrder(item)} disabled={orderingId === item.id}
+                      className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${
+                        orderedDone.has(item.id) ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                        : ordered.has(item.id) ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
+                      {orderingId === item.id ? '...'
+                        : orderedDone.has(item.id) ? '✅ נרשמת — התשלום אושר'
+                        : ordered.has(item.id) ? '⏳ נרשמת — ממתין לאישור (לחץ לביטול)'
+                        : `להירשם לסמינר${pr.current != null ? ` · ₪${pr.current}` : ''}`}
+                    </button>
+                  )}
                 </div>
               </div>
         )
@@ -2248,7 +2251,7 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAnnouncements() {
     const statusFilter = 'status.eq.approved,status.is.null'
     const [itemsRes, generalRes] = await Promise.all([
-      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items, links').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items, links, allow_app_registration').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
       supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids, links').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
     ])
     setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])

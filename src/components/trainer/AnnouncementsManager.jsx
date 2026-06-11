@@ -59,13 +59,14 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       image_url: item.image_url || '',
       branch_ids: Array.isArray(item.branch_ids) ? item.branch_ids : [],
       links: Array.isArray(item.links) ? item.links : [],
+      allow_app_registration: item.allow_app_registration !== false,
     })
     setShowForm(true)
   }
 
   function openAdd() {
     setEditingId(null)
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [] })
+    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [], allow_app_registration: true })
     setShowForm(true)
   }
 
@@ -116,7 +117,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   async function fetchAnnouncements() {
     setLoading(true)
-    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids, links')
+    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids, links, allow_app_registration')
       .in('type', ['general', 'announcement', 'seminar'])
       .order('created_at', { ascending: false })
     setItems(data || [])
@@ -268,6 +269,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       image_url: '',
       branch_ids: [],
       links: [],
+      allow_app_registration: true,
     })
     setShowForm(true)
   }
@@ -288,6 +290,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       ...(form.type === 'seminar' && form.price      ? { price: parseFloat(form.price) } : {}),
       ...(form.type === 'seminar' ? { early_price: form.early_price ? parseFloat(form.early_price) : null } : {}),
       ...(form.type === 'seminar' ? { early_price_deadline: form.early_price_deadline || null } : {}),
+      ...(form.type === 'seminar' ? { allow_app_registration: form.allow_app_registration !== false } : {}),
       ...(form.image_url ? { image_url: form.image_url } : {}),
     }
     if (editingId) {
@@ -329,7 +332,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
           .catch(() => {})
       }
     }
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [] })
+    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [], allow_app_registration: true })
     setEditingId(null)
     setShowForm(false)
     fetchAnnouncements()
@@ -498,6 +501,18 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                   המתאמנים יראו: עד {new Date(form.early_price_deadline + 'T00:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })} — ₪{form.early_price} · אחרי — ₪{form.price}
                 </p>
               )}
+              {/* הרשמה דרך האפליקציה: לכבות כשהאירוע חיצוני (תחרות/אינטרקלאב) וההרשמה/תשלום בקישור חיצוני */}
+              <label className={`flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition ${form.allow_app_registration !== false ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-gray-50'}`}>
+                <input type="checkbox" checked={form.allow_app_registration !== false}
+                  onChange={e => setForm(p => ({ ...p, allow_app_registration: e.target.checked }))}
+                  className="accent-emerald-600 mt-0.5" />
+                <span className="text-sm">
+                  <span className="font-medium">הרשמה דרך האפליקציה</span>
+                  <span className="block text-[11px] text-gray-500">
+                    מציג למתאמן כפתור ירוק "להירשם לסמינר" והתשלום באקדמיה. לכבות כשההרשמה חיצונית (תחרות / אינטרקלאב עם קישור הרשמה ותשלום) — יוצגו רק כפתורי הקישור.
+                  </span>
+                </span>
+              </label>
             </>
           )}
           {/* קישורים מובנים — מוצגים למתאמן ככפתורים. אופציונלי: לינק שמודבק בטקסט התוכן ממילא הופך לחיץ אוטומטית. */}
@@ -552,7 +567,10 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       ) : (
         <ul className="space-y-3">
           {items.map(item => (
-            <li key={item.id} className="bg-white border rounded-xl p-4 shadow-sm">
+            <li key={item.id} className="bg-white border rounded-xl overflow-hidden shadow-sm">
+              {/* תמונת ההודעה/הסמינר — כמו בתצוגת המתאמן */}
+              {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-72 object-contain bg-gray-50" loading="lazy" />}
+              <div className="p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -669,6 +687,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                   </div>
                 )
               })()}
+              </div>
             </li>
           ))}
         </ul>

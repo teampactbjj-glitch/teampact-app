@@ -394,38 +394,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
     onChange?.()
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-gray-800">הודעות וסמינרים</h2>
-        <button onClick={() => showForm ? setShowForm(false) : openAdd()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
-          {showForm ? 'ביטול' : '+ פרסם הודעה חדשה'}
-        </button>
-      </div>
-
-      {/* קיצורי מבחן ילדים יוני */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-        <div className="text-xs font-bold text-amber-900 mb-2">🥋 קיצורים — מבחן ילדים יוני</div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => applyKidsTestTemplate('month_before')}
-            className="text-xs bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-lg"
-          >📅 חודש לפני המבחן</button>
-          <button
-            type="button"
-            onClick={() => applyKidsTestTemplate('week_before')}
-            className="text-xs bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-lg"
-          >🥋 שבוע לפני (כולל סילבוס)</button>
-          <button
-            type="button"
-            onClick={() => applyKidsTestTemplate('day_after')}
-            className="text-xs bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-lg"
-          >🎉 יום אחרי המבחן</button>
-        </div>
-      </div>
-
-      {showForm && (
+  // טופס פרסום/עריכה — מרונדר למעלה (הודעה חדשה) או מתחת לאירוע שנערך (עריכה)
+  const editorCard = (
         <div className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
           <fieldset className="space-y-1">
             <legend className="text-xs font-medium text-gray-600">סוג הפרסום</legend>
@@ -566,7 +536,40 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
             <button onClick={() => setShowForm(false)} className="flex-1 border py-2 rounded-lg text-sm">ביטול</button>
           </div>
         </div>
-      )}
+  )
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-800">הודעות וסמינרים</h2>
+        <button onClick={() => showForm ? setShowForm(false) : openAdd()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
+          {showForm ? 'ביטול' : '+ פרסם הודעה חדשה'}
+        </button>
+      </div>
+
+      {/* קיצורי מבחן ילדים יוני */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+        <div className="text-xs font-bold text-amber-900 mb-2">🥋 קיצורים — מבחן ילדים יוני</div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => applyKidsTestTemplate('month_before')}
+            className="text-xs bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-lg"
+          >📅 חודש לפני המבחן</button>
+          <button
+            type="button"
+            onClick={() => applyKidsTestTemplate('week_before')}
+            className="text-xs bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-lg"
+          >🥋 שבוע לפני (כולל סילבוס)</button>
+          <button
+            type="button"
+            onClick={() => applyKidsTestTemplate('day_after')}
+            className="text-xs bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-lg"
+          >🎉 יום אחרי המבחן</button>
+        </div>
+      </div>
+
+      {showForm && !editingId && editorCard}
 
       {loading ? (
         <p className="text-center text-gray-400 py-8">טוען...</p>
@@ -696,6 +699,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                   </div>
                 )
               })()}
+              {/* טופס עריכה — נפתח מתחת לאירוע שנערך */}
+              {showForm && editingId === item.id && <div className="mt-3 border-t pt-3">{editorCard}</div>}
               </div>
             </li>
           ))}

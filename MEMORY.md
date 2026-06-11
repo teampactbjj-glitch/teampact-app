@@ -19,6 +19,9 @@
 **הגנה קריטית (היסטוריית member.id vs profile.id):** במתאמן, אם `member.id !== profile.id` (חשבון email-linked) — חוסמים שינוי מייל ומפנים למנהל, כי שינוי מייל היה מנתק את הקישור לרשומה. **בדיקה בפרודקשן: 134 id-linked, 0 email-linked** → ההגנה לא תופעל בפועל, רשת ביטחון בלבד.
 **מגבלת חבילה חינמית:** SMTP מובנה ~3-4 מיילים/שעה. שינוי מייל נדיר → לא בעיה.
 
+### פיצ'ר נוסף — "שכחתי סיסמה" במסך כניסת הצוות ✅
+היה רק ב-`AthleteLogin`. נוסף גם ל-`TrainerLogin.jsx` (מאמן/מזכירה/מנהל): `handleForgot` עם `resetPasswordForEmail` + כפתור. השער הגלובלי ב-`App.jsx` (`isPasswordRecovery` לפי `type=recovery`) מנתב את כולם ישר ל-`ResetPasswordPage` — זהה לכל התפקידים.
+
 ### My last pending task
 הכל נדחף ל-main (קומיט בסשן זה). **ממתין לדודי:** (1) להריץ ב-Vercel — לוודא ש-build עבר. (2) להריץ את ה-SQL של Realtime ב-Supabase (אופציונלי — לרענון מיידי במקום עד 60ש'). (3) hard-refresh + Unregister Service Worker אם ה-PWA לא מתעדכן.
 

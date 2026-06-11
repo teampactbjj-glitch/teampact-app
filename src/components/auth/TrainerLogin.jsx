@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import InstallBanner from '../InstallBanner'
-import { Field } from '../a11y'
+import { Field, useToast } from '../a11y'
 
 export default function TrainerLogin({ onSwitch }) {
   const [email, setEmail] = useState('')
@@ -9,6 +9,7 @@ export default function TrainerLogin({ onSwitch }) {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const toast = useToast()
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -17,6 +18,18 @@ export default function TrainerLogin({ onSwitch }) {
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
     if (error) setError(error.message)
     setLoading(false)
+  }
+
+  async function handleForgot() {
+    if (!email.trim()) { setError('הזן מייל קודם'); return }
+    setError('')
+    setLoading(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: window.location.origin + '/',
+    })
+    setLoading(false)
+    if (error) setError(error.message)
+    else toast.success('קישור לאיפוס סיסמה נשלח למייל שלך')
   }
 
   return (
@@ -89,6 +102,13 @@ export default function TrainerLogin({ onSwitch }) {
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition disabled:opacity-50 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-300"
           >
             {loading ? 'מתחבר...' : 'כניסה'}
+          </button>
+          <button
+            type="button"
+            onClick={handleForgot}
+            className="w-full text-xs text-gray-600 hover:text-red-700 underline text-center focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-red-400 rounded"
+          >
+            שכחתי סיסמה
           </button>
         </form>
         <button

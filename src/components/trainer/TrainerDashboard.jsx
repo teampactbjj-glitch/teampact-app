@@ -14,6 +14,7 @@ import AdminSettings from './AdminSettings'
 import BottomNav from '../BottomNav'
 import InstallBanner from '../InstallBanner'
 import EnablePushBanner from '../EnablePushBanner'
+import BirthdayBanner from '../BirthdayBanner'
 import { supabase } from '../../lib/supabase'
 import { notifyPush } from '../../lib/notifyPush'
 import { getBeltLabel } from '../../lib/belts'
@@ -83,10 +84,28 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
   const [athleteDeletionCount, setAthleteDeletionCount] = useState(0) // בקשות מחיקת מתאמנים (אדמין בלבד)
   const [pendingCoachesCount, setPendingCoachesCount] = useState(0)   // בקשות מאמנים ממתינות (אדמין בלבד)
   const [toast, setToast] = useState(null) // { name, id, kind }
+  const [coachBirthDate, setCoachBirthDate] = useState(null) // תאריך לידה של המאמן המחובר (coaches.birth_date)
 
   const lastSeenKey = profile?.id ? `announcements_last_seen_${profile.id}` : null
 
   useEffect(() => { refreshCounts() }, [])
+
+  // שליפת תאריך הלידה של המאמן המחובר — לבאנר יום ההולדת.
+  // אם אין שורת coach או אין birth_date — פשוט לא יוצג באנר.
+  useEffect(() => {
+    if (!profile?.id) return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('coaches')
+        .select('birth_date')
+        .eq('user_id', profile.id)
+        .maybeSingle()
+      if (error) { console.warn('[birthday] coach birth_date fetch error:', error.message); return }
+      if (!cancelled) setCoachBirthDate(data?.birth_date || null)
+    })()
+    return () => { cancelled = true }
+  }, [profile?.id])
 
   // ============================================================
   // 🎓 Lazy execution של אירועי קידום שעבר תאריכם
@@ -391,6 +410,12 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
       dir="rtl"
       style={{ height: '100dvh', minHeight: '100vh' }}
     >
+      {/* באנר יום הולדת צף — מוצג רק למאמן החוגג ביום ההולדת שלו, פעם ביום */}
+      <BirthdayBanner
+        name={profile?.full_name}
+        birthDate={coachBirthDate}
+        userId={profile?.id}
+      />
       {toast && (() => {
         const isDeletion = toast.kind === 'deletion'
         const bg = isDeletion ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'

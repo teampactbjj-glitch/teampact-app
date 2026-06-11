@@ -55,6 +55,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   const confirm = useConfirm()
   const [products, setProducts] = useState([])
   const [orders, setOrders] = useState([])
+  const [seminars, setSeminars] = useState([])  // סמינרים — לסינון הרשמות סמינר מתוך בקשות ההזמנה (מנוהלות בהודעות וסמינרים)
   const [tab, setTab] = useState(isAdmin ? 'orders' : 'products')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -234,12 +235,14 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       setLoading(false)
       return
     }
-    const [{ data: prods }, { data: ords1 }, { data: ords2 }] = await Promise.all([
+    const [{ data: prods }, { data: ords1 }, { data: ords2 }, { data: sems }] = await Promise.all([
       supabase.from('announcements').select('*').eq('type', 'product').is('deleted_at', null).order('created_at', { ascending: false }),
       supabase.from('product_orders').select('*, members(full_name, phone)').is('deleted_at', null).order('created_at', { ascending: false }),
       supabase.from('product_requests').select('*').order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, title, event_date, price, early_price, early_price_deadline, created_at').eq('type', 'seminar').is('deleted_at', null).order('created_at', { ascending: false }),
     ])
     setProducts(prods || [])
+    setSeminars(sems || [])
     // מיזוג: orders (הישן) + requests (החדש) - שומר את כל הפרטים (מידה, צבע, מחיר, הערות)
     const merged = [
       ...(ords1 || []).map(o => ({ ...o, _source: 'order' })),
@@ -802,13 +805,19 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
   if (loading) return <p className="text-center text-gray-400 py-10">טוען...</p>
 
+  // הפרדת הרשמות סמינר מהזמנות מוצרים: לפי התאמת שם לסמינר קיים או לפי notes של הרשמה.
+  const seminarTitles = new Set(seminars.map(s => s.title))
+  const isSeminarOrder = o => o._source === 'request' && (seminarTitles.has(o.product_name) || (o.notes || '').startsWith('הרשמה לסמינר'))
+  const productOrders = orders.filter(o => !isSeminarOrder(o))
+  const pendingProductOrders = productOrders.filter(o => o.status === 'pending').length
+
   return (
     <div className="space-y-4">
       {isAdmin && (
         <div className="flex gap-2 border-b pb-2 flex-wrap">
           <button onClick={() => setTab('orders')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === 'orders' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
-            בקשות הזמנה {orders.filter(o => o.status === 'pending').length > 0 && `(${orders.filter(o => o.status === 'pending').length})`}
+            בקשות הזמנה {pendingProductOrders > 0 && `(${pendingProductOrders})`}
           </button>
           <button onClick={() => setTab('products')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === 'products' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>
@@ -823,10 +832,10 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
 
       {isAdmin && tab === 'orders' && (
         <div className="space-y-3">
-          {orders.length === 0 ? (
+          {productOrders.length === 0 ? (
             <div className="text-center py-12 text-gray-400"><div className="text-4xl mb-2">📭</div><p>אין הזמנות עדיין</p></div>
           ) : (
-            orders.map(order => (
+            productOrders.map(order => (
               <div key={order.id} className="bg-white border rounded-xl p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">

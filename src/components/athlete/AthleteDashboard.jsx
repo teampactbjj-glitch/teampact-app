@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import BottomNav from '../BottomNav'
 import InstallBanner from '../InstallBanner'
 import EnablePushBanner from '../EnablePushBanner'
+import BirthdayBanner from '../BirthdayBanner'
 import { isStandalone } from '../../lib/platform'
 import { notifyPush } from '../../lib/notifyPush'
 import { allTrainerUserIds } from '../../lib/notifyTargets'
@@ -57,6 +58,76 @@ function resolveNextOccurrence(cls) {
 // (בעבר הוגבל ליום שישי 06:00 ואילך, הוסר לבקשת בעל המערכת.)
 function isNextWeekRegistrationOpen(now = new Date()) {
   return true
+}
+
+// רשימת הנרשמים לשיעור — נשלפת דרך RPC מאובטח (get_class_registrants) כי
+// ה-RLS של class_registrations מאפשר למתאמן לראות רק את הרישומים של עצמו.
+// ה-RPC (SECURITY DEFINER) מאמת שהקורא הוא מתאמן פעיל בסניף של השיעור (או מאמן),
+// ומחזיר שמות מלאים בלבד + דגל יומולדת 🎂 — בלי טלפון/אימייל/פרטים רגישים.
+// העוגה מוצגת מהיומולדת ועד השיעור הראשון שהחוגג נרשם אליו אחריו, גג שבוע.
+function ClassRegistrants({ classId, weekStart, classDate }) {
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [list, setList] = useState(null)
+
+  // החלפת שיעור/תאריך/שבוע — איפוס הרשימה כדי לא להציג נתונים של הקשר קודם
+  useEffect(() => { setList(null); setOpen(false) }, [classId, weekStart, classDate])
+
+  async function toggle() {
+    if (open) { setOpen(false); return }
+    setOpen(true)
+    if (list !== null) return
+    setLoading(true)
+    try {
+      const { data, error } = await supabase.rpc('get_class_registrants', {
+        p_class_id: classId,
+        p_week_start: weekStart,
+        p_class_date: classDate,
+      })
+      if (error) throw error
+      setList(data || [])
+    } catch (err) {
+      console.error('get_class_registrants error:', err)
+      setList([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={toggle}
+        className="w-full flex items-center justify-between px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold transition"
+      >
+        <span>👥 מי נרשם לשיעור?</span>
+        <span className="text-gray-400">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mt-1">
+          {loading ? (
+            <p className="text-xs text-gray-400 text-center py-1">טוען...</p>
+          ) : !list || list.length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-1">עדיין אין נרשמים לשיעור הזה</p>
+          ) : (
+            <>
+              <p className="text-[10px] text-gray-400 font-bold mb-2">{list.length} נרשמו</p>
+              <ul className="space-y-1.5">
+                {list.map((r, i) => (
+                  <li key={i} className="text-xs text-gray-700 flex items-center gap-1.5">
+                    <span className="text-gray-300">•</span>
+                    <span className="font-medium">{r.full_name}</span>
+                    {r.is_birthday && <span title="יומולדת! 🎉">🎂</span>}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ScheduleTab({ member, limit, registrations, registrationsNext, onRegister, branchesMap }) {
@@ -194,6 +265,20 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
         .filter(c => c.day_of_week === selectedDow)
         .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
     : []
+
+  // week_start של השבוע שאליו שייך התאריך הנבחר (יום ראשון, אותה קונבנציה
+  // כמו getWeekStart — toISOString) + מחרוזת תאריך מקומית של היום הנבחר.
+  // שניהם משמשים את רשימת הנרשמים (ClassRegistrants) — כך הרשימה נכונה
+  // גם לימים בשבוע שעבר/הבא בסטריפ התאריכים.
+  const selectedWeekStart = selectedDate ? (() => {
+    const d = new Date(selectedDate)
+    d.setDate(d.getDate() - d.getDay())
+    d.setHours(0, 0, 0, 0)
+    return d.toISOString().split('T')[0]
+  })() : null
+  const selectedDateStr = selectedDate
+    ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`
+    : null
 
   // בדיקה אם תאריך/שעת שיעור בעבר (חוסם הרשמה לעבר)
   const isPastDate = (d) => d < today
@@ -373,7 +458,8 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
               const atRegLimit = !isReg && !isOpenMatClass(cls) && activeEffectiveCount >= limit && limit !== Infinity
               const disabled = actionBlocked || (atRegLimit && !isReg)
               return (
-                <button key={cls.id} onClick={() => !actionBlocked && onRegister(cls, weekMode)} disabled={disabled}
+                <div key={cls.id}>
+                <button onClick={() => !actionBlocked && onRegister(cls, weekMode)} disabled={disabled}
                   className={`w-full flex items-center justify-between p-4 rounded-2xl transition shadow-sm ${
                     actionBlocked
                       ? 'bg-gray-50 text-gray-400 cursor-not-allowed opacity-60'
@@ -411,6 +497,12 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
                       : '+ הירשם'}
                   </span>
                 </button>
+                <ClassRegistrants
+                  classId={cls.id}
+                  weekStart={selectedWeekStart}
+                  classDate={selectedDateStr}
+                />
+                </div>
               )
             })
           )}
@@ -479,6 +571,9 @@ function AnnouncementsTab({ announcements, profile, member }) {
     try { return new Set(JSON.parse(localStorage.getItem(storageKey) || '[]')) } catch { return new Set() }
   })
   const [orderingId, setOrderingId] = useState(null)
+  // הזמנות סמינר שהמנהל סימן כ"הושלמו" (status='done') — הכפתור הופך ל"✅ ההזמנה הושלמה".
+  // בלי ה-state הזה הקומפוננטה קרסה ב-ReferenceError כי orderedDone היה מוגדר רק ב-ShopTab.
+  const [orderedDone, setOrderedDone] = useState(new Set())
 
   useEffect(() => {
     if (!storageKey) return
@@ -492,12 +587,27 @@ function AnnouncementsTab({ announcements, profile, member }) {
       .eq('athlete_id', profile.id)
       .then(({ data }) => {
         const pendingNames = new Set((data || []).filter(r => r.status !== 'done').map(r => r.product_name))
-        const ids = seminars.filter(p => pendingNames.has(p.title)).map(p => p.id)
+        const doneNames    = new Set((data || []).filter(r => r.status === 'done').map(r => r.product_name))
+        const ids     = seminars.filter(p => pendingNames.has(p.title)).map(p => p.id)
+        const doneIds = seminars.filter(p => doneNames.has(p.title)).map(p => p.id)
         setOrdered(new Set(ids))
+        setOrderedDone(new Set(doneIds))
       })
   }, [profile?.id, seminars.length])
 
+  // מחיר אפקטיבי לסמינר: אם הוגדר מחיר מוקדם ותאריך תפוגה — עד התאריך (כולל) המחיר המוקדם,
+  // אחריו המחיר הרגיל. אם אין מחיר מוקדם — המחיר הרגיל.
+  function seminarPricing(item) {
+    const early = item.early_price != null ? Number(item.early_price) : null
+    const regular = item.price != null ? Number(item.price) : null
+    const deadline = item.early_price_deadline ? new Date(item.early_price_deadline + 'T23:59:59') : null
+    const earlyActive = early != null && deadline != null && new Date() <= deadline
+    const current = earlyActive ? early : (regular != null ? regular : early)
+    return { early, regular, deadline, earlyActive, current }
+  }
+
   async function handleOrder(item) {
+    if (orderedDone.has(item.id)) return // הזמנה שהושלמה — אין מה לבטל
     if (ordered.has(item.id)) {
       const ok = await confirm({ title: 'ביטול הזמנה', message: `לבטל את ההזמנה של "${item.title}"?`, confirmText: 'בטל הזמנה', danger: true })
       if (!ok) return
@@ -511,24 +621,39 @@ function AnnouncementsTab({ announcements, profile, member }) {
       setOrderingId(null)
       return
     }
+    // דיאלוג אישור הרשמה — מציג תאריך + המחיר שנקבע לפי מועד ההרשמה. התשלום פיזי באקדמיה.
+    const pr = seminarPricing(item)
+    const confirmParts = []
+    if (item.event_date) confirmParts.push(`תאריך: ${new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}`)
+    if (pr.current != null) confirmParts.push(`מחיר: ₪${pr.current}${pr.earlyActive ? ' (מחיר מוקדם)' : ''}`)
+    confirmParts.push('התשלום יתבצע באקדמיה')
+    const okReg = await confirm({
+      title: `הרשמה ל"${item.title}"`,
+      message: confirmParts.join(' · '),
+      confirmText: 'אישור הרשמה',
+    })
+    if (!okReg) return
     setOrderingId(item.id)
     const { error } = await supabase.from('product_requests').insert({
       product_name: item.title,
       athlete_id: profile?.id || null,
       athlete_name: athleteName,
       status: 'pending',
+      notes: `הרשמה לסמינר${pr.earlyActive ? ' · מחיר מוקדם' : ''}`,
+      ...(pr.current != null ? { unit_price: pr.current, total_price: pr.current } : {}),
     })
     if (error) { console.error('order error:', error); toast.error('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
     else {
       setOrdered(prev => new Set([...prev, item.id]))
-      // בניית גוף התראה - גם לסמינרים נוסיף מחיר/תיאור אם קיימים
-      const bodyParts = [`${athleteName} הזמין: ${item.title}`]
-      if (item.price != null) bodyParts.push(`מחיר: ₪${item.price}`)
+      toast.success('נרשמת לסמינר! התשלום יתבצע באקדמיה')
+      // בניית גוף התראה - כולל המחיר האפקטיבי לפי מועד ההרשמה
+      const bodyParts = [`${athleteName} נרשם לסמינר: ${item.title}`]
+      if (pr.current != null) bodyParts.push(`מחיר: ₪${pr.current}${pr.earlyActive ? ' (מוקדם)' : ''}`)
       if (item.event_date) bodyParts.push(`תאריך: ${new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}`)
       allTrainerUserIds()
         .then(ids => notifyPush({
           userIds: ids,
-          title: '🎓 הזמנה חדשה לסמינר',
+          title: '🎓 הרשמה חדשה לסמינר',
           body: bodyParts.join(' · '),
           url: '/#shop',
           tag: `order:${Date.now()}`,
@@ -562,7 +687,10 @@ function AnnouncementsTab({ announcements, profile, member }) {
         <div>
           <h3 className="font-bold text-gray-700 text-sm mb-3">🎓 סמינרים ואירועים</h3>
           <div className="space-y-3">
-            {seminars.map(item => (
+            {seminars.map(item => {
+              const pr = seminarPricing(item)
+              const fmtD = d => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
+              return (
               <div key={item.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
                 {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" loading="lazy" />}
                 <div className="p-4">
@@ -572,20 +700,33 @@ function AnnouncementsTab({ announcements, profile, member }) {
                   </div>
                   <p className="font-semibold text-gray-800">{item.title}</p>
                   {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
-                  {item.price != null && <p className="text-sm font-bold text-emerald-600 mt-2">₪{item.price}</p>}
+                  {/* תמחור: אם יש מחיר מוקדם — מציגים את שני המחירים, הנוכחי מודגש והשני מחוק/אפור */}
+                  {pr.early != null && pr.deadline && pr.regular != null ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                      <span className={pr.earlyActive ? 'font-bold text-emerald-600' : 'text-gray-400 line-through'}>
+                        עד {fmtD(pr.deadline)} — ₪{pr.early}
+                      </span>
+                      <span className={pr.earlyActive ? 'text-gray-500' : 'font-bold text-emerald-600'}>
+                        אחרי — ₪{pr.regular}
+                      </span>
+                      {pr.earlyActive && <span className="text-[11px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">מחיר מוקדם בתוקף!</span>}
+                    </div>
+                  ) : pr.current != null && (
+                    <p className="text-sm font-bold text-emerald-600 mt-2">₪{pr.current}</p>
+                  )}
                   <button onClick={() => handleOrder(item)} disabled={orderingId === item.id}
                     className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${
                       orderedDone.has(item.id) ? 'bg-emerald-100 text-emerald-700 cursor-default'
                       : ordered.has(item.id) ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
                     {orderingId === item.id ? '...'
-                      : orderedDone.has(item.id) ? '✅ ההזמנה הושלמה'
-                      : ordered.has(item.id) ? '⏳ ממתין לאישור (לחץ לביטול)'
-                      : 'לפרטים ורכישה'}
+                      : orderedDone.has(item.id) ? '✅ נרשמת — התשלום אושר'
+                      : ordered.has(item.id) ? '⏳ נרשמת — ממתין לאישור (לחץ לביטול)'
+                      : `להירשם לסמינר${pr.current != null ? ` · ₪${pr.current}` : ''}`}
                   </button>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         </div>
       )}
@@ -2036,7 +2177,7 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAnnouncements() {
     const statusFilter = 'status.eq.approved,status.is.null'
     const [itemsRes, generalRes] = await Promise.all([
-      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
       supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
     ])
     setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])
@@ -2230,6 +2371,12 @@ export default function AthleteDashboard({ profile }) {
       dir="rtl"
       style={{ height: '100dvh', minHeight: '100vh' }}
     >
+      {/* באנר יום הולדת צף — מוצג רק לחוגג ביום ההולדת שלו, פעם ביום */}
+      <BirthdayBanner
+        name={member?.full_name || profile?.full_name}
+        birthDate={member?.birth_date}
+        userId={profile?.id}
+      />
       <header className="shrink-0 bg-gradient-to-br from-black via-neutral-900 to-red-900 text-white px-5 py-2 shadow-lg safe-area-header">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

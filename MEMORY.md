@@ -3353,6 +3353,40 @@ CREATE POLICY "app_settings_update" ON public.app_settings FOR UPDATE USING (aut
 DELETE FROM public.branches WHERE name = 'קאנטרי';
 ```
 
+## (טופל — נדחף ב-11.06 ערב) פיצ'ר יומולדת
+**פיצ'ר יומולדת 🎂 + רשימת נרשמים — קוד נכתב, ממתין לבדיקה לוקאלית של המשתמש (11.06.2026):**
+
+ההחלטות שסוכמו:
+- ברכת יומולדת לחוגג בלבד: באנר צף (נעלם אחרי 12 שנ', פעם ביום) + push בבוקר מ"TeamPact Academy".
+- התראת push רק למאמנים שהחוגג נרשם לשיעורים שלהם ב-5 השבועות האחרונים (לא כל המאמנים).
+- רשימת נרשמים לשיעור גלויה לכל מתאמן באותו סניף, שמות מלאים, 🎂 ליד חוגג מהיומולדת עד השיעור הראשון שנרשם אליו (גג שבוע).
+
+מה נעשה:
+1. `src/components/BirthdayBanner.jsx` (חדש) — באנר צף, localStorage פעם-ביום.
+2. `src/components/athlete/AthleteDashboard.jsx` — באנר לחוגג + קומפוננטת `ClassRegistrants` (כפתור "👥 מי נרשם לשיעור?" מתחת לכל שיעור בתצוגת היום, RPC `get_class_registrants`).
+3. `src/components/trainer/TrainerDashboard.jsx` — באנר למאמן חוגג (שולף `coaches.birth_date`).
+4. `supabase/migrations/birthday_feature.sql` (חדש) — `coaches.birth_date`, policy `coaches_select_self`, RPC `get_class_registrants` (SECURITY DEFINER, מחזיר רק שם+דגל יומולדת), `send_birthday_pushes()` + pg_cron יומי 05:00 UTC (08:00 קיץ ישראל).
+
+סטטוס:
+- ✅ `npx vite build` עבר נקי (נבנה ל-outDir זמני — בסנדבוקס אין הרשאת מחיקה ל-dist).
+- ⏳ ממתין: המשתמש צריך (א) להריץ את ה-SQL ב-Supabase SQL Editor, (ב) לבדוק `npm run dev` לוקאלית, (ג) לאשר דחיפה. **לא בוצע commit/push עדיין!**
+- הערות: יומולדת מאמנים דורש מילוי `coaches.birth_date` ידנית (אין UI לזה כרגע — אפשר להוסיף ב-CoachesManager בהמשך). שעת ה-push בחורף תהיה 07:00 (cron ב-UTC).
+
+---
+
+## סשן 11.06.2026 (ערב) — סמינרים: תיקון קריסה + הרשמה + מחיר מוקדם + ניהול נרשמים
+
+### מה תוקן/נוסף (כל הקוד נבדק לוקאלית ע"י המשתמש ואושר לדחיפה):
+1. **באג קריטי — קריסת טאב הודעות אצל מתאמנים:** `orderedDone` היה בשימוש ב-`AnnouncementsTab` אבל מוגדר רק ב-`ShopTab` → ReferenceError בכל פעם שיש סמינר פעיל. תוקן (state + טעינה מ-product_requests).
+2. **מחיר מוקדם (Early Bird):** עמודות חדשות `early_price`, `early_price_deadline` ב-announcements (מיגרציה: `src/lib/migration-seminar-early-price.sql` — ✅ הורצה ב-Supabase ע"י המשתמש). טופס המנהל כולל שדות מחיר מוקדם + תוקף.
+3. **הרשמה לסמינר:** כפתור "להירשם לסמינר · ₪X" + דיאלוג אישור (תאריך, מחיר לפי מועד, "התשלום יתבצע באקדמיה") לפני יצירת ההרשמה. המחיר נשמר ב-unit_price/total_price. תוקן גם: event_date לא נטען בשאילתת המתאמן.
+4. **ניהול נרשמים — בתוך "הודעות וסמינרים" (לא בחנות!):** מתחת לכל סמינר (מנהל): סיכום נרשמו/שולם/לא שולם + רשימה עם תג אדום "לא שולם" + כפתור ירוק "💰 סמן כשולם" (שולם = status 'done'; ברירת מחדל pending = לא שולם). הרשמות סמינר סוננו החוצה מ"בקשות הזמנה" בחנות.
+5. **כפתור "🔔 שלח התראה"** על כל הודעה/סמינר (מנהל) — שולח push מחדש לקהל היעד. נוצר כי ההתראה המקורית על הסמינר פוספסה בגלל הקריסה.
+6. נדחף יחד עם פיצ'ר היומולדת 🎂 מהסשן הקודם (ה-SQL שלו ב-`supabase/migrations/birthday_feature.sql` — עדיין ממתין להרצה ע"י המשתמש אם לא הורץ).
+
 ## My last pending task
-**אין משימות תלויות** — הכל דחוף לפרודקשן ומוכן.
-Commits: `a8e7dfc` (feat: network visitors, dynamic VAT) + commit הגדרות מנהל (ממתין לאישור דחיפה מהמשתמש).
+**הכול נדחף לפרודקשן (ראה commit אחרון ב-git log).** נשאר למשתמש:
+1. לוודא build ירוק ב-Vercel + hard refresh (PWA: Unregister ל-Service Worker).
+2. ללחוץ "🔔 שלח התראה" על הסמינר כדי לשלוח מחדש את ההתראה שפוספסה.
+3. אם טרם הורץ — להריץ את `supabase/migrations/birthday_feature.sql` להפעלת פיצ'ר היומולדת.
+4. תיקיית `dist-seminar-check/` בשורש נוצרה בטעות בבדיקת build — לא בגיט, אפשר למחוק ידנית.

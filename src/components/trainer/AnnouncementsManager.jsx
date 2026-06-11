@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { uploadToCloudinary } from '../../lib/cloudinary'
 import { notifyPush } from '../../lib/notifyPush'
 import { allActiveAthleteUserIds, allAdminUserIds, athleteUserIdsForBranches } from '../../lib/notifyTargets'
-import { useToast } from '../a11y'
+import { useToast, useConfirm } from '../a11y'
 
 const TYPE_OPTIONS = [
   { value: 'general',  label: '📢 הודעה כללית (שינוי לו"ז / סגירה)' },
@@ -26,10 +26,16 @@ const TYPE_COLORS = {
 
 export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const [items, setItems]       = useState([])
+  // הרשמות לסמינרים (product_requests) — מוצגות למנהל מתחת לכל סמינר
+  const [seminarRequests, setSeminarRequests] = useState([])
+  const [expandedSeminarId, setExpandedSeminarId] = useState(null)
+  const [togglingPaidId, setTogglingPaidId] = useState(null)
+  const [resendingId, setResendingId] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '', branch_ids: [] })
+  const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [] })
   const [loading, setLoading]   = useState(true)
   const [uploading, setUploading] = useState(false)
   const [branches, setBranches] = useState([])
@@ -48,6 +54,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       type: item.type || 'general',
       event_date: item.event_date ? new Date(item.event_date).toISOString().slice(0, 16) : '',
       price: item.price != null ? String(item.price) : '',
+      early_price: item.early_price != null ? String(item.early_price) : '',
+      early_price_deadline: item.early_price_deadline || '',
       image_url: item.image_url || '',
       branch_ids: Array.isArray(item.branch_ids) ? item.branch_ids : [],
     })
@@ -56,7 +64,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   function openAdd() {
     setEditingId(null)
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '', branch_ids: [] })
+    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [] })
     setShowForm(true)
   }
 
@@ -107,11 +115,68 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   async function fetchAnnouncements() {
     setLoading(true)
-    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids')
+    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, early_price, early_price_deadline, event_date, branch_ids')
       .in('type', ['general', 'announcement', 'seminar'])
       .order('created_at', { ascending: false })
     setItems(data || [])
+    // הרשמות לסמינרים — רק למנהל
+    if (isAdmin) {
+      const { data: reqs } = await supabase.from('product_requests').select('*').order('created_at', { ascending: false })
+      setSeminarRequests(reqs || [])
+    }
     setLoading(false)
+  }
+
+  // ===== ניהול נרשמים לסמינר =====
+  function requestsForSeminar(item) {
+    return seminarRequests.filter(r => r.product_name === item.title)
+  }
+
+  // שולם = status 'done' (המתאמן רואה "✅ נרשמת — התשלום אושר"). לא שולם = 'pending'.
+  async function togglePaid(reg) {
+    const newStatus = reg.status === 'done' ? 'pending' : 'done'
+    setTogglingPaidId(reg.id)
+    const { error } = await supabase.from('product_requests').update({ status: newStatus }).eq('id', reg.id)
+    setTogglingPaidId(null)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    setSeminarRequests(prev => prev.map(r => r.id === reg.id ? { ...r, status: newStatus } : r))
+  }
+
+  // שליחת התראת push מחדש על הודעה/סמינר קיימים — למקרה שההתראה המקורית פוספסה
+  // (למשל כשטאב ההודעות קרס אצל המתאמנים). היעד: לפי הסניפים של ההודעה או כולם.
+  async function resendNotification(item) {
+    const target = Array.isArray(item.branch_ids) && item.branch_ids.length
+      ? `למתאמני ${item.branch_ids.length} הסניפים של ההודעה` : 'לכל המתאמנים הפעילים'
+    const ok = await confirm({
+      title: 'שליחת התראה מחדש',
+      message: `לשלוח שוב התראה על "${item.title}" ${target}?`,
+      confirmText: 'שלח התראה',
+    })
+    if (!ok) return
+    setResendingId(item.id)
+    try {
+      const branchIds = Array.isArray(item.branch_ids) ? item.branch_ids.filter(Boolean) : []
+      const userIds = await (branchIds.length ? athleteUserIdsForBranches(branchIds) : allActiveAthleteUserIds())
+      await notifyPush({
+        userIds,
+        title: item.type === 'seminar' ? '🎓 תזכורת: סמינר' : '📢 תזכורת: הודעה',
+        body: item.title,
+        url: '/#announcements',
+        tag: `announcement-resend:${Date.now()}`,
+      })
+      toast.success('ההתראה נשלחה מחדש!')
+    } catch (e) {
+      toast.error('שגיאה בשליחת ההתראה: ' + (e.message || 'לא ידוע'))
+    }
+    setResendingId(null)
+  }
+
+  async function deleteRegistration(reg) {
+    const ok = await confirm({ title: 'מחיקת הרשמה', message: `למחוק את ההרשמה של ${reg.athlete_name}?`, confirmText: 'מחק', danger: true })
+    if (!ok) return
+    const { error } = await supabase.from('product_requests').delete().eq('id', reg.id)
+    if (error) { toast.error('שגיאה במחיקה: ' + error.message); return }
+    setSeminarRequests(prev => prev.filter(r => r.id !== reg.id))
   }
 
   // ===== קיצורי מבחן ילדים יוני =====
@@ -189,6 +254,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       type: 'general',
       event_date: '',
       price: '',
+      early_price: '',
+      early_price_deadline: '',
       image_url: '',
       branch_ids: [],
     })
@@ -203,6 +270,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       branch_ids: branchIds.length ? branchIds : null,
       ...(form.type === 'seminar' && form.event_date ? { event_date: form.event_date } : {}),
       ...(form.type === 'seminar' && form.price      ? { price: parseFloat(form.price) } : {}),
+      ...(form.type === 'seminar' ? { early_price: form.early_price ? parseFloat(form.early_price) : null } : {}),
+      ...(form.type === 'seminar' ? { early_price_deadline: form.early_price_deadline || null } : {}),
       ...(form.image_url ? { image_url: form.image_url } : {}),
     }
     if (editingId) {
@@ -242,7 +311,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
           .catch(() => {})
       }
     }
-    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', image_url: '', branch_ids: [] })
+    setForm({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [] })
     setEditingId(null)
     setShowForm(false)
     fetchAnnouncements()
@@ -377,10 +446,27 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                   value={form.event_date} onChange={e => setForm(p => ({ ...p, event_date: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">מחיר (₪)</label>
+                <label className="text-xs text-gray-500 mb-1 block">מחיר רגיל (₪)</label>
                 <input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0"
                   value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">מחיר מוקדם (₪) — אופציונלי</label>
+                  <input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="למשל 100"
+                    value={form.early_price} onChange={e => setForm(p => ({ ...p, early_price: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">מחיר מוקדם בתוקף עד (כולל)</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={form.early_price_deadline} onChange={e => setForm(p => ({ ...p, early_price_deadline: e.target.value }))} />
+                </div>
+              </div>
+              {form.early_price && form.early_price_deadline && form.price && (
+                <p className="text-[11px] text-blue-600">
+                  המתאמנים יראו: עד {new Date(form.early_price_deadline + 'T00:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })} — ₪{form.early_price} · אחרי — ₪{form.price}
+                </p>
+              )}
             </>
           )}
           <div className="space-y-2">
@@ -426,6 +512,11 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                     </span>
                     {item.event_date && <span className="text-xs text-gray-400">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</span>}
                     {item.price != null && <span className="text-xs font-bold text-green-600">₪{item.price}</span>}
+                    {item.early_price != null && item.early_price_deadline && (
+                      <span className="text-xs text-blue-600">
+                        מוקדם: ₪{item.early_price} עד {new Date(item.early_price_deadline + 'T00:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}
+                      </span>
+                    )}
                     {item.status === 'pending' && (
                       <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-orange-700">⏳ ממתין לאישור</span>
                     )}
@@ -450,10 +541,85 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                       <button onClick={() => approveItem(item)} className="text-xs bg-green-50 text-green-600 hover:bg-green-100 px-3 py-1.5 rounded-lg">✅ אשר</button>
                     )}
                     <button onClick={() => openEdit(item)} className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">✏️ ערוך</button>
+                    {isAdmin && item.status !== 'pending' && (
+                      <button onClick={() => resendNotification(item)} disabled={resendingId === item.id}
+                        className="text-xs bg-amber-50 text-amber-600 hover:bg-amber-100 px-3 py-1.5 rounded-lg disabled:opacity-50">
+                        {resendingId === item.id ? '...' : '🔔 שלח התראה'}
+                      </button>
+                    )}
                     <button onClick={() => deleteItem(item.id)} className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg">🗑️ מחק</button>
                   </div>
                 )}
               </div>
+              {/* ===== נרשמים לסמינר (מנהל בלבד) ===== */}
+              {isAdmin && item.type === 'seminar' && (() => {
+                const regs = requestsForSeminar(item)
+                const paid = regs.filter(r => r.status === 'done')
+                const unpaid = regs.filter(r => r.status === 'pending')
+                const sum = rows => rows.reduce((s, r) => s + (Number(r.total_price ?? r.unit_price) || 0), 0)
+                const isOpen = expandedSeminarId === item.id
+                return (
+                  <div className="mt-3 border-t pt-3">
+                    <button type="button" onClick={() => setExpandedSeminarId(isOpen ? null : item.id)}
+                      className="w-full flex flex-wrap items-center gap-2 text-right">
+                      <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full font-medium">👥 נרשמו: {regs.length}</span>
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">✓ שולם: {paid.length} (₪{sum(paid)})</span>
+                      <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-medium">⏳ לא שולם: {unpaid.length} (₪{sum(unpaid)})</span>
+                      <span className="text-xs text-blue-600 font-medium mr-auto">{isOpen ? 'הסתר ▲' : 'הצג נרשמים ▼'}</span>
+                    </button>
+                    {isOpen && (
+                      regs.length === 0 ? (
+                        <p className="text-center text-gray-400 text-sm py-4">אין נרשמים עדיין</p>
+                      ) : (
+                        <ul className="divide-y mt-2">
+                          {regs.map(reg => {
+                            const isPaid = reg.status === 'done'
+                            const isCancelled = reg.status === 'cancelled'
+                            return (
+                              <li key={reg.id} className="flex items-center justify-between gap-2 py-2.5">
+                                <div className="min-w-0 flex-1">
+                                  <p className={`text-sm font-medium ${isCancelled ? 'text-red-400 line-through' : 'text-gray-800'}`}>
+                                    {reg.athlete_name || 'לא ידוע'}
+                                  </p>
+                                  <p className="text-[11px] text-gray-400">
+                                    נרשם: {new Date(reg.created_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}
+                                    {(reg.total_price ?? reg.unit_price) != null && <> · ₪{reg.total_price ?? reg.unit_price}</>}
+                                    {(reg.notes || '').includes('מחיר מוקדם') && <span className="text-blue-500"> · מחיר מוקדם</span>}
+                                  </p>
+                                </div>
+                                <div className="flex gap-2 shrink-0 items-center">
+                                  {/* ברירת מחדל: "לא שולם" (תג אדום) + כפתור פעולה ירוק. אחרי תשלום: תג "שולם" + ביטול קטן */}
+                                  {!isCancelled && (isPaid ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-lg font-bold">✓ שולם</span>
+                                      <button onClick={() => togglePaid(reg)} disabled={togglingPaidId === reg.id}
+                                        className="text-[11px] text-gray-400 hover:text-gray-600 underline disabled:opacity-50">
+                                        {togglingPaidId === reg.id ? '...' : 'בטל'}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs bg-red-100 text-red-600 px-2 py-1.5 rounded-lg font-medium">לא שולם</span>
+                                      <button onClick={() => togglePaid(reg)} disabled={togglingPaidId === reg.id}
+                                        className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-bold transition disabled:opacity-50">
+                                        {togglingPaidId === reg.id ? '...' : '💰 סמן כשולם'}
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <button type="button" onClick={() => deleteRegistration(reg)}
+                                    className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1.5 rounded-lg">
+                                    מחק
+                                  </button>
+                                </div>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )
+                    )}
+                  </div>
+                )
+              })()}
             </li>
           ))}
         </ul>

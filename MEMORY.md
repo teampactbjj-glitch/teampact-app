@@ -1,5 +1,55 @@
 # MEMORY - TeamPact App
 
+## ✅ My last completed task — Session 12.06.2026 (מזכירות חולון: דחה + רענון + שינוי מייל)
+
+### באג 1 — כפתור "דחה" מתאמן ממתין למזכירה לא דוחה ✅ נפתר ואומת
+**הבאג:** מזכירת חולון לוחצת "דחה" על נרשם ממתין → לא קורה כלום (כשל שקט).
+**הסיבה:** `rejectPending` ב-`AthleteManagement.jsx` **לא** עודכן בקומיט המחיקה הקודם (`cfa82fe`). למזכירה `isAdmin=true` אז היא עברה ב-branch של `.delete()` ישיר — אבל היא אינה `is_approved_admin`, ו-RLS חוסם DELETE → 0 שורות בלי error.
+**התיקון:** מזכירה (וכל לא-אדמין) עוברת ל-soft-delete (`update deleted_at`) במקום DELETE, + `.select('id')` ובדיקת 0 שורות עם alert. אדמין אמיתי בלבד עושה hard-delete. **דודי בדק עם "מתאמן בדיקה" — עובד.** ✅
+
+### באג 2 — רענון לא אוטומטי (צריך רענון ידני) ✅ נפתר
+**הבאג:** הרשמה חדשה / הודעה / הזמנה לא קופצות לבד — צריך ללחוץ רענן.
+**הסיבה:** ל-`AthleteManagement` לא היה realtime/polling בכלל, והבאדג'ים ב-`TrainerDashboard` הסתמכו רק על Supabase Realtime — שלא הופעל על הטבלאות (אין הגדרה במיגרציות).
+**התיקון (פרונט):** הוספת ערוץ Realtime + polling fallback כל **60ש'** (קל לחבילה החינמית) + רענון בחזרה לטאב — גם ב-`AthleteManagement` וגם ב-`TrainerDashboard.refreshCounts`.
+**התיקון (DB, ממתין להרצה ע"י דודי):** SQL להוספת `members, announcements, product_requests, product_orders, classes` ל-publication `supabase_realtime` + `replica identity full` ל-members ו-classes. נמסר ב-chat. בלי זה — ה-polling לבדו מספיק (עד 60ש').
+
+### פיצ'ר — שינוי כתובת מייל בכל 4 הממשקים ✅
+**רקע:** היה רק שינוי סיסמה. דודי ביקש שינוי מייל בכולם. הוחלט: מודל **ישיר (self-service)** לכולם (לא אישור מנהל — כי אישור דורש Edge Function כדי באמת לשנות את מייל ה-Auth).
+**מימוש:** `auth.updateUser({ email })` + הודעת אימות. צוות (`TrainerProfile.jsx` = מאמן/מזכירה/מנהל, + `AdminSettings.jsx` סעיף חשבון) מעדכן גם `profiles.email`. מתאמן (`AthleteDashboard.jsx`) — הומר מ-`profile_change_requests` ל-ישיר.
+**הגנה קריטית (היסטוריית member.id vs profile.id):** במתאמן, אם `member.id !== profile.id` (חשבון email-linked) — חוסמים שינוי מייל ומפנים למנהל, כי שינוי מייל היה מנתק את הקישור לרשומה. **בדיקה בפרודקשן: 134 id-linked, 0 email-linked** → ההגנה לא תופעל בפועל, רשת ביטחון בלבד.
+**מגבלת חבילה חינמית:** SMTP מובנה ~3-4 מיילים/שעה. שינוי מייל נדיר → לא בעיה.
+
+### My last pending task
+הכל נדחף ל-main (קומיט בסשן זה). **ממתין לדודי:** (1) להריץ ב-Vercel — לוודא ש-build עבר. (2) להריץ את ה-SQL של Realtime ב-Supabase (אופציונלי — לרענון מיידי במקום עד 60ש'). (3) hard-refresh + Unregister Service Worker אם ה-PWA לא מתעדכן.
+
+---
+
+## ✅ My last completed task — Session 12.06.2026 (מחיקת מתאמן)
+
+### באג — מחיקת מתאמן ע"י מנהל/מזכירת חולון נשארת ✅ נפתר
+**הבאג:** מנהל או מזכירה לוחצים "מחק" מתאמן → המתאמן נשאר (כשל שקט, בלי שגיאה).
+**הסיבה:** ב-`TrainerDashboard` המזכירה עוברת כ-`isAdmin=true`, אז גם היא וגם המנהל מבצעים `.delete()` ישיר. אבל בפרודקשן חסרה/שבורה policy DELETE על `members` → RLS חוסם DELETE ומחזיר 0 שורות **בלי error**, אז הקוד חשב שהצליח. (SELECT/UPDATE עובדים דרך policies אחרות, לכן רואים/עורכים תקין — רק DELETE נפל בשקט.)
+**התיקון:**
+1. פרונט (`AthleteManagement.jsx`, קומיט `cfa82fe`) — כל `.delete()` על members הפך ל-`.delete().select('id')` + בדיקה שבאמת נמחקו שורות (deleteAthlete / approveDeletion / bulkDeleteAthletes). אם 0 → טוסט שגיאה אדום "המחיקה נחסמה — אין הרשאת מחיקה (RLS)". הצלחה → "המתאמן נמחק".
+2. SQL (`src/lib/migration-members-delete-policy.sql`) — **הורץ ב-Supabase** ע"י דודי: `CREATE POLICY members_delete_trainer ON members FOR DELETE USING (role='trainer')`.
+**אישור מחיקה:** כבר קיים ממילא (`useConfirm`) לפני כל מחיקה — לא נדרש שינוי.
+**כלל לעתיד:** ב-Supabase, DELETE חסום ע"י RLS = 0 שורות בלי error. תמיד `.select()` אחרי delete ולבדוק count.
+
+---
+
+## ✅ My last completed task — Session 12.06.2026
+
+### באג 2 — מתאמן לא רואה נרשמים לשיעור ✅ נפתר
+**הבאג:** הכפתור "👥 מי נרשם לשיעור?" הציג "עדיין אין נרשמים" לכל המתאמנים, בעוד המנהל רואה נרשמים (דרך `TodayClasses`).
+**הסיבה:** הקוד (קומיט `22ab4ff`) קורא ל-RPC `get_class_registrants`, אבל ה-SQL שיוצר אותו (`supabase/migrations/birthday_feature.sql`, מ-11.06) **לא הורץ ב-Supabase**. הקריאה נכשלה בשקט (catch → רשימה ריקה).
+**התיקון:** הורץ ב-SQL Editor: `ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_date date;` + `CREATE OR REPLACE FUNCTION get_class_registrants(...)` + GRANT. אומת — המתאמן רואה נרשמים. ✅
+**כלל לעתיד:** כשהקוד קורא ל-RPC חדש ופועל "בשקט" עם רשימה ריקה — לוודא שה-SQL של המיגרציה אכן הורץ ב-Supabase, לא רק נדחף ל-git.
+
+### באג 1 — "רישום באיחור לא עבד" ❌ לא באג
+דווח שמתאמן אחד לא הצליח להירשם באיחור (חלון 30 דק') בעוד אחר כן. אובחן מול ה-DB: כל מי שנחסם היה במכסת מנוי מלאה (`SUBSCRIPTION_LIMITS`: 1x=1, 2x=2, 4x=4). זו ההתנהגות הרצויה (דודי: "לשמור מגבלת מנוי"). מי שנראה מעל המכסה (עידן טל 5/4, אבי בן חמו 3/2) — תקין, כי שיעורי מזרן-פתוח/ספארינג לא נספרים במכסה (`isOpenMatClass`). אין שינוי קוד.
+
+---
+
 ## ✅ My last completed task — Session 07.06.2026 (עדכון רביעי)
 
 ### באג מלאי מכנס בנו-גי — ShopManager + ProductDetail

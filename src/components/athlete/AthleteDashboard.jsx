@@ -1475,16 +1475,23 @@ function SettingsTab({ profile, member }) {
   }
 
   async function submitEmailChange() {
-    if (!newEmail || newEmail === profile.email) { toast.error('הזן כתובת מייל חדשה'); return }
+    // שינוי מייל ישיר דרך Supabase Auth (כמו אצל הצוות) — נשלח קישור אימות לכתובת החדשה.
+    const trimmed = (newEmail || '').trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) { toast.error('כתובת מייל לא תקינה'); return }
+    if (trimmed === (profile.email || '').trim().toLowerCase()) { toast.error('המייל זהה לנוכחי'); return }
+    // הגנה קריטית: רשומת המתאמן נשלפת לפי id, ובנפילה — לפי email (fetchMyClasses).
+    // אם החשבון מקושר רק לפי email (member.id ≠ profile.id), שינוי המייל ינתק את הרשומה
+    // וישבור את החשבון. במקרה כזה חוסמים שינוי עצמי ומפנים למנהל.
+    if (member && member.id !== profile.id) {
+      toast.error('לא ניתן לשנות מייל מהאפליקציה עבור החשבון הזה — פנה למנהל לעדכון.')
+      return
+    }
     setSaving(true)
-    const { error } = await supabase.from('profile_change_requests').insert({
-      athlete_id: profile.id, athlete_name: athleteName,
-      change_type: 'email', current_value: profile.email, requested_value: newEmail,
-    })
+    const { error } = await supabase.auth.updateUser({ email: trimmed })
     setSaving(false)
     if (error) { toast.error('שגיאה: ' + error.message); return }
-    toast.success('בקשת שינוי המייל נשלחה למנהל')
-    setNewEmail(''); loadPending()
+    toast.success('נשלח קישור אימות למייל החדש — יש ללחוץ עליו כדי להשלים. עד אז התחבר עם המייל הקודם.')
+    setNewEmail('')
   }
 
   async function submitSubChange() {
@@ -1560,7 +1567,6 @@ function SettingsTab({ profile, member }) {
   }
 
   const hasPendingName = pendingRequests.some(r => r.change_type === 'name')
-  const hasPendingEmail = pendingRequests.some(r => r.change_type === 'email')
   const hasPendingSub = pendingRequests.some(r => r.change_type === 'subscription')
   const hasPendingBelt = pendingRequests.some(r => r.change_type === 'belt')
   const hasPendingMembership = pendingRequests.some(r => r.change_type === 'membership_freeze' || r.change_type === 'membership_cancel')
@@ -1590,7 +1596,7 @@ function SettingsTab({ profile, member }) {
                   <div className="text-sm font-medium text-gray-900">פרטים אישיים</div>
                   <div className="text-xs text-gray-400 truncate">{member?.full_name || profile?.full_name}</div>
                 </div>
-                {hasPendingEmail && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />}
+                {hasPendingName && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />}
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-300 shrink-0 rotate-180"><path d="M9 18l6-6-6-6"/></svg>
               </button>
 
@@ -1699,18 +1705,16 @@ function SettingsTab({ profile, member }) {
             <p className="text-xs text-gray-400 px-1">לשינוי טלפון — פנה למאמן</p>
             <div className="space-y-2">
               <p className="text-xs text-gray-400 px-1">שינוי כתובת מייל</p>
-              {hasPendingEmail ? (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">יש בקשה ממתינה לאישור מנהל</p>
-              ) : (
-                <div className="space-y-2">
-                  <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
-                    placeholder="הזן מייל חדש" className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm" />
-                  <button onClick={submitEmailChange} disabled={saving}
-                    className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                    {saving ? 'שולח...' : 'שלח בקשה לאישור מנהל'}
-                  </button>
-                </div>
-              )}
+              <div className="space-y-2">
+                <input type="email" dir="ltr" inputMode="email" autoComplete="email"
+                  value={newEmail} onChange={e => setNewEmail(e.target.value)}
+                  placeholder="email@example.com" className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-left" />
+                <button onClick={submitEmailChange} disabled={saving}
+                  className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                  {saving ? 'שולח...' : 'עדכן מייל'}
+                </button>
+                <p className="text-[11px] text-gray-400 px-1">יישלח קישור אימות לכתובת החדשה. ההתחברות תתעדכן רק לאחר אישור הקישור.</p>
+              </div>
             </div>
           </div>
         )}

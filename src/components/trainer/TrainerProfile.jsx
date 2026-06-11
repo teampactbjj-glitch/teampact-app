@@ -21,6 +21,10 @@ export default function TrainerProfile({ profile, isAdmin }) {
   const [phoneSaving, setPhoneSaving] = useState(false)
   const [phoneMsg, setPhoneMsg] = useState(null)
 
+  const [newEmail, setNewEmail] = useState('')
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [emailMsg, setEmailMsg] = useState(null)
+
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showNewPw, setShowNewPw] = useState(false)
@@ -73,6 +77,23 @@ export default function TrainerProfile({ profile, isAdmin }) {
       return
     }
     setPhoneMsg({ type: 'ok', text: trimmed ? 'הטלפון עודכן' : 'הטלפון הוסר' })
+  }
+
+  async function updateEmail() {
+    setEmailMsg(null)
+    const trimmed = newEmail.trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) { setEmailMsg({ type: 'err', text: 'כתובת מייל לא תקינה' }); return }
+    if (trimmed === (profile?.email || '').trim().toLowerCase()) { setEmailMsg({ type: 'err', text: 'המייל זהה לנוכחי' }); return }
+    setEmailSaving(true)
+    const { error } = await supabase.auth.updateUser({ email: trimmed })
+    if (!error) {
+      // עדכון תצוגה בפרופיל (לא חוסם — אם RLS לא מתיר, ה-auth עדיין משתנה אחרי האימות)
+      await supabase.from('profiles').update({ email: trimmed }).eq('id', profile.id)
+    }
+    setEmailSaving(false)
+    if (error) { setEmailMsg({ type: 'err', text: error.message }); return }
+    setEmailMsg({ type: 'ok', text: 'נשלח קישור אימות לכתובת החדשה. ההתחברות תתעדכן רק אחרי לחיצה על הקישור במייל — עד אז התחבר עם המייל הקודם.' })
+    setNewEmail('')
   }
 
   async function updatePassword() {
@@ -145,6 +166,31 @@ export default function TrainerProfile({ profile, isAdmin }) {
           </p>
         )}
         <p className="text-[11px] text-gray-400">הטלפון נשמר בפרופיל שלך ומוצג למנהל.</p>
+      </div>
+
+      {/* שינוי מייל */}
+      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
+        <h3 className="font-bold text-gray-800 text-sm">📧 שינוי כתובת מייל</h3>
+        <input
+          type="email"
+          dir="ltr"
+          inputMode="email"
+          autoComplete="email"
+          className="w-full border rounded-lg px-3 py-2 text-sm text-left"
+          value={newEmail}
+          onChange={e => setNewEmail(e.target.value)}
+          placeholder="email@example.com"
+        />
+        <button onClick={updateEmail} disabled={emailSaving}
+          className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+          {emailSaving ? 'שולח...' : 'עדכן מייל'}
+        </button>
+        {emailMsg && (
+          <p className={`text-xs ${emailMsg.type === 'ok' ? 'text-green-600' : 'text-red-500'}`}>
+            {emailMsg.text}
+          </p>
+        )}
+        <p className="text-[11px] text-gray-400">יישלח קישור אימות לכתובת החדשה. ההתחברות תתעדכן רק לאחר אישור הקישור.</p>
       </div>
 
       {/* שינוי סיסמה */}

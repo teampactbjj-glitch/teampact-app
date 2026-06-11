@@ -93,6 +93,27 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
 
   useEffect(() => { fetchAthletes() }, [trainerId, isAdmin])
 
+  // רענון אוטומטי של הרשימה (הרשמה חדשה / שינוי סטטוס / מחיקה) בלי רענון ידני.
+  // 1) Realtime — מסלול מהיר. 2) Polling כל 30ש' — fallback למקרה ש-Realtime לא מופעל.
+  // 3) חזרה לטאב — רענון מיידי.
+  useEffect(() => {
+    const channel = supabase
+      .channel('athlete-mgmt-members')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => fetchAthletes())
+      .subscribe()
+    const onVis = () => { if (document.visibilityState === 'visible') fetchAthletes() }
+    document.addEventListener('visibilitychange', onVis)
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchAthletes()
+    }, 60000)
+    return () => {
+      supabase.removeChannel(channel)
+      document.removeEventListener('visibilitychange', onVis)
+      clearInterval(interval)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trainerId, isAdmin, branchFilter])
+
   useEffect(() => {
     if (form.branch_ids.length > 0) fetchClasses(form.branch_ids)
     else setClasses([])
@@ -405,15 +426,25 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
 
   async function rejectPending(id) {
     // Bug 1.3: מאמן רגיל לא יכול לבצע DELETE על members.
-    // אדמין → מחיקה לצמיתות. מאמן → soft-delete (UPDATE deleted_at).
-    let error
-    if (isAdmin) {
-      ;({ error } = await supabase.from('members').delete().eq('id', id))
+    // אדמין אמיתי → מחיקה לצמיתות.
+    // מאמן/מזכירה → soft-delete (UPDATE deleted_at) — RLS חוסם DELETE לכל מי שאינו is_approved_admin.
+    // חשוב: למזכירה isAdmin=true (כדי לפתוח הרשאות UI) אבל היא *לא* אדמין במסד —
+    // לכן חובה להחריג אותה כאן, אחרת ה-DELETE נחסם ב-RLS בשקט והכפתור "לא דוחה".
+    let error, deleted
+    if (isAdmin && !isSecretary) {
+      ;({ data: deleted, error } = await supabase.from('members').delete().eq('id', id).select('id'))
     } else {
-      ;({ error } = await supabase.from('members').update({ deleted_at: new Date().toISOString() }).eq('id', id))
+      ;({ data: deleted, error } = await supabase.from('members').update({ deleted_at: new Date().toISOString() }).eq('id', id).select('id'))
     }
     if (error) {
       console.error('rejectPending error:', error)
+      alert('דחיית המתאמן נכשלה: ' + (error.message || 'שגיאה לא ידועה'))
+      return
+    }
+    if (!deleted || deleted.length === 0) {
+      // RLS חסם בשקט (0 שורות, ללא שגיאה) — לדווח במקום להיכשל בלי הסבר
+      console.error('rejectPending: 0 rows affected (RLS?)')
+      alert('דחיית המתאמן לא בוצעה (אין הרשאה). פנה למנהל.')
       return
     }
     fetchAthletes()

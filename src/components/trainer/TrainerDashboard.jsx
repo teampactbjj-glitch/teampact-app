@@ -260,7 +260,12 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
       .subscribe()
     const onVis = () => { if (document.visibilityState === 'visible') refreshCounts() }
     document.addEventListener('visibilitychange', onVis)
-    return () => { supabase.removeChannel(ch); supabase.removeChannel(chOrders); document.removeEventListener('visibilitychange', onVis) }
+    // Polling fallback — מבטיח שהבאדג'ים (הרשמות, הודעות, חנות) יתעדכנו כל 30ש'
+    // גם אם Supabase Realtime לא מופעל/לא מגיע, בלי צורך ברענון ידני.
+    const pollInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshCounts()
+    }, 60000)
+    return () => { supabase.removeChannel(ch); supabase.removeChannel(chOrders); document.removeEventListener('visibilitychange', onVis); clearInterval(pollInterval) }
   }, [profile?.id])
 
   useEffect(() => {

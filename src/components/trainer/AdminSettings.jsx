@@ -38,6 +38,11 @@ export default function AdminSettings({ profile }) {
   const [pwSaving, setPwSaving] = useState(false)
   const [pwMsg,    setPwMsg]    = useState(null)
 
+  // email
+  const [newEmail,    setNewEmail]    = useState('')
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [emailMsg,    setEmailMsg]    = useState(null)
+
   const fetchAll = useCallback(async () => {
     setLoading(true)
     const [brRes, feRes, owRes, asRes] = await Promise.all([
@@ -127,6 +132,23 @@ export default function AdminSettings({ profile }) {
     fetchAll()
   }
 
+  async function updateEmail() {
+    setEmailMsg(null)
+    const trimmed = newEmail.trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) { setEmailMsg({ ok: false, text: 'כתובת מייל לא תקינה' }); return }
+    if (trimmed === (profile?.email || '').trim().toLowerCase()) { setEmailMsg({ ok: false, text: 'המייל זהה לנוכחי' }); return }
+    setEmailSaving(true)
+    const { error } = await supabase.auth.updateUser({ email: trimmed })
+    if (!error) {
+      // עדכון תצוגה בפרופיל (לא חוסם)
+      await supabase.from('profiles').update({ email: trimmed }).eq('id', profile.id)
+    }
+    setEmailSaving(false)
+    if (error) { setEmailMsg({ ok: false, text: error.message }); return }
+    setEmailMsg({ ok: true, text: 'נשלח קישור אימות לכתובת החדשה. ההתחברות תתעדכן רק אחרי לחיצה על הקישור — עד אז התחבר עם המייל הקודם.' })
+    setNewEmail('')
+  }
+
   async function updatePassword() {
     setPwMsg(null)
     if (!newPw || newPw.length < 6) { setPwMsg({ ok: false, text: 'לפחות 6 תווים' }); return }
@@ -173,7 +195,7 @@ export default function AdminSettings({ profile }) {
       <SectionLabel>חשבון</SectionLabel>
       <Group>
         <Row icon="🔒" iconBg="bg-slate-600" label="שינוי סיסמה"
-          open={expanded === 'password'} onToggle={() => toggle('password')} isLast>
+          open={expanded === 'password'} onToggle={() => toggle('password')}>
           <div className="space-y-3">
             <PwInput value={newPw} onChange={e => setNewPw(e.target.value)}
               show={showNew} toggle={() => setShowNew(s => !s)} placeholder="סיסמה חדשה (6+ תווים)" />
@@ -181,6 +203,19 @@ export default function AdminSettings({ profile }) {
               show={showConf} toggle={() => setShowConf(s => !s)} placeholder="אישור סיסמה" />
             <ActionBtn onClick={updatePassword} loading={pwSaving}>עדכן סיסמה</ActionBtn>
             {pwMsg && <Msg ok={pwMsg.ok}>{pwMsg.text}</Msg>}
+          </div>
+        </Row>
+        <Row icon="📧" iconBg="bg-blue-500" label="שינוי מייל"
+          open={expanded === 'email'} onToggle={() => toggle('email')} isLast>
+          <div className="space-y-3">
+            <input
+              type="email" dir="ltr" inputMode="email" autoComplete="email"
+              value={newEmail} onChange={e => setNewEmail(e.target.value)}
+              placeholder="email@example.com"
+              className={inputCls + ' text-left'} />
+            <ActionBtn onClick={updateEmail} loading={emailSaving}>עדכן מייל</ActionBtn>
+            {emailMsg && <Msg ok={emailMsg.ok}>{emailMsg.text}</Msg>}
+            <p className="text-[11px] text-gray-400">יישלח קישור אימות לכתובת החדשה. ההתחברות תתעדכן רק לאחר אישור הקישור.</p>
           </div>
         </Row>
       </Group>

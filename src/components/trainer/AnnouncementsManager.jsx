@@ -157,6 +157,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
     try {
       const branchIds = Array.isArray(item.branch_ids) ? item.branch_ids.filter(Boolean) : []
       const userIds = await (branchIds.length ? athleteUserIdsForBranches(branchIds) : allActiveAthleteUserIds())
+      if (!userIds.length) { toast.error('לא נמצאו מתאמנים פעילים לשליחה (בדוק שיוך סניפים)'); setResendingId(null); return }
       await notifyPush({
         userIds,
         title: item.type === 'seminar' ? '🎓 תזכורת: סמינר' : '📢 תזכורת: הודעה',
@@ -164,7 +165,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
         url: '/#announcements',
         tag: `announcement-resend:${Date.now()}`,
       })
-      toast.success('ההתראה נשלחה מחדש!')
+      toast.success(`ההתראה נשלחה ל-${userIds.length} מתאמנים (תגיע רק למי שהפעיל התראות במכשיר שלו)`)
     } catch (e) {
       toast.error('שגיאה בשליחת ההתראה: ' + (e.message || 'לא ידוע'))
     }

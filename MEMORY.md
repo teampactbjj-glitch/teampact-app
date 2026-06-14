@@ -3530,3 +3530,15 @@ Build ✓ (vite, 111 מודולים, ל-outDir זמני — מחיקת dist חס
 מצב git (14/6): קומיט מקומי `c8285a7` על staging מכיל את תיקון המזכירה אבל **גם StagingBanner.jsx + main.jsx בטעות** — אסור שיגיעו לפרודקשן. תיקוני RegisterPage+AthleteManagement (סניפים/גלילה/עברית) עדיין לא מקומטים. מנעולי .git ב-sandbox חוסמים כתיבה — דודי מריץ git בעצמו בטרמינל.
 התוכנית: להביא ל-main רק את קבצי הפרודקשן (AthleteManagement, RegisterPage, 3 SQL, MEMORY) דרך `git checkout staging -- <files>` — לא StagingBanner/main.jsx/ReportsManager/TrainerDashboard. הפקודות נמסרו לדודי.
 פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ ב-Supabase.
+
+### המשך (2026-06-14) — חנות+סמינרים מחוץ למזכירה
+המזכירה מטפלת רק ברישומים. תוקן:
+1. `notifyTargets.js`: helper חדש `nonSecretaryTrainerUserIds()` (trainers בלי is_secretary).
+2. `AthleteDashboard.jsx`: 5 קריאות push של חנות+סמינרים (הזמנה חדשה/ביטול×2/עריכה/הרשמת סמינר) הוחלפו ל-nonSecretaryTrainerUserIds → המזכירה לא מקבלת. (אישור דרגה בשורה ~1559 נשאר allTrainerUserIds — לא חנות/סמינר.)
+3. `BottomNav.jsx`: טאבי המזכירה → [athletes, profile] בלבד (הוסר announcements). הבאדג' של החנות כבר היה עם !isSecretary.
+4. `TrainerDashboard.jsx`: TAB_HASHES למזכירה → ['athletes','profile'] (השינוי הזה נשאר לא-מקומט עם עבודה קודמת).
+
+הערה חשובה: `TrainerDashboard.jsx` ו-`ReportsManager.jsx` מכילים שינויים לא-מקומטים קודמים (באדג'ים למזכירה/מאמן + סינון דוחות למאמן לפי branch user_id) — בטוחים לפרודקשן אבל עבודה נפרדת, טרם נדחפו. StagingBanner.jsx + main.jsx (עבודת סביבת staging) קומטו ב-c8285a7 על staging ואסור שיגיעו ל-main.
+
+## My last pending task
+דחיפת באטץ' "חנות+סמינרים מחוץ למזכירה" ל-main: רק 3 קבצים נקיים (notifyTargets.js, AthleteDashboard.jsx, BottomNav.jsx) + MEMORY, דרך commit על staging → stash ל-TrainerDashboard+ReportsManager → checkout main → `git checkout staging -- <3 files>` → commit → push → חזרה ל-staging → stash pop. מנעולי .git חוזרים ב-sandbox; דודי מריץ git בטרמינל (להסיר locks קודם אם צריך). פתוח: TAB_HASHES + שיפורי TrainerDashboard/ReportsManager לא-מקומטים; פיצ'ר יומולדת 🎂 טרם הורץ.

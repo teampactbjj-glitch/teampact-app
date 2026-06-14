@@ -3518,3 +3518,15 @@ Build ✓ (vite, 111 מודולים, ל-outDir זמני — מחיקת dist חס
 **נשאר להחליט עם דודי לגבי git:** העבודה נעשתה על ברנץ' `staging` עם שינויים לא-קשורים באוויר (StagingBanner.jsx, ReportsManager.jsx, TrainerDashboard.jsx, main.jsx — הגדרת סביבת staging). שינוי הקוד היחיד שלי: `src/components/trainer/AthleteManagement.jsx` (approvePending). + 3 קבצי SQL חדשים (תיעוד בלבד; ה-DB כבר מעודכן).
 טרם בוצע commit/push — ממתין להחלטת דודי איך לקמט (לא לערבב עם עבודת ה-staging) ולאן (staging או main).
 פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ ב-Supabase.
+
+### המשך (2026-06-14) — סניפים למזכירה + גלילה לעריכה + הרשמה בעברית
+3 תיקונים נוספים, נבדקו לוקאלית ואושרו ע"י דודי ("עובד"):
+1. **הסתרת/נעילת סניפים למזכירה** — `AthleteManagement.jsx`: branches מוגבל לסניף המזכירה; בורר הסניפים בטופס מוסתר (`!isSecretary`); מתאמן חדש ננעל אוטומטית לסניפה (openAdd); תוויות 📍 מוסתרות (כולל PendingLeadCard עם prop showBranch). הסינון לפי סניף כבר היה מוסתר.
+2. **גלילה אוטומטית לטופס עריכת מתאמן** — `AthleteManagement.jsx`: id="athlete-edit-form" + scroll-mt-4, ו-startEdit עושה scrollIntoView (setTimeout 100ms). תקף למזכירה ולמנהל.
+3. **הרשמה בעברית בלבד** — `RegisterPage.jsx`: ולידציה ב-handleSubmit (חוסם A-Za-z או היעדר אות עברית, הודעה "יש להזין שם מלא בעברית בלבד"), רמז "בעברית בלבד" בשדה, והודעת note צהובה בראש הטופס.
+
+## My last pending task
+**כל תיקוני היום נבדקו ואושרו ע"י דודי. נשאר רק git → main (פרודקשן).**
+מצב git (14/6): קומיט מקומי `c8285a7` על staging מכיל את תיקון המזכירה אבל **גם StagingBanner.jsx + main.jsx בטעות** — אסור שיגיעו לפרודקשן. תיקוני RegisterPage+AthleteManagement (סניפים/גלילה/עברית) עדיין לא מקומטים. מנעולי .git ב-sandbox חוסמים כתיבה — דודי מריץ git בעצמו בטרמינל.
+התוכנית: להביא ל-main רק את קבצי הפרודקשן (AthleteManagement, RegisterPage, 3 SQL, MEMORY) דרך `git checkout staging -- <files>` — לא StagingBanner/main.jsx/ReportsManager/TrainerDashboard. הפקודות נמסרו לדודי.
+פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ ב-Supabase.

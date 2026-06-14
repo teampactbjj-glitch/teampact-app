@@ -74,6 +74,13 @@ export default function RegisterPage() {
       setError('נא למלא שם, אימייל ולבחור לפחות סניף אחד')
       return
     }
+    // שם בעברית בלבד — שדה הקישור לתשלום. חוסם אותיות לועזיות.
+    const name = form.full_name.trim()
+    const HEBREW = /[֐-׿]/        // אות עברית כלשהי
+    if (/[A-Za-z]/.test(name) || !HEBREW.test(name)) {
+      setError('יש להזין שם מלא בעברית בלבד (ללא אותיות באנגלית)')
+      return
+    }
     if (!form.birth_date) {
       setError('נא למלא תאריך לידה')
       return
@@ -180,13 +187,20 @@ export default function RegisterPage() {
           <p className="text-sm text-gray-600 mt-0.5">מלא את הפרטים ונחזור אליך בהקדם</p>
         </div>
 
+        <div role="note" className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-center">
+          <p className="text-sm font-semibold text-amber-800">📝 יש למלא את הטופס בעברית בלבד</p>
+          <p className="text-xs text-amber-700 mt-0.5">כדי שנוכל לזהות אתכם ולקשר לתשלום</p>
+        </div>
+
         <div className="space-y-3">
-          <Field label="שם מלא" required>
+          <Field label="שם מלא" required hint="בעברית בלבד">
             {(props) => (
               <input
                 {...props}
                 type="text"
                 autoComplete="name"
+                lang="he"
+                inputMode="text"
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 placeholder="ישראל ישראלי"
                 value={form.full_name}

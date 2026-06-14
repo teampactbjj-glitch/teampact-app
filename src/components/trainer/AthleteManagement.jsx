@@ -84,12 +84,14 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       if (!isAdmin) bq = bq.eq('hidden', false)
       const { data: all } = await bq
       if (!all) return
+      // מזכירה — קשורה רק לסניף שלה. מסתירים סניפים אחרים לגמרי.
+      if (isSecretary && branchFilter) { setBranches(all.filter(b => b.id === branchFilter)); return }
       if (isAdmin || !trainerId) { setBranches(all); return }
       const { data: coaches } = await supabase.from('coaches').select('branch_id').eq('user_id', trainerId)
       const allowed = new Set((coaches || []).map(c => c.branch_id).filter(Boolean))
       setBranches(all.filter(b => allowed.has(b.id)))
     })()
-  }, [isAdmin, trainerId])
+  }, [isAdmin, isSecretary, branchFilter, trainerId])
 
   useEffect(() => { fetchAthletes() }, [trainerId, isAdmin])
 
@@ -515,11 +517,16 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       birth_date: athlete.birth_date || '',
     })
     setEditing(athlete.id)
+    // גלילה אוטומטית לטופס העריכה — אחרת הוא נפתח למעלה והמשתמש לא רואה.
+    setTimeout(() => {
+      document.getElementById('athlete-edit-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
   }
 
   function openAdd() {
     setSaveError('')
-    setForm(EMPTY_FORM)
+    // מזכירה — מתאמן חדש ננעל אוטומטית לסניף שלה (אין בורר סניפים).
+    setForm(isSecretary && branchFilter ? { ...EMPTY_FORM, branch_ids: [branchFilter] } : EMPTY_FORM)
     setEditing('new')
   }
 
@@ -580,25 +587,27 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       )}
 
       {editing && (
-        <form onSubmit={saveAthlete} className="bg-white border rounded-xl p-4 space-y-3 shadow-sm">
+        <form id="athlete-edit-form" onSubmit={saveAthlete} className="bg-white border rounded-xl p-4 space-y-3 shadow-sm scroll-mt-4">
           <h3 className="font-semibold text-gray-700">{editing === 'new' ? 'הוספת מתאמן' : 'עריכת מתאמן'}</h3>
 
-          {/* Multi-branch selector */}
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">סניפים (ניתן לבחור יותר מאחד)</label>
-            <div className="flex gap-2 flex-wrap">
-              {branches.map(b => (
-                <button key={b.id} type="button" onClick={() => toggleBranch(b.id)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
-                    form.branch_ids.includes(b.id)
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
-                  }`}>
-                  {form.branch_ids.includes(b.id) ? '✓ ' : ''}{b.name}
-                </button>
-              ))}
+          {/* Multi-branch selector — נסתר למזכירה (קשורה רק לסניף שלה) */}
+          {!isSecretary && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">סניפים (ניתן לבחור יותר מאחד)</label>
+              <div className="flex gap-2 flex-wrap">
+                {branches.map(b => (
+                  <button key={b.id} type="button" onClick={() => toggleBranch(b.id)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
+                      form.branch_ids.includes(b.id)
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                    }`}>
+                    {form.branch_ids.includes(b.id) ? '✓ ' : ''}{b.name}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="שם מלא *"
             value={form.full_name} onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))} required />
@@ -802,6 +811,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                 key={a.id}
                 lead={a}
                 branches={branches}
+                showBranch={!isSecretary}
                 onApprove={(sub) => approvePending(a.id, sub)}
                 onReject={() => rejectPending(a.id)}
               />
@@ -828,7 +838,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                     <p className="text-xs text-gray-500">
                       {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
                       {a.phone && <span> · {a.phone}</span>}
-                      {bnames && <span> · 📍 {bnames}</span>}
+                      {bnames && !isSecretary && <span> · 📍 {bnames}</span>}
                     </p>
                   </div>
                   <div className="flex gap-2 shrink-0">
@@ -1013,7 +1023,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                           <p className="text-xs text-gray-400">
                             {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
                             {a.phone && <span> · {a.phone}</span>}
-                            {bnames && <span> · 📍 {bnames}</span>}
+                            {bnames && !isSecretary && <span> · 📍 {bnames}</span>}
                           </p>
                         </div>
                       </div>
@@ -1066,7 +1076,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
 }
 
 
-function PendingLeadCard({ lead, branches, onApprove, onReject }) {
+function PendingLeadCard({ lead, branches, onApprove, onReject, showBranch = true }) {
   const confirm = useConfirm()
   const [subType, setSubType] = useState(lead.subscription_type || lead.membership_type || '2x_week')
   const [busy, setBusy] = useState(null)
@@ -1095,7 +1105,7 @@ function PendingLeadCard({ lead, branches, onApprove, onReject }) {
           {lead.email && <span>{lead.email}</span>}
           {lead.phone && <span> · {lead.phone}</span>}
         </p>
-        {bnames && <p className="text-xs text-blue-600 mt-0.5">📍 {bnames}</p>}
+        {bnames && showBranch && <p className="text-xs text-blue-600 mt-0.5">📍 {bnames}</p>}
         {coachName && <p className="text-xs text-purple-600 mt-0.5">👤 מאמן מבוקש: {coachName}</p>}
         {original && (
           <p className="text-xs text-emerald-700 mt-0.5">

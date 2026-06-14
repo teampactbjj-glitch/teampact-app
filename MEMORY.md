@@ -3500,3 +3500,21 @@ Build ✓ (vite, 111 מודולים, ל-outDir זמני — מחיקת dist חס
 
 ## My last pending task
 הכול בפרודקשן עד קומיט `e4b217f`, working tree נקי. פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ ב-Supabase.
+
+### המשך — מזכירת חולון לא יכלה לאשר/לדחות (2026-06-14) — ✅ תוקן ב-DB, אומת ע"י דודי
+**הבעיה:** במזכירות חולון אישור/דחייה של בקשות (מתאמן חדש + שינוי מנוי) לא עבדו. בהתחלה שגיאת טריגר, אח"כ "מתרענן ולא קורה כלום".
+
+**שורש — שלוש שכבות RLS/טריגר שחסמו את המזכירה (role=trainer, is_admin=false, is_secretary=true):**
+1. RLS `members_all_trainer` דרש is_approved → הורחב ל-`(is_approved OR is_secretary)`. קובץ: `src/lib/migration-secretary-members-write.sql`.
+2. טריגר `enforce_member_edit_admin_only` חסם שינוי שדות אישיים (active/subscription_type) ללא is_approved_admin → נוסף bypass למזכיר/ה. קובץ: `supabase/migrations/2026-06-14-secretary-can-edit-members.sql`.
+3. **השכבה הקריטית:** RLS `pcr_update_admin` על `profile_change_requests` התיר UPDATE רק לאדמין → אישור/דחיית בקשת שינוי מנוי נכשלה בשקט (0 שורות). נוסף policy `pcr_update_secretary`. קובץ: `supabase/migrations/2026-06-14-secretary-can-update-change-requests.sql`.
+
+כל ה-SQL הורץ ע"י דודי ב-Supabase והמזכירה אישרה שעובד. (הטלפון כבר הוצג תקין — לא נדרש שינוי.)
+
+**שינוי קוד (הגנתי, לא קריטי):** `AthleteManagement.jsx` → `approvePending` קיבל `.select('id')` + הצפת שגיאה/אימות שורות (כמו ב-rejectPending), כדי שאישור לא ייכשל בשקט.
+
+## My last pending task
+**הבעיה תוקנה ואומתה.** התיקון האמיתי כולו ב-DB (כבר חי בכל הסביבות, כולל פרודקשן — אותו Supabase project).
+**נשאר להחליט עם דודי לגבי git:** העבודה נעשתה על ברנץ' `staging` עם שינויים לא-קשורים באוויר (StagingBanner.jsx, ReportsManager.jsx, TrainerDashboard.jsx, main.jsx — הגדרת סביבת staging). שינוי הקוד היחיד שלי: `src/components/trainer/AthleteManagement.jsx` (approvePending). + 3 קבצי SQL חדשים (תיעוד בלבד; ה-DB כבר מעודכן).
+טרם בוצע commit/push — ממתין להחלטת דודי איך לקמט (לא לערבב עם עבודת ה-staging) ולאן (staging או main).
+פתוח מקודם: פיצ'ר היומולדת 🎂 — `supabase/migrations/birthday_feature.sql` טרם הורץ ב-Supabase.

@@ -414,7 +414,20 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     const lead = pendingAthletes.find(a => a.id === id)
     const patch = { status: 'approved', active: true }
     if (subType) { patch.subscription_type = subType; patch.membership_type = subType }
-    await supabase.from('members').update(patch).eq('id', id)
+    // אימות שורות + הצפת שגיאה — כמו ב-rejectPending. אם RLS חוסם בשקט (0 שורות),
+    // לדווח למשתמש במקום להיכשל בלי הסבר ("אשר" שלא עושה כלום).
+    const { data: updated, error } = await supabase
+      .from('members').update(patch).eq('id', id).select('id')
+    if (error) {
+      console.error('approvePending error:', error)
+      alert('אישור המתאמן נכשל: ' + (error.message || 'שגיאה לא ידועה'))
+      return
+    }
+    if (!updated || updated.length === 0) {
+      console.error('approvePending: 0 rows affected (RLS?)')
+      alert('אישור המתאמן לא בוצע (אין הרשאה). פנה למנהל.')
+      return
+    }
     if (lead?.email) {
       supabase.functions.invoke('send-approval-email', {
         body: { email: lead.email, full_name: lead.full_name },

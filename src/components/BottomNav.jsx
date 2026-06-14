@@ -2,7 +2,6 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
   const tabs = isSecretary
     ? [
         { id: 'athletes',      icon: '👥', label: 'מתאמנים' },
-        { id: 'announcements', icon: '📢', label: 'הודעות' },
         { id: 'profile',       icon: '👤', label: 'פרופיל' },
       ]
     : isTrainer

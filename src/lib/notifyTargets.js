@@ -23,6 +23,15 @@ export async function allTrainerUserIds() {
   return (data || []).map(p => p.id).filter(Boolean)
 }
 
+// מאמנים/מנהל ללא מזכירות — לטיפול בחנות/סמינרים (לא קשור למזכירות).
+export async function nonSecretaryTrainerUserIds() {
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, is_secretary')
+    .eq('role', 'trainer')
+  return (data || []).filter(p => !p.is_secretary).map(p => p.id).filter(Boolean)
+}
+
 export async function allAdminUserIds() {
   const { data, error } = await supabase.rpc('get_admin_user_ids')
   if (error) { console.warn('allAdminUserIds rpc error', error); return [] }

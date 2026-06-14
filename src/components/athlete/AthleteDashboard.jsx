@@ -6,7 +6,7 @@ import EnablePushBanner from '../EnablePushBanner'
 import BirthdayBanner from '../BirthdayBanner'
 import { isStandalone } from '../../lib/platform'
 import { notifyPush } from '../../lib/notifyPush'
-import { allTrainerUserIds } from '../../lib/notifyTargets'
+import { allTrainerUserIds, nonSecretaryTrainerUserIds } from '../../lib/notifyTargets'
 import ProductDetail from './ProductDetail'
 import MyProgressSection from './MyProgressSection'
 import { useToast, useConfirm } from '../a11y'
@@ -686,7 +686,7 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
       const bodyParts = [`${athleteName} נרשם לסמינר: ${item.title}`]
       if (pr.current != null) bodyParts.push(`מחיר: ₪${pr.current}${pr.earlyActive ? ' (מוקדם)' : ''}`)
       if (item.event_date) bodyParts.push(`תאריך: ${new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}`)
-      allTrainerUserIds()
+      nonSecretaryTrainerUserIds()
         .then(ids => notifyPush({
           userIds: ids,
           title: '🎓 הרשמה חדשה לסמינר',
@@ -938,7 +938,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
       setOrderedRequestsMap(prev => { const n = {...prev}; delete n[item.id]; return n })
       setOrderingId(null)
       setSelectedProductId(null)
-      allTrainerUserIds().then(ids => notifyPush({ userIds: ids, title: '❌ ביטול הזמנה', body: `${athleteName} ביטל הזמנה: ${item.title}`, url: '/#shop', tag: `order-cancel:${Date.now()}` })).catch(() => {})
+      nonSecretaryTrainerUserIds().then(ids => notifyPush({ userIds: ids, title: '❌ ביטול הזמנה', body: `${athleteName} ביטל הזמנה: ${item.title}`, url: '/#shop', tag: `order-cancel:${Date.now()}` })).catch(() => {})
       return
     }
     setOrderingId(item.id)
@@ -1020,7 +1020,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
         if (selectedOption?.name) editBodyParts.push(`אפשרות: ${selectedOption.name}`)
         if (selectedSize) editBodyParts.push(`מידה: ${selectedSize}`)
         if (selectedColor) editBodyParts.push(`צבע: ${selectedColor}`)
-        allTrainerUserIds().then(ids => notifyPush({ userIds: ids, title: '✏️ עדכון הזמנה', body: editBodyParts.join(' · '), url: '/#shop', tag: `order-edit:${Date.now()}` })).catch(() => {})
+        nonSecretaryTrainerUserIds().then(ids => notifyPush({ userIds: ids, title: '✏️ עדכון הזמנה', body: editBodyParts.join(' · '), url: '/#shop', tag: `order-edit:${Date.now()}` })).catch(() => {})
         return
       }
     } else {
@@ -1066,7 +1066,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
         selectedColor,
         priceToShow,
       })
-      allTrainerUserIds()
+      nonSecretaryTrainerUserIds()
         .then(ids => notifyPush({
           userIds: ids,
           title: '🛒 הזמנה חדשה מהחנות',
@@ -1207,7 +1207,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
                         setOrdered(prev => { const n = new Set(prev); n.delete(item.id); return n })
                         setOrderedRequestsMap(prev => { const n = {...prev}; delete n[item.id]; return n })
                         setOrderingId(null)
-                        allTrainerUserIds().then(ids => notifyPush({ userIds: ids, title: '❌ ביטול הזמנה', body: `${athleteName} ביטל הזמנה: ${item.title}`, url: '/#shop', tag: `order-cancel:${Date.now()}` })).catch(() => {})
+                        nonSecretaryTrainerUserIds().then(ids => notifyPush({ userIds: ids, title: '❌ ביטול הזמנה', body: `${athleteName} ביטל הזמנה: ${item.title}`, url: '/#shop', tag: `order-cancel:${Date.now()}` })).catch(() => {})
                       }}
                       disabled={orderingId === item.id}
                       className="flex-1 text-sm bg-red-50 text-red-600 border border-red-200 py-2 rounded-xl font-medium hover:bg-red-100 transition disabled:opacity-50"

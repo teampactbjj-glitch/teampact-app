@@ -6,7 +6,7 @@ import EnablePushBanner from '../EnablePushBanner'
 import BirthdayBanner from '../BirthdayBanner'
 import { isStandalone } from '../../lib/platform'
 import { notifyPush } from '../../lib/notifyPush'
-import { allTrainerUserIds, nonSecretaryTrainerUserIds } from '../../lib/notifyTargets'
+import { nonSecretaryTrainerUserIds } from '../../lib/notifyTargets'
 import ProductDetail from './ProductDetail'
 import MyProgressSection from './MyProgressSection'
 import { useToast, useConfirm } from '../a11y'
@@ -1556,7 +1556,7 @@ function SettingsTab({ profile, member }) {
     })
     setSaving(false)
     if (error) { toast.error('שגיאה: ' + error.message); return }
-    allTrainerUserIds().then(ids => notifyPush({
+    nonSecretaryTrainerUserIds().then(ids => notifyPush({
       userIds: ids,
       title: 'בקשת אישור דרגה חדשה',
       body: `${athleteName} מבקש דרגה: ${getBeltLabel(beltVal)}${beltStripes ? ` · ${beltStripes} פסים` : ''}`,

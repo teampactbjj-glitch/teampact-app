@@ -1,5 +1,48 @@
 # MEMORY - TeamPact App
 
+## ✅ My last completed task — Session 15.06.2026 (ניקוי מתאמנים מחוקים + תיקון חסימת הרשמה מחדש)
+
+### הבעיה
+דודי (מנהל) מחק מתאמני-הדגמה שיצר. הם נעלמו מהאפליקציה אבל "נתקעו" במסד — והשם+טלפון שלהם חסמו הרשמה מחדש (הודעה אדומה על "אי אפשר למחוק / מיגרציה").
+
+### הסיבה האמיתית — טריגר `tr_soft_delete`
+על `members` (וגם classes/announcements/product_orders/coaches) יש טריגר הגנה (`supabase/migrations/soft_delete.sql`) שממיר **כל DELETE ל-UPDATE deleted_at = now()** ומבטל את המחיקה. לכן:
+- המתאמנים נשארו במסד עם `deleted_at` מסומן, נעלמו מהמסכים (שמסננים `deleted_at IS NULL`).
+- ההודעה האדומה "אין הרשאת מחיקה (RLS)" ב-`AthleteManagement.jsx` **הטעתה** — באמת הטריגר ביטל את ה-DELETE והחזיר 0 שורות, והקוד פירש זאת כחסימת RLS.
+- ה-RPC `check_member_registration_exists` בדק שם+טלפון **בלי לסנן deleted_at** → רשומות מחוקות חסמו הרשמה מחדש.
+
+### מה בוצע (דודי הריץ ב-Supabase SQL Editor) ✅
+1. **מחיקה לצמיתות** של 17 רשומות soft-deleted: `DELETE FROM members WHERE deleted_at IS NOT NULL;` — עבד כי הטריגר מתיר DELETE שני על רשומה שכבר מחוקה (מסלול purge). מתוכן 3 הדגמות ברורות (ישראל ישראלי ×2, בדיקה בדיקה) + 14 אנשים אמיתיים שנדחו/נמחקו בעבר.
+2. **תיקון ה-RPC** — הוספת `AND m.deleted_at IS NULL` כך שמתאמן מחוק לעולם לא יחסום הרשמה מחדש.
+- מתועד בקובץ: `supabase/migrations/2026-06-15-purge-soft-deleted-members-and-rpc-fix.sql`.
+- **לא נגענו בקוד JS — אין צורך ב-build/deploy.** רק SQL במסד.
+
+### My last pending task
+**הושלם בעיקרו.** נותר אופציונלי (UI, לא דחוף): ההודעה האדומה ב-`AthleteManagement.jsx` ("אין הרשאת מחיקה RLS") מטעה כשהסיבה היא טריגר soft-delete — שווה בעתיד לעדכן את הטקסט/הלוגיקה שיבחין בין חסימת RLS לבין soft-delete. **לבדיקה:** לנסות להירשם מחדש עם אחד השמות שנמחקו — אמור לעבור.
+
+---
+
+## ✅ Session 15.06.2026 (באנר "כבר נרשמת?" בטופס ההרשמה)
+
+### הבעיה
+מתאמן שסורק את הברקוד נכנס ל-`/register`. אחרי שנרשם (status=pending) וסורק שוב — הקישור נפתח לעיתים בדפדפן in-app (מצלמה/וואטסאפ) בלי ה-session השמור, אז `RegisterPage` מציג טופס ריק מחדש במקום להכניס לאפליקציה. מתאמנים נתקעו וממלאים טופס שוב ושוב.
+
+### הפתרון שמומש ✅ עלה לפרודקשן
+באנר בולט בראש טופס ההרשמה (`src/components/RegisterPage.jsx`, מתחת לכותרת, מעל ההערה הצהובה): "כבר נרשמת בעבר? אין צורך למלא את הטופס שוב — פשוט היכנס לאפליקציה" עם כפתור **אדום** (`bg-red-600`) "פתח את האפליקציה ←" שמוביל ל-`/`. השורש מנתב נכון: מחובר → דשבורד/מסך המתנה; לא מחובר → מסך התחברות. שינוי ויזואלי בקובץ אחד בלבד. נבדק לוקאלית ע"י דודי, אושר.
+
+### Git
+- staging: `c21cbfd` (כפתור אדום) ע"ג `482fa7a` (הבאנר). נדחף ל-origin/staging.
+- **main (פרודקשן): `b033e8e`** — הובא RegisterPage.jsx בלבד מ-staging דרך `git checkout staging -- <file>`, נדחף ל-origin/main. ✅
+- לקח: מנעולי `.git/index.lock` + `refs/.../staging.lock` תקועים חסמו הכל; הפתרון — `rm -f` ללוקים + `git reset --hard origin/main` במקום `pull` (נמנע מ-divergent). דודי מריץ git בטרמינל שלו, לא בסנדבוקס.
+
+### החלטה — מייל/Push בעת אישור: נדחה (לא צריך כרגע)
+כשהמזכירה מאשרת, `approvePending` כבר שולח **מייל** (`send-approval-email` דרך Resend) + מסך ה-pending עושה polling כל 5ש' ומתקדם לבד אם פתוח. חסר רק **Push** (התשתית `notifyPush`/`send-push` קיימת ומיובאת ב-AthleteManagement, צריך רק להוסיף קריאה ב-`approvePending`). הוחלט לדחות כי: אקדמיה פיזית, המתאמן ממילא מגיע לאימון; Push עובד רק ל-PWA מותקן; המייל דורש קודם **אימות דומיין** ב-Resend (כרגע השולח `noreply@teampact-app.vercel.app` — תת-דומיין של Vercel שאי אפשר לאמת → ייתכן שהמייל נכשל בשקט. לתקן: לאמת `teampact.co.il` ולשנות שולח). **טריגר לחזור לזה:** אם מתאמנים יתלוננו "לא ידעתי שאושרתי".
+
+### My last pending task
+המשימה הושלמה ועלתה לפרודקשן. **פתוח להמשך (לא דחוף):** (1) אימות דומיין `teampact.co.il` ב-Resend + שינוי שולח, כדי שמייל האישור יישלח. (2) הוספת Push ב-`approvePending`. (3) השלמת סביבת staging ב-Vercel — חסרים `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` ל-staging, ולכן `teampact-app-git-staging-...vercel.app` מחזיר דף לבן (הקוד זורק שגיאה מכוונת בלי ה-env). צריך להחליט על DB נפרד ל-staging.
+
+---
+
 ## ✅ My last completed task — Session 12.06.2026 (מזכירות חולון: דחה + רענון + שינוי מייל)
 
 ### באג 1 — כפתור "דחה" מתאמן ממתין למזכירה לא דוחה ✅ נפתר ואומת
@@ -3542,3 +3585,40 @@ Build ✓ (vite, 111 מודולים, ל-outDir זמני — מחיקת dist חס
 
 ## My last pending task
 דחיפת באטץ' "חנות+סמינרים מחוץ למזכירה" ל-main: רק 3 קבצים נקיים (notifyTargets.js, AthleteDashboard.jsx, BottomNav.jsx) + MEMORY, דרך commit על staging → stash ל-TrainerDashboard+ReportsManager → checkout main → `git checkout staging -- <3 files>` → commit → push → חזרה ל-staging → stash pop. מנעולי .git חוזרים ב-sandbox; דודי מריץ git בטרמינל (להסיר locks קודם אם צריך). פתוח: TAB_HASHES + שיפורי TrainerDashboard/ReportsManager לא-מקומטים; פיצ'ר יומולדת 🎂 טרם הורץ.
+
+### המשך (2026-06-14) — אישור דרגה מחוץ למזכירה + הערכת פיצ'ר יומולדת
+- `AthleteDashboard.jsx`: התראת "בקשת אישור דרגה" (שורה ~1559) הוחלפה ל-nonSecretaryTrainerUserIds → המזכירה לא מקבלת. הוסר import לא-בשימוש allTrainerUserIds. build נקי.
+- פיצ'ר יומולדת: כל קוד הלקוח כבר חי בפרודקשן (BirthdayBanner בשני הדשבורדים, RPC get_class_registrants ב-AthleteDashboard). חסר רק להריץ supabase/migrations/birthday_feature.sql. ה-URL pnicoluujpidguvniwub תואם פרודקשן, send-push קיים. חלק A/B/C בטוח (עמודה+policy+RPC); חלק D דורש pg_cron+pg_net. לא להריץ את שורת הבדיקה האחרונה (send_birthday_pushes) — שולחת push אמיתי.
+
+# ====================================================================
+# 🛑 נקודת המשך לערב (2026-06-14) — שיחה חדשה
+# ====================================================================
+
+## הקשר קריטי לזכור
+**כל מה שנעשה היום נגע בפרודקשן בלבד — לא השתמשנו בסביבת הטסטים.**
+- כל דחיפות הקוד → main → Vercel פרודקשן.
+- כל ה-SQL (תיקוני מזכירה) רץ על DB הפרודקשן (pnicoluujpidguvniwub).
+- גם "בדיקה לוקאלית" (npm run dev) מחוברת ל-DB הפרודקשן — כי .env מקומי מצביע על prod.
+- סביבת הטסטים בנויה בקוד (supabase.js מתג לפי VITE_APP_ENV + רשת ביטחון) אבל לא בשימוש בפועל.
+
+## My last pending task — שתי משימות פתוחות לערב
+
+### 1) סביבת הטסטים (staging) — להשלים ולבדוק
+- צריך לוודא/ליצור **פרויקט Supabase נפרד** ל-staging, ולהגדיר ב-Vercel: VITE_APP_ENV=staging + VITE_SUPABASE_URL/KEY נפרדים.
+- שינויים לא-מקומטים על ברנץ' staging שקשורים לכך: StagingBanner.jsx + main.jsx (כבר בקומיט c8285a7 מקומי על staging, לא נדחפו ל-origin/staging), וכן ReportsManager.jsx + TrainerDashboard.jsx (שיפורים: סינון דוחות למאמן לפי branch user_id, באדג'ים למזכירה, TAB_HASHES למזכירה=[athletes,profile]) — לא מקומטים, בטוחים לפרודקשן אבל טרם נדחפו.
+- מטרה: שכל שינוי עתידי ייבדק ב-staging לפני prod.
+
+### 2) פיצ'ר יומולדת 🎂 — להריץ SQL
+- **קוד הלקוח כבר חי בפרודקשן** (BirthdayBanner בשני הדשבורדים, RPC get_class_registrants ב-AthleteDashboard) — חסר רק ה-SQL.
+- קובץ: supabase/migrations/birthday_feature.sql. URL pnicoluujpidguvniwub = prod, send-push קיים.
+- בלוק A/B/C (עמודת coaches.birth_date + policy coaches_select_self + RPC get_class_registrants) = בטוח, ב-BEGIN/COMMIT.
+- בלוק D (pg_cron + pg_net + send_birthday_pushes + schedule '0 5 * * *') = דורש extensions מאופשרים; אם נכשל, A/B/C כבר נשמרו.
+- ⚠️ לא להריץ את השורה האחרונה SELECT public.send_birthday_pushes(); — שולחת push אמיתי.
+- להחליט: לבדוק קודם ב-staging (אם יוקם DB נפרד) או להריץ A/B/C על prod.
+
+### 3) דחיפה שלא הושלמה — אישור דרגה מחוץ למזכירה
+- `AthleteDashboard.jsx`: שורה ~1559 שונתה ל-nonSecretaryTrainerUserIds (הוסר import allTrainerUserIds). build נקי. **לא קומט ולא נדחף.** הפקודות מוכנות (commit על staging → stash ReportsManager/TrainerDashboard → checkout main → checkout staging -- AthleteDashboard.jsx MEMORY.md → commit → push → חזרה → stash pop).
+
+### עוד פתוח
+- דוחות למזכירה — דודי ביקש לטפל בפעם אחרת.
+- מנעולי .git ב-sandbox חוזרים ("Operation not permitted") — דודי מריץ git בטרמינל; אם תקוע: rm -f .git/index.lock .git/refs/remotes/origin/staging.lock מתוך התיקייה.

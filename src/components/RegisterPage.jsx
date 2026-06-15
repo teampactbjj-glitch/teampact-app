@@ -192,7 +192,7 @@ export default function RegisterPage() {
           <p className="text-xs text-blue-700 mt-0.5 mb-2">אין צורך למלא את הטופס שוב — פשוט היכנס לאפליקציה</p>
           <a
             href="/"
-            className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl no-underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-400"
+            className="inline-block bg-red-600 hover:bg-red-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl no-underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-red-400"
           >
             פתח את האפליקציה ←
           </a>

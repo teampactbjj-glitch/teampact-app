@@ -440,27 +440,24 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   }
 
   async function rejectPending(id) {
-    // Bug 1.3: מאמן רגיל לא יכול לבצע DELETE על members.
-    // אדמין אמיתי → מחיקה לצמיתות.
-    // מאמן/מזכירה → soft-delete (UPDATE deleted_at) — RLS חוסם DELETE לכל מי שאינו is_approved_admin.
-    // חשוב: למזכירה isAdmin=true (כדי לפתוח הרשאות UI) אבל היא *לא* אדמין במסד —
-    // לכן חובה להחריג אותה כאן, אחרת ה-DELETE נחסם ב-RLS בשקט והכפתור "לא דוחה".
-    let error, deleted
-    if (isAdmin && !isSecretary) {
-      ;({ data: deleted, error } = await supabase.from('members').delete().eq('id', id).select('id'))
-    } else {
-      ;({ data: deleted, error } = await supabase.from('members').update({ deleted_at: new Date().toISOString() }).eq('id', id).select('id'))
-    }
-    if (error) {
-      console.error('rejectPending error:', error)
-      alert('דחיית המתאמן נכשלה: ' + (error.message || 'שגיאה לא ידועה'))
+    // דחיית מתאמן ממתין → מחיקה מלאה ושחרור המייל להרשמה חוזרת.
+    // על members יש טריגר tr_soft_delete (soft_delete.sql):
+    //   • DELETE ראשון על רשומה פעילה → הופך ל-UPDATE deleted_at (soft-delete),
+    //     מבטל את ה-DELETE ומחזיר 0 שורות. (זו הסיבה ל"אין הרשאה" המטעה — לא RLS!)
+    //   • DELETE שני על רשומה שכבר מסומנת deleted_at → עובר באמת (purge),
+    //     ומפעיל את הטריגר שמוחק את חשבון ה-auth ומשחרר את המייל.
+    // לכן מוחקים פעמיים: שלב 1 = soft-delete, שלב 2 = purge אמיתי.
+    const step1 = await supabase.from('members').delete().eq('id', id)
+    if (step1.error) {
+      console.error('rejectPending soft-delete error:', step1.error)
+      alert('דחיית המתאמן נכשלה: ' + (step1.error.message || 'שגיאה לא ידועה'))
       return
     }
-    if (!deleted || deleted.length === 0) {
-      // RLS חסם בשקט (0 שורות, ללא שגיאה) — לדווח במקום להיכשל בלי הסבר
-      console.error('rejectPending: 0 rows affected (RLS?)')
-      alert('דחיית המתאמן לא בוצעה (אין הרשאה). פנה למנהל.')
-      return
+    // שלב 2 — purge אמיתי (משחרר את המייל). הרשומה כבר deleted_at → הטריגר מתיר DELETE.
+    const { error: purgeErr } = await supabase.from('members').delete().eq('id', id).select('id')
+    if (purgeErr) {
+      // ה-soft-delete הצליח (המתאמן נעלם) — רק שחרור המייל נכשל. לא חוסם.
+      console.warn('rejectPending purge warning (member removed, email not freed):', purgeErr)
     }
     fetchAthletes()
     onPendingChange?.()

@@ -187,6 +187,17 @@ export default function RegisterPage() {
           <p className="text-sm text-gray-600 mt-0.5">מלא את הפרטים ונחזור אליך בהקדם</p>
         </div>
 
+        <div role="note" className="bg-blue-50 border-2 border-blue-300 rounded-xl px-3 py-3 text-center">
+          <p className="text-sm font-bold text-blue-900">כבר נרשמת בעבר?</p>
+          <p className="text-xs text-blue-700 mt-0.5 mb-2">אין צורך למלא את הטופס שוב — פשוט היכנס לאפליקציה</p>
+          <a
+            href="/"
+            className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl no-underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-400"
+          >
+            פתח את האפליקציה ←
+          </a>
+        </div>
+
         <div role="note" className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-center">
           <p className="text-sm font-semibold text-amber-800">📝 יש למלא את הטופס בעברית בלבד</p>
           <p className="text-xs text-amber-700 mt-0.5">כדי שנוכל לזהות אתכם ולקשר לתשלום</p>

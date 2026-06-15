@@ -7,12 +7,23 @@ import { Field } from './a11y'
 
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
+const HEBREW = /[֐-׿]/ // אות עברית כלשהי
+// ולידציית שם מלא בעברית — דורש שם פרטי + שם משפחה (לפחות שתי מילים)
+function validateHebrewFullName(raw) {
+  const name = (raw || '').trim()
+  if (/[A-Za-z]/.test(name) || !HEBREW.test(name)) return 'בעברית בלבד (ללא אותיות באנגלית)'
+  const parts = name.split(/\s+/).filter(Boolean)
+  if (parts.length < 2) return 'יש להזין שם מלא — שם פרטי ושם משפחה'
+  return null
+}
+
 export default function RegisterPage() {
   const [branches, setBranches] = useState([])
   const [form, setForm] = useState({
     full_name: '', email: '', phone: '', password: '', passwordConfirm: '',
     branch_ids: [], subscription_type: '2x_week',
     birth_date: '',
+    is_registering_child: false, parent_name: '',
   })
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
@@ -74,12 +85,24 @@ export default function RegisterPage() {
       setError('נא למלא שם, אימייל ולבחור לפחות סניף אחד')
       return
     }
-    // שם בעברית בלבד — שדה הקישור לתשלום. חוסם אותיות לועזיות.
-    const name = form.full_name.trim()
-    const HEBREW = /[֐-׿]/        // אות עברית כלשהי
-    if (/[A-Za-z]/.test(name) || !HEBREW.test(name)) {
-      setError('יש להזין שם מלא בעברית בלבד (ללא אותיות באנגלית)')
+    // טלפון חובה — לפחות 9 ספרות
+    if ((form.phone.match(/\d/g) || []).length < 9) {
+      setError('נא למלא מספר טלפון תקין')
       return
+    }
+    // שם בעברית בלבד + שם פרטי ושם משפחה — שדה הקישור לתשלום.
+    const nameErr = validateHebrewFullName(form.full_name)
+    if (nameErr) {
+      setError('שם המתאמן: ' + nameErr)
+      return
+    }
+    // אם רושמים ילד — חובה למלא שם הורה מלא (פרטי + משפחה) בעברית
+    if (form.is_registering_child) {
+      const parentErr = validateHebrewFullName(form.parent_name)
+      if (parentErr) {
+        setError('שם ההורה: ' + parentErr)
+        return
+      }
     }
     if (!form.birth_date) {
       setError('נא למלא תאריך לידה')
@@ -120,6 +143,7 @@ export default function RegisterPage() {
       subscription_type: form.subscription_type,
       status: 'pending',
       birth_date: form.birth_date || null,
+      parent_name: form.is_registering_child ? form.parent_name.trim() : null,
     }
     if (userId) memberPayload.id = userId
     const { error: memberErr } = await supabase.from('members').insert(memberPayload)
@@ -204,7 +228,36 @@ export default function RegisterPage() {
         </div>
 
         <div className="space-y-3">
-          <Field label="שם מלא" required hint="בעברית בלבד">
+          {/* האם זה הורה שרושם ילד? אם כן — נחשוף שדה שם הורה */}
+          <label className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.is_registering_child}
+              onChange={e => setForm(p => ({ ...p, is_registering_child: e.target.checked }))}
+              className="w-4 h-4 accent-emerald-600 focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-emerald-400"
+            />
+            <span className="text-sm font-medium text-gray-700">אני רושם/ת ילד/ה (מתאמן/ת מתחת לגיל 18)</span>
+          </label>
+
+          {form.is_registering_child && (
+            <Field label="שם מלא של ההורה" required hint="בעברית בלבד — שם פרטי ושם משפחה">
+              {(props) => (
+                <input
+                  {...props}
+                  type="text"
+                  autoComplete="name"
+                  lang="he"
+                  inputMode="text"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="ישראל ישראלי"
+                  value={form.parent_name}
+                  onChange={e => setForm(p => ({ ...p, parent_name: e.target.value }))}
+                />
+              )}
+            </Field>
+          )}
+
+          <Field label={form.is_registering_child ? 'שם מלא של המתאמן/ת (הילד/ה)' : 'שם מלא'} required hint="בעברית בלבד — שם פרטי ושם משפחה">
             {(props) => (
               <input
                 {...props}
@@ -234,7 +287,7 @@ export default function RegisterPage() {
             )}
           </Field>
 
-          <Field label="טלפון">
+          <Field label="טלפון" required>
             {(props) => (
               <input
                 {...props}

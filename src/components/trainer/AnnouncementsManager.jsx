@@ -39,6 +39,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   const [loading, setLoading]   = useState(true)
   const [uploading, setUploading] = useState(false)
   const [branches, setBranches] = useState([])
+  // סינון תצוגה: הכל / אירועים / הודעות
+  const [mgrFilter, setMgrFilter] = useState('all')
 
   useEffect(() => {
     let q = supabase.from('branches').select('id, name').order('name')
@@ -542,6 +544,17 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
         </div>
   )
 
+  // ארגון לשני אזורים — כמו בתצוגת המתאמן, אך עם כל כלי הניהול.
+  // אירועים (סמינרים) לפי תאריך האירוע, הודעות לפי תאריך פרסום (הסדר שכבר נטען מה-DB).
+  const nowMgr = new Date()
+  const mgrEventRank = item => {
+    const d = item.event_date ? new Date(item.event_date) : null
+    if (!d) return [1, -(new Date(item.created_at || 0).getTime())]
+    return d >= nowMgr ? [0, d.getTime()] : [2, -d.getTime()]
+  }
+  const managerEvents  = items.filter(i => i.type === 'seminar').sort((a, b) => { const ra = mgrEventRank(a), rb = mgrEventRank(b); return ra[0] - rb[0] || ra[1] - rb[1] })
+  const managerNotices = items.filter(i => i.type !== 'seminar')
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -580,8 +593,27 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       ) : items.length === 0 ? (
         <div className="text-center py-12 text-gray-400"><div className="text-4xl mb-2">📭</div><p>אין הודעות עדיין</p></div>
       ) : (
-        <ul className="space-y-3">
-          {items.map(item => (
+        <div className="space-y-4">
+          {/* סרגל סינון: הכל / אירועים / הודעות */}
+          <div className="flex bg-gray-100 rounded-full p-1 text-sm max-w-xs">
+            {[{ key: 'all', label: 'הכל' }, { key: 'events', label: 'אירועים' }, { key: 'notices', label: 'הודעות' }].map(t => (
+              <button key={t.key} onClick={() => setMgrFilter(t.key)}
+                className={`flex-1 py-1.5 rounded-full font-medium transition ${mgrFilter === t.key ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-5">
+          {[
+            { key: 'events',  label: '📅 אירועים (סמינרים / תחרויות)', rows: managerEvents },
+            { key: 'notices', label: '📢 הודעות',                      rows: managerNotices },
+          ].filter(sec => sec.rows.length > 0 && (mgrFilter === 'all' || mgrFilter === sec.key)).map(sec => (
+            <div key={sec.key} className="space-y-3">
+              <h3 className="font-bold text-gray-700 text-base flex items-center gap-2">
+                {sec.label}<span className="text-xs font-normal text-gray-400">({sec.rows.length})</span>
+              </h3>
+              <ul className="space-y-3">
+                {sec.rows.map(item => (
             <li key={item.id} className="bg-white border rounded-xl overflow-hidden shadow-sm">
               {/* תמונת ההודעה/הסמינר — כמו בתצוגת המתאמן */}
               {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-72 object-contain bg-gray-50" loading="lazy" />}
@@ -707,8 +739,12 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
               {showForm && editingId === item.id && <div id="announcement-edit-form" className="mt-3 border-t pt-3 scroll-mt-4">{editorCard}</div>}
               </div>
             </li>
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -2358,9 +2358,12 @@ export default function AthleteDashboard({ profile }) {
       const now = new Date()
       const todayDow = now.getDay()
       if (todayDow === cls.day_of_week) {
+        // היום הוא יום השיעור — מעגנים את ההופעה להיום, גם אם השיעור כבר התחיל/נגמר.
+        // כך רישום באיחור (אפילו אחרי שהשיעור נגמר) נספר לאותו אימון ויורד ממכסת השבוע,
+        // במקום להתגלגל לשבוע הבא וליצור checkin "רפאים" שחוסם מכסה (הבאג של גל/אביתר).
         const todayStart = new Date(now)
         todayStart.setHours(hh, mm, ss || 0, 0)
-        if (now < todayStart) return todayStart
+        return todayStart
       }
       let daysAhead = (cls.day_of_week - todayDow + 7) % 7
       if (daysAhead === 0) daysAhead = 7

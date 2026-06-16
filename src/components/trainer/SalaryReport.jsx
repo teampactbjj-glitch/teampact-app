@@ -348,7 +348,10 @@ export default function SalaryReport({ isAdmin }) {
     const e = memberEdits[memberId]
     if (!e) return
     const payload = {}
-    if (e.subscription_type !== undefined) payload.subscription_type = e.subscription_type
+    if (e.subscription_type !== undefined) {
+      payload.subscription_type = e.subscription_type
+      payload.membership_type = e.subscription_type // לסנכרן את שני שדות המנוי כדי שלא ייווצר פער
+    }
     if (e.custom_price !== undefined)
       payload.custom_price = e.custom_price === '' ? null : Number(e.custom_price)
     if (e.discount_pct !== undefined)

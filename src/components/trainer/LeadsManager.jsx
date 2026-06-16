@@ -59,7 +59,7 @@ export default function LeadsManager({ trainerId = null, isAdmin = false } = {})
       return
     }
     setActionLoading(p => ({ ...p, [lead.id]: 'approving' }))
-    const { error } = await supabase.from('members').update({ status: 'active', subscription_type: subType }).eq('id', lead.id)
+    const { error } = await supabase.from('members').update({ status: 'active', subscription_type: subType, membership_type: subType }).eq('id', lead.id)
     if (error) {
       toast.error('שגיאה באישור: ' + (error.message || 'נסה שוב'))
       setActionLoading(p => ({ ...p, [lead.id]: null }))

@@ -141,6 +141,7 @@ export default function RegisterPage() {
       branch_ids: form.branch_ids,
       branch_id: form.branch_ids[0],
       subscription_type: form.subscription_type,
+      membership_type: form.subscription_type, // לסנכרן את שני שדות המנוי כדי שלא ייווצר פער
       status: 'pending',
       birth_date: form.birth_date || null,
       parent_name: form.is_registering_child ? form.parent_name.trim() : null,

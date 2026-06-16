@@ -81,6 +81,39 @@ function isLockedForRegister(cls, now = getNow()) {
   return now >= lateCutoff
 }
 
+// שיעורי "מזרן/מזרון פתוח" / ספארינג — פתוחים לכל מנוי, לא נספרים במכסה השבועית.
+// זהה ללוגיקה ב-TodayClasses.jsx כדי שהספירה תהיה עקבית בין הממשקים.
+function isOpenMatClass(cls) {
+  if (!cls) return false
+  if ((cls.class_type || '').toLowerCase() === 'open_mat') return true
+  const name = String(cls.name || cls.title || '').toLowerCase()
+  if (/מזרו?ן\s*פתוח/.test(name)) return true
+  if (/ספארינג/.test(name)) return true
+  if (/open[- ]?mat/.test(name)) return true
+  return false
+}
+
+// טווח השבוע (ראשון→שבת) של תאריך נתון — להחזרת גבולות ISO לספירת צ'ק-אינים.
+function getWeekRangeOf(refDate) {
+  const d = new Date(refDate)
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - d.getDay())
+  const weekStart = new Date(d)
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 6)
+  weekEnd.setHours(23, 59, 59, 999)
+  return { weekStart: weekStart.toISOString(), weekEnd: weekEnd.toISOString() }
+}
+
+// week_start כמחרוזת (YYYY-MM-DD) של שבוע התאריך הנתון — אותה קונבנציה כמו getWeekStart,
+// אבל לפי מועד השיעור בפועל (לא לפי זמן הלחיצה).
+function weekStartStrOf(refDate) {
+  const d = new Date(refDate)
+  d.setDate(d.getDate() - d.getDay())
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString().split('T')[0]
+}
+
 export default function ClassSchedule({ profile, member }) {
   const toast = useToast()
   const [classes, setClasses] = useState([])
@@ -181,10 +214,36 @@ export default function ClassSchedule({ profile, member }) {
       }
     }
 
-    // Prevent going over limit when registering
-    if (!isRegistered && limit !== Infinity && registeredIds.size >= limit) {
-      toast.error(`הגעת למגבלת ${limit} שיעורים שבועיים לפי המנוי שלך`)
-      return
+    // אכיפת מכסה שבועית — מקור ספירה אחד וזהה לצד המאמן: צ'ק-אינים בפועל
+    // בשבוע (ראשון→שבת) של מועד השיעור, ולא מספר הרישומים. כך כל הוספה
+    // (מתאמן/מאמן/מנהל) יורדת מאותה מכסה, וגם רישום לשיעור עתידי נספר בשבוע
+    // שבו הוא באמת מתקיים. מזרן פתוח/ספארינג לא נספרים.
+    const occ = cls ? computeNextOccurrence(cls, getNow()) : null
+    if (!isRegistered && limit !== Infinity && occ && !isOpenMatClass(cls)) {
+      const { weekStart, weekEnd } = getWeekRangeOf(occ.start)
+      const { data: weekChks, error: wErr } = await supabase
+        .from('checkins')
+        .select('class_id')
+        .eq('athlete_id', athleteId)
+        .neq('status', 'absent')
+        .gte('checked_in_at', weekStart)
+        .lte('checked_in_at', weekEnd)
+      if (wErr) console.error('weekly quota check error:', wErr)
+      // לא סופרים שיעורי מזרן פתוח — שולפים את סוגי השיעורים מה-DB לפי class_ids שנמצאו.
+      const ids = Array.from(new Set((weekChks || []).map(r => r.class_id).filter(Boolean)))
+      let openMatIds = new Set()
+      if (ids.length > 0) {
+        const { data: chkClasses } = await supabase
+          .from('classes')
+          .select('id, name, class_type')
+          .in('id', ids)
+        openMatIds = new Set((chkClasses || []).filter(isOpenMatClass).map(c => c.id))
+      }
+      const weekCount = (weekChks || []).filter(r => !openMatIds.has(r.class_id)).length
+      if (weekCount >= limit) {
+        toast.error(`הגעת למגבלת ${limit} שיעורים שבועיים לפי המנוי שלך`)
+        return
+      }
     }
 
     setActionLoading(p => ({ ...p, [classId]: true }))
@@ -229,16 +288,20 @@ export default function ClassSchedule({ profile, member }) {
       // add optimistically
       setRegisteredIds(prev => new Set([...prev, classId]))
       try {
+        // week_start לפי מועד השיעור בפועל (occ), לא לפי זמן הלחיצה — כדי שהרישום
+        // ייספר באותו שבוע שבו הצ'ק-אין באמת נוצר, ולא ייווצר פער בין הטבלאות.
+        const regWeekStart = weekStartStrOf(occ ? occ.start : getNow())
         const { error } = await supabase
           .from('class_registrations')
-          .insert({ athlete_id: athleteId, class_id: classId })
+          .insert({ athlete_id: athleteId, class_id: classId, week_start: regWeekStart })
         if (error) throw error
         // רישום → יוצר checkin אוטומטי 'present' עם תאריך השיעור הקרוב.
         // ככה המאמן/מנהל רואים את המתאמן כנוכח כברירת מחדל, וצריכים רק
         // לסמן ✕ נעדר לאלה שלא הגיעו (במקום לסמן ✓ נוכח לכולם בכל שיעור).
         // אם כבר קיים checkin (כולל absent) — לא נדרוס אותו (onConflict: do nothing).
         if (cls) {
-          const { start } = computeNextOccurrence(cls, new Date())
+          // אותו מועד ששימש לחישוב week_start — כדי שהצ'ק-אין והרישום יהיו באותו שבוע.
+          const start = occ ? occ.start : computeNextOccurrence(cls, getNow()).start
           const checkedAt = new Date(start); checkedAt.setHours(12, 0, 0, 0)
           // המודל החדש: שורה לכל יום (class_id, athlete_id, checkin_date) — לכן רישום
           // בשבוע הבא לא דורס את הצ'ק-אין של השבוע הנוכחי. עמודת checkin_date

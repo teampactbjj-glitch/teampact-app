@@ -52,7 +52,10 @@ function formatDateLabel(date) {
   return `${dayName} · ${dateStr}`
 }
 
-export default function TodayClasses({ trainerId, isAdmin, onChange }) {
+export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, branchFilter = null, onChange }) {
+  // מזכירה רואה את כל שיעורי היום (כמו אדמין) אבל מסונן לסניף שלה,
+  // ויכולה רק להוסיף/להסיר מתאמנים — בלי ניהול שיעורים (הוספה/מחיקה/עריכה/אישור).
+  const seesAllClasses = isAdmin || isSecretary  // האם רואים את כל שיעורי היום (לא רק של המאמן)
   const toast = useToast()
   const confirm = useConfirm()
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
@@ -187,16 +190,21 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
     setLoading(true)
     const todayDow = date.getDay()
 
-    if (isAdmin) {
-      const { data, error } = await supabase
+    if (seesAllClasses) {
+      let q = supabase
         .from('classes')
         .select('*, branches(name)')
         .eq('day_of_week', todayDow)
         .is('deleted_at', null)  // לא להציג שיעורים שעברו soft-delete
+      // מזכירה — מסונן לסניף שלה בלבד (חולון)
+      if (branchFilter) q = q.eq('branch_id', branchFilter)
+      const { data, error } = await q
         .order('branch_id')
         .order('start_time')
       if (error) console.error('fetchTodayClasses error:', error)
-      const mapped = (data || []).map(cls => ({
+      // מזכירה רואה רק שיעורים מאושרים (בלי שיעורים שממתינים לאישור מנהל)
+      const rows = isSecretary ? (data || []).filter(c => c.status !== 'pending') : (data || [])
+      const mapped = rows.map(cls => ({
         ...cls,
         branchName: cls.branches?.name || cls.branch_id || '',
         coachName: cls.coach_name || '',
@@ -1085,10 +1093,13 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
           <p className="text-xs text-gray-400 mt-0.5">{selectedDate.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={openAddForm}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap">
-            + הוסף שיעור
-          </button>
+          {/* מזכירה לא מוסיפה שיעורים — רק מוסיפה/מסירה מתאמנים */}
+          {!isSecretary && (
+            <button onClick={openAddForm}
+              className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap">
+              + הוסף שיעור
+            </button>
+          )}
         </div>
       </div>
 
@@ -1627,7 +1638,8 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                       </div>
                     )}
 
-                    {/* Danger zone — מחיקת שיעור */}
+                    {/* Danger zone — מחיקת שיעור (מוסתר למזכירה) */}
+                    {!isSecretary && (
                     <div className="pt-3 border-t">
                       {cls.deletion_requested_at && !isAdmin ? (
                         <div className="w-full text-sm bg-rose-50 border-2 border-rose-200 text-rose-700 px-3 py-2 rounded-lg font-bold text-center">
@@ -1642,6 +1654,7 @@ export default function TodayClasses({ trainerId, isAdmin, onChange }) {
                         </button>
                       )}
                     </div>
+                    )}
                   </>
                 )}
               </div>

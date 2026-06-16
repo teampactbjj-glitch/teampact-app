@@ -278,7 +278,7 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
   // hash → tab (מאפשר ניווט מהתראת push)
   useEffect(() => {
     const TAB_HASHES = isSecretary
-      ? ['athletes', 'announcements', 'profile']
+      ? ['schedule', 'athletes', 'profile']
       : ['schedule', 'athletes', 'reports', 'coaches', 'shop', 'announcements', 'profile', 'settings']
     function syncFromHash() {
       const h = (window.location.hash || '').replace('#', '')
@@ -290,7 +290,9 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
   }, [])
 
   // Realtime: new pending registrations (in-app toast when tab is open)
+  // רק למנהל/מזכירה — למאמן רגיל אין הרשאת אישור/מחיקת מתאמנים, אז אין טעם בהתראה.
   useEffect(() => {
+    if (!isAdmin && !isSecretary) return
     const channel = supabase
       .channel('pending-members')
       .on('postgres_changes', {
@@ -311,7 +313,7 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [isAdmin, isSecretary])
 
   // Realtime: בקשת מחיקת מתאמן חדשה → toast למנהל בלבד
   useEffect(() => {
@@ -414,8 +416,16 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
       }
       setRequestsCount(Math.max(0, (allRequests || 0) - trainerNameCount))
       setPendingCoachesCount((coachReqRes.error ? 0 : (coachReqRes.count || 0)) + trainerNameCount)
-    } else {
+    } else if (isSecretary) {
+      // מזכירה — שומרת הרשאת אישור מתאמנים בסניף שלה, אז הבאדג'ים נשארים.
       setRequestsCount(allRequests || 0)
+      setScheduleCount(0)
+      setAthleteDeletionCount(0)
+      setPendingCoachesCount(0)
+    } else {
+      // מאמן רגיל — אין הרשאת אישור/מחיקת מתאמנים → לא מציגים שום התראת מתאמנים.
+      setLeadsCount(0)
+      setRequestsCount(0)
       setScheduleCount(0)
       setAthleteDeletionCount(0)
       setPendingCoachesCount(0)
@@ -491,7 +501,15 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
             {!isStandalone() && <InstallBanner variant="slim" />}
             <EnablePushBanner profile={profile} />
           </div>
-          {activeTab === 'schedule' && <TodayClasses trainerId={profile?.id} isAdmin={isAdmin} onChange={refreshCounts} />}
+          {activeTab === 'schedule' && (
+            <TodayClasses
+              trainerId={profile?.id}
+              isAdmin={isAdmin}
+              isSecretary={isSecretary}
+              branchFilter={isSecretary ? secretaryBranchId : null}
+              onChange={refreshCounts}
+            />
+          )}
 
           {activeTab === 'athletes' && (
             <div className="space-y-6">

@@ -703,13 +703,19 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
     return <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">📭</div><p>אין הודעות כרגע</p></div>
   }
 
-  // פיד מאוחד — הודעות וסמינרים יחד, החדש ביותר תמיד ראשון (לפי תאריך פרסום)
-  const feed = [...general, ...seminars].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+  // הפרדה לשני אזורים: "אירועים קרובים" (סמינרים/תחרויות, לפי תאריך האירוע) ו"הודעות" (לפי תאריך פרסום).
+  // שינוי תצוגה בלבד — לא נוגע בנתונים, בתמונות או בהרשמות.
+  const now = new Date()
+  // דירוג אירוע: [0]=עתידי (מהקרוב לרחוק), [1]=ללא תאריך (החדש שפורסם ראשון), [2]=עבר (נדחף לתחתית)
+  const eventRank = item => {
+    const d = item.event_date ? new Date(item.event_date) : null
+    if (!d) return [1, -(new Date(item.created_at || 0).getTime())]
+    return d >= now ? [0, d.getTime()] : [2, -d.getTime()]
+  }
+  const events  = [...seminars].sort((a, b) => { const ra = eventRank(a), rb = eventRank(b); return ra[0] - rb[0] || ra[1] - rb[1] })
+  const notices = [...general].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
 
-  return (
-    <div className="space-y-3">
-      <h2 className="font-bold text-gray-800 text-lg">הודעות ואירועים</h2>
-      {feed.map(item => {
+  const renderItem = item => {
         if (item.type !== 'seminar') return (
             <div key={item.id} id={`announcement-${item.id}`}
               className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ${
@@ -801,7 +807,22 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
                 </div>
               </div>
         )
-      })}
+  }
+
+  return (
+    <div className="space-y-5">
+      {events.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-bold text-gray-800 text-lg">📅 אירועים קרובים</h2>
+          {events.map(renderItem)}
+        </div>
+      )}
+      {notices.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-bold text-gray-800 text-lg">📢 הודעות</h2>
+          {notices.map(renderItem)}
+        </div>
+      )}
     </div>
   )
 }

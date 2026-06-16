@@ -13,14 +13,14 @@ export default function BottomNav({ activeTab, onTabChange, isTrainer, isAdmin =
         ...(isAdmin ? [{ id: 'coaches', icon: '🥋', label: 'מאמנים' }] : []),
         ...(isAdmin ? [{ id: 'salary', icon: '💰', label: 'שכר' }] : []),
         { id: 'shop',          icon: '🛒', label: 'חנות' },
-        { id: 'announcements', icon: '📢', label: 'הודעות' },
+        { id: 'announcements', icon: '📢', label: 'עדכונים' },
         ...(isAdmin ? [] : [{ id: 'profile', icon: '👤', label: 'פרופיל' }]),
         ...(isAdmin ? [{ id: 'settings', icon: '⚙️', label: 'הגדרות' }] : []),
       ]
     : [
         { id: 'schedule',      icon: '📅', label: 'לו״ז' },
         { id: 'shop',          icon: '🛒', label: 'חנות' },
-        { id: 'announcements', icon: '📢', label: 'הודעות' },
+        { id: 'announcements', icon: '📢', label: 'עדכונים' },
         { id: 'profile',       icon: '👤', label: 'פרופיל' },
         { id: 'settings',      icon: '⚙️', label: 'הגדרות' },
       ]

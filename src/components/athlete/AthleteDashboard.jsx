@@ -578,7 +578,7 @@ function linkifyText(text) {
   })
 }
 
-function AnnouncementsTab({ announcements, profile, member, focusId = null, onFocusConsumed }) {
+function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focusId = null, onFocusConsumed }) {
   const toast = useToast()
   const confirm = useConfirm()
   // הדגשה זמנית של הודעה/סמינר שהגיעו אליהם מהתראת push
@@ -610,6 +610,10 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
   // הזמנות סמינר שהמנהל סימן כ"הושלמו" (status='done') — הכפתור הופך ל"✅ ההזמנה הושלמה".
   // בלי ה-state הזה הקומפוננטה קרסה ב-ReferenceError כי orderedDone היה מוגדר רק ב-ShopTab.
   const [orderedDone, setOrderedDone] = useState(new Set())
+  // סינון תצוגה: הכל / אירועים / הודעות
+  const [filter, setFilter] = useState('all')
+  // צילום מצב "נקרא עד" ברגע הכניסה לטאב — כדי שנקודות ה"לא נקרא" יישארו יציבות בזמן הצפייה
+  const [seenSnapshot] = useState(() => lastSeen || '')
 
   useEffect(() => {
     if (!storageKey) return
@@ -706,6 +710,8 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
   // הפרדה לשני אזורים: "אירועים קרובים" (סמינרים/תחרויות, לפי תאריך האירוע) ו"הודעות" (לפי תאריך פרסום).
   // שינוי תצוגה בלבד — לא נוגע בנתונים, בתמונות או בהרשמות.
   const now = new Date()
+  // "לא נקרא" — פורסם אחרי הצילום של last_seen (אותו מקור אמת של הבאדג' על הטאב)
+  const isUnread = item => !!(item.created_at && item.created_at > seenSnapshot)
   // דירוג אירוע: [0]=עתידי (מהקרוב לרחוק), [1]=ללא תאריך (החדש שפורסם ראשון), [2]=עבר (נדחף לתחתית)
   const eventRank = item => {
     const d = item.event_date ? new Date(item.event_date) : null
@@ -715,113 +721,187 @@ function AnnouncementsTab({ announcements, profile, member, focusId = null, onFo
   const events  = [...seminars].sort((a, b) => { const ra = eventRank(a), rb = eventRank(b); return ra[0] - rb[0] || ra[1] - rb[1] })
   const notices = [...general].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
 
-  const renderItem = item => {
-        if (item.type !== 'seminar') return (
-            <div key={item.id} id={`announcement-${item.id}`}
-              className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ${
-                highlightId === item.id ? 'border-blue-500 ring-2 ring-blue-300' : ''}`}>
-              {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" loading="lazy" />}
-              <div className="p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium">📢 הודעה</span>
-                  {item.created_at && (
-                    <span className="text-xs text-gray-400">
-                      {new Date(item.created_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
-                    </span>
-                  )}
-                </div>
-                <p className="font-semibold text-gray-800">{item.title}</p>
-                {item.content && <p className="text-xs text-gray-500 mt-1 leading-relaxed whitespace-pre-line">{linkifyText(item.content)}</p>}
-                {Array.isArray(item.links) && item.links.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    {item.links.map((lnk, i) => (
-                      <a key={i} href={lnk.url} target="_blank" rel="noopener noreferrer"
-                        className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm">
-                        🔗 {lnk.label || lnk.url}
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-        )
-        const pr = seminarPricing(item)
-        const fmtD = d => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
-        return (
-              <div key={item.id} id={`announcement-${item.id}`}
-                className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ${
-                  highlightId === item.id ? 'border-blue-500 ring-2 ring-blue-300' : ''}`}>
-                {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" loading="lazy" />}
-                <div className="p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">🎓 סמינר</span>
-                    {item.event_date && <span className="text-xs text-blue-600 font-medium">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}</span>}
-                  </div>
-                  <p className="font-semibold text-gray-800">{item.title}</p>
-                  {/* מיקום האירוע — לחיץ, נפתח ב-Google Maps */}
-                  {item.event_location && (
-                    <a href={`https://maps.google.com/?q=${encodeURIComponent(item.event_location)}`}
-                      target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium mt-1">
-                      📍 {item.event_location}
-                    </a>
-                  )}
-                  {item.content && <p className="text-xs text-gray-500 mt-1 whitespace-pre-line">{linkifyText(item.content)}</p>}
-                  {Array.isArray(item.links) && item.links.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {item.links.map((lnk, i) => (
-                        <a key={i} href={lnk.url} target="_blank" rel="noopener noreferrer"
-                          className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-semibold">
-                          🔗 {lnk.label || lnk.url}
-                        </a>
-                      ))}
-                    </div>
-                  )}
-                  {/* תמחור: אם יש מחיר מוקדם — מציגים את שני המחירים, הנוכחי מודגש והשני מחוק/אפור */}
-                  {pr.early != null && pr.deadline && pr.regular != null ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                      <span className={pr.earlyActive ? 'font-bold text-emerald-600' : 'text-gray-400 line-through'}>
-                        עד {fmtD(pr.deadline)} — ₪{pr.early}
-                      </span>
-                      <span className={pr.earlyActive ? 'text-gray-500' : 'font-bold text-emerald-600'}>
-                        אחרי — ₪{pr.regular}
-                      </span>
-                      {pr.earlyActive && <span className="text-[11px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">מחיר מוקדם בתוקף!</span>}
-                    </div>
-                  ) : pr.current != null && (
-                    <p className="text-sm font-bold text-emerald-600 mt-2">₪{pr.current}</p>
-                  )}
-                  {/* כפתור הרשמה פנימי — מוצג רק אם המנהל לא כיבה "הרשמה דרך האפליקציה" (אירוע חיצוני עם קישורי הרשמה/תשלום) */}
-                  {item.allow_app_registration !== false && (
-                    <button onClick={() => handleOrder(item)} disabled={orderingId === item.id}
-                      className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${
-                        orderedDone.has(item.id) ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                        : ordered.has(item.id) ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
-                      {orderingId === item.id ? '...'
-                        : orderedDone.has(item.id) ? '✅ נרשמת — התשלום אושר'
-                        : ordered.has(item.id) ? '⏳ נרשמת — ממתין לאישור (לחץ לביטול)'
-                        : `להירשם לסמינר${pr.current != null ? ` · ₪${pr.current}` : ''}`}
-                    </button>
-                  )}
-                </div>
-              </div>
-        )
+  // קיבוץ הודעות לפי זמן: היום / השבוע / מוקדם יותר
+  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0)
+  const weekStart = new Date(todayStart); weekStart.setDate(weekStart.getDate() - 6)
+  const noticeGroupKey = item => {
+    const d = item.created_at ? new Date(item.created_at) : null
+    if (!d) return 'earlier'
+    if (d >= todayStart) return 'today'
+    if (d >= weekStart) return 'week'
+    return 'earlier'
   }
+  const relTime = item => {
+    const d = item.created_at ? new Date(item.created_at) : null
+    if (!d) return ''
+    if (d >= todayStart) return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
+  }
+  const noticeGroups = [
+    { key: 'today',   label: 'היום',       items: notices.filter(n => noticeGroupKey(n) === 'today') },
+    { key: 'week',    label: 'השבוע',      items: notices.filter(n => noticeGroupKey(n) === 'week') },
+    { key: 'earlier', label: 'מוקדם יותר', items: notices.filter(n => noticeGroupKey(n) === 'earlier') },
+  ].filter(g => g.items.length > 0)
+
+  // ---- הודעה: שורה רזה ושקטה (ביטול אימון / חג / לו"ז) ----
+  const renderNotice = item => {
+    const unread = isUnread(item)
+    return (
+      <div key={item.id} id={`announcement-${item.id}`}
+        className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ${
+          highlightId === item.id ? 'border-blue-500 ring-2 ring-blue-300' : unread ? 'border-amber-200' : ''} ${unread ? '' : 'opacity-70'}`}>
+        {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" loading="lazy" />}
+        <div className="p-4">
+          <div className="flex items-start gap-2">
+            {unread && <span aria-label="לא נקרא" className="mt-1.5 w-2 h-2 rounded-full bg-amber-500 shrink-0" />}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <p className={`text-gray-800 ${unread ? 'font-semibold' : 'font-medium'}`}>{item.title}</p>
+                {item.created_at && <span className="text-[11px] text-gray-400 shrink-0 mt-0.5">{relTime(item)}</span>}
+              </div>
+              {item.content && <p className="text-xs text-gray-500 mt-1 leading-relaxed whitespace-pre-line">{linkifyText(item.content)}</p>}
+              {Array.isArray(item.links) && item.links.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {item.links.map((lnk, i) => (
+                    <a key={i} href={lnk.url} target="_blank" rel="noopener noreferrer"
+                      className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm">
+                      🔗 {lnk.label || lnk.url}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ---- אירוע: כרטיס עשיר (סמינר/תחרות) עם תמונה, תאריך, מיקום, מחיר, הרשמה ----
+  const renderEvent = item => {
+    const pr = seminarPricing(item)
+    const fmtD = d => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
+    const unread = isUnread(item)
+    const past = item.event_date ? new Date(item.event_date) < now : false
+    const earlyDaysLeft = pr.earlyActive && pr.deadline ? Math.ceil((pr.deadline - now) / 86400000) : null
+    const showButton = item.allow_app_registration !== false && (!past || ordered.has(item.id) || orderedDone.has(item.id))
+    return (
+      <div key={item.id} id={`announcement-${item.id}`}
+        className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ${
+          highlightId === item.id ? 'border-blue-500 ring-2 ring-blue-300' : ''} ${past ? 'opacity-60' : ''}`}>
+        {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-96 object-contain bg-gray-50" loading="lazy" />}
+        <div className="p-4">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">🎓 סמינר</span>
+              {past && <span className="text-[11px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">הסתיים</span>}
+            </div>
+            {unread && !past && <span aria-label="לא נקרא" className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
+          </div>
+          <p className="font-semibold text-gray-800 text-base">{item.title}</p>
+          <div className="mt-2 space-y-1">
+            {item.event_date && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                <span>📅</span><span>{new Date(item.event_date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+              </div>
+            )}
+            {item.event_location && (
+              <a href={`https://maps.google.com/?q=${encodeURIComponent(item.event_location)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium">
+                <span>📍</span><span>{item.event_location}</span>
+              </a>
+            )}
+          </div>
+          {item.content && <p className="text-xs text-gray-500 mt-2 whitespace-pre-line">{linkifyText(item.content)}</p>}
+          {Array.isArray(item.links) && item.links.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {item.links.map((lnk, i) => (
+                <a key={i} href={lnk.url} target="_blank" rel="noopener noreferrer"
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-semibold">
+                  🔗 {lnk.label || lnk.url}
+                </a>
+              ))}
+            </div>
+          )}
+          {/* תמחור: אם יש מחיר מוקדם — מציגים את שני המחירים, הנוכחי מודגש והשני מחוק/אפור */}
+          {pr.early != null && pr.deadline && pr.regular != null ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              <span className={pr.earlyActive ? 'font-bold text-emerald-600' : 'text-gray-400 line-through'}>
+                עד {fmtD(pr.deadline)} — ₪{pr.early}
+              </span>
+              <span className={pr.earlyActive ? 'text-gray-500' : 'font-bold text-emerald-600'}>
+                אחרי — ₪{pr.regular}
+              </span>
+              {pr.earlyActive && <span className="text-[11px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">מחיר מוקדם בתוקף!</span>}
+            </div>
+          ) : pr.current != null && (
+            <p className="text-sm font-bold text-emerald-600 mt-2">₪{pr.current}</p>
+          )}
+          {/* דדליין מחיר מוקדם מתקרב — תגית דחיפות */}
+          {earlyDaysLeft != null && earlyDaysLeft >= 0 && earlyDaysLeft <= 7 && (
+            <div className="mt-2">
+              <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-1 rounded-full">⏳ מחיר מוקדם — נותר {earlyDaysLeft === 0 ? 'פחות מיום' : `${earlyDaysLeft} ימים`}</span>
+            </div>
+          )}
+          {/* כפתור הרשמה פנימי — מוצג רק אם המנהל לא כיבה "הרשמה דרך האפליקציה" */}
+          {showButton && (
+            <button onClick={() => handleOrder(item)} disabled={orderingId === item.id}
+              className={`mt-3 w-full py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${
+                orderedDone.has(item.id) ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                : ordered.has(item.id) ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
+              {orderingId === item.id ? '...'
+                : orderedDone.has(item.id) ? '✅ נרשמת — התשלום אושר'
+                : ordered.has(item.id) ? '⏳ נרשמת — ממתין לאישור (לחץ לביטול)'
+                : `להירשם לסמינר${pr.current != null ? ` · ₪${pr.current}` : ''}`}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const showEvents  = filter !== 'notices' && events.length > 0
+  const showNotices = filter !== 'events' && noticeGroups.length > 0
 
   return (
     <div className="space-y-5">
-      {events.length > 0 && (
+      {/* סרגל סינון: הכל / אירועים / הודעות */}
+      <div className="flex bg-gray-100 rounded-full p-1 text-sm">
+        {[{ key: 'all', label: 'הכל' }, { key: 'events', label: 'אירועים' }, { key: 'notices', label: 'הודעות' }].map(t => (
+          <button key={t.key} onClick={() => setFilter(t.key)}
+            className={`flex-1 py-1.5 rounded-full font-medium transition ${
+              filter === t.key ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {showEvents && (
         <div className="space-y-3">
           <h2 className="font-bold text-gray-800 text-lg">📅 אירועים קרובים</h2>
-          {events.map(renderItem)}
+          {events.map(renderEvent)}
         </div>
       )}
-      {notices.length > 0 && (
-        <div className="space-y-3">
+
+      {showNotices && (
+        <div className="space-y-4">
           <h2 className="font-bold text-gray-800 text-lg">📢 הודעות</h2>
-          {notices.map(renderItem)}
+          {noticeGroups.map(g => (
+            <div key={g.key} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-gray-400">{g.label}</span>
+                <span className="flex-1 h-px bg-gray-200" />
+              </div>
+              {g.items.map(renderNotice)}
+            </div>
+          ))}
         </div>
+      )}
+
+      {!showEvents && !showNotices && (
+        <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-2">📭</div><p>אין מה להציג כאן</p></div>
       )}
     </div>
   )
@@ -2527,7 +2607,7 @@ export default function AthleteDashboard({ profile }) {
           </div>
           {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} registrationsNext={registrationsNext} onRegister={handleRegister} branchesMap={branchesMap} />}
           {activeTab === 'shop' && <ShopTab profile={profile} member={member} allAnnouncements={announcements} onCartCountChange={setCartCount} />}
-          {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} focusId={focusAnnouncementId}
+          {activeTab === 'announcements' && <AnnouncementsTab announcements={announcementsForTab} profile={profile} member={member} lastSeen={lastSeen} focusId={focusAnnouncementId}
             onFocusConsumed={() => {
               setFocusAnnouncementId(null)
               // מנקה את ?focus מהכתובת — בלי זה כל פתיחה חוזרת של הטאב גוללת שוב את המסך.

@@ -2495,7 +2495,7 @@ export default function AthleteDashboard({ profile }) {
       </header>
       {/* main ברוחב מלא — scrollbar מופיע בקצה המסך, לא באמצע (כפי שהיה ב-desktop רחב).
           התוכן עצמו עדיין מרוכז ב-max-w-lg כדי לשמור על UX מובייל-first. */}
-      <main className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <main className="flex-1 overflow-y-auto overflow-x-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="p-4 max-w-lg w-full mx-auto">
           <div className="mb-3 space-y-2">
             {!isStandalone() && <InstallBanner variant="slim" />}

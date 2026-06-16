@@ -614,6 +614,8 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
   const [filter, setFilter] = useState('all')
   // צילום מצב "נקרא עד" ברגע הכניסה לטאב — כדי שנקודות ה"לא נקרא" יישארו יציבות בזמן הצפייה
   const [seenSnapshot] = useState(() => lastSeen || '')
+  // אירועים שעברו — מקופלים כברירת מחדל
+  const [showPastEvents, setShowPastEvents] = useState(false)
 
   useEffect(() => {
     if (!storageKey) return
@@ -719,6 +721,9 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
     return d >= now ? [0, d.getTime()] : [2, -d.getTime()]
   }
   const events  = [...seminars].sort((a, b) => { const ra = eventRank(a), rb = eventRank(b); return ra[0] - rb[0] || ra[1] - rb[1] })
+  const isPastEvent = item => !!(item.event_date && new Date(item.event_date) < now)
+  const upcomingEvents = events.filter(e => !isPastEvent(e))
+  const pastEvents = events.filter(isPastEvent)
   const notices = [...general].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
 
   // קיבוץ הודעות לפי זמן: היום / השבוע / מוקדם יותר
@@ -881,7 +886,19 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
       {showEvents && (
         <div className="space-y-3">
           <h2 className="font-bold text-gray-800 text-lg">📅 אירועים קרובים</h2>
-          {events.map(renderEvent)}
+          {upcomingEvents.length > 0
+            ? upcomingEvents.map(renderEvent)
+            : <p className="text-sm text-gray-400 py-2">אין אירועים קרובים</p>}
+          {pastEvents.length > 0 && (
+            <div className="pt-1">
+              <button onClick={() => setShowPastEvents(v => !v)}
+                className="w-full flex items-center justify-between text-sm text-gray-500 bg-gray-50 hover:bg-gray-100 rounded-xl px-4 py-2.5 font-medium transition">
+                <span>🗂️ אירועים שעברו ({pastEvents.length})</span>
+                <span>{showPastEvents ? '▲' : '▼'}</span>
+              </button>
+              {showPastEvents && <div className="space-y-3 mt-3">{pastEvents.map(renderEvent)}</div>}
+            </div>
+          )}
         </div>
       )}
 

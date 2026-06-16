@@ -41,6 +41,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   const [branches, setBranches] = useState([])
   // סינון תצוגה: הכל / אירועים / הודעות
   const [mgrFilter, setMgrFilter] = useState('all')
+  // אירועים שעברו — מקופלים כברירת מחדל
+  const [showMgrPast, setShowMgrPast] = useState(false)
 
   useEffect(() => {
     let q = supabase.from('branches').select('id, name').order('name')
@@ -554,6 +556,9 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   }
   const managerEvents  = items.filter(i => i.type === 'seminar').sort((a, b) => { const ra = mgrEventRank(a), rb = mgrEventRank(b); return ra[0] - rb[0] || ra[1] - rb[1] })
   const managerNotices = items.filter(i => i.type !== 'seminar')
+  // אירוע שעבר — מוסתר עד שלוחצים "אירועים שעברו"
+  const isMgrPast = item => !!(item.event_date && new Date(item.event_date) < nowMgr)
+  const mgrPastCount = managerEvents.filter(isMgrPast).length
 
   return (
     <div className="space-y-4">
@@ -610,11 +615,12 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
           ].filter(sec => sec.rows.length > 0 && (mgrFilter === 'all' || mgrFilter === sec.key)).map(sec => (
             <div key={sec.key} className="space-y-3">
               <h3 className="font-bold text-gray-700 text-base flex items-center gap-2">
-                {sec.label}<span className="text-xs font-normal text-gray-400">({sec.rows.length})</span>
+                {sec.label}<span className="text-xs font-normal text-gray-400">({sec.key === 'events' ? sec.rows.length - mgrPastCount : sec.rows.length})</span>
               </h3>
               <ul className="space-y-3">
                 {sec.rows.map(item => (
-            <li key={item.id} className="bg-white border rounded-xl overflow-hidden shadow-sm">
+            <li key={item.id} className="bg-white border rounded-xl overflow-hidden shadow-sm"
+              style={isMgrPast(item) && !showMgrPast ? { display: 'none' } : undefined}>
               {/* תמונת ההודעה/הסמינר — כמו בתצוגת המתאמן */}
               {item.image_url && <img src={item.image_url} alt={item.title} className="w-full h-auto max-h-72 object-contain bg-gray-50" loading="lazy" />}
               <div className="p-4">
@@ -741,6 +747,13 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
             </li>
                 ))}
               </ul>
+              {sec.key === 'events' && mgrPastCount > 0 && (
+                <button type="button" onClick={() => setShowMgrPast(v => !v)}
+                  className="w-full flex items-center justify-between text-sm text-gray-500 bg-gray-50 hover:bg-gray-100 rounded-xl px-4 py-2.5 font-medium transition mt-1">
+                  <span>🗂️ אירועים שעברו ({mgrPastCount})</span>
+                  <span>{showMgrPast ? '▲' : '▼'}</span>
+                </button>
+              )}
             </div>
           ))}
           </div>

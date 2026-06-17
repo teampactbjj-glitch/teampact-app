@@ -77,6 +77,8 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   const [saveError, setSaveError] = useState('')
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [pendingCollapsed, setPendingCollapsed] = useState(false)
+  const [athletesCollapsed, setAthletesCollapsed] = useState(false)
 
   useEffect(() => {
     (async () => {
@@ -792,10 +794,14 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       {!stackedLayout && subTab === 'link' && registerLinkCard}
 
       {stackedLayout && pendingAthletes.length > 0 && (
-        <h3 className="font-bold text-blue-900 text-sm">📝 בקשות הצטרפות ({pendingAthletes.length})</h3>
+        <button type="button" onClick={() => setPendingCollapsed(v => !v)}
+          className="w-full flex items-center justify-between gap-2 text-right">
+          <h3 className="font-bold text-blue-900 text-sm">📝 בקשות הצטרפות ({pendingAthletes.length})</h3>
+          <span className={`text-blue-900 text-xs transition-transform ${pendingCollapsed ? '' : 'rotate-180'}`}>▼</span>
+        </button>
       )}
 
-      {(stackedLayout ? pendingAthletes.length > 0 : subTab === 'pending') && (
+      {(stackedLayout ? (pendingAthletes.length > 0 && !pendingCollapsed) : subTab === 'pending') && (
         pendingAthletes.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
             <div className="text-4xl mb-2">✅</div>
@@ -892,8 +898,13 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
         return (
           <div className="space-y-3">
             {stackedLayout && (
-              <h3 className="font-bold text-gray-800 text-sm pt-2 border-t">👥 רשימת מתאמנים ({athletes.length})</h3>
+              <button type="button" onClick={() => setAthletesCollapsed(v => !v)}
+                className="w-full flex items-center justify-between gap-2 text-right pt-2 border-t">
+                <h3 className="font-bold text-gray-800 text-sm">👥 רשימת מתאמנים ({athletes.length})</h3>
+                <span className={`text-gray-800 text-xs transition-transform ${athletesCollapsed ? '' : 'rotate-180'}`}>▼</span>
+              </button>
             )}
+            {(!stackedLayout || !athletesCollapsed) && (<>
             {stackedLayout && (
               <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="חיפוש לפי שם, אימייל..."
                 value={search} onChange={e => setSearch(e.target.value)} />
@@ -1065,6 +1076,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                 })}
               </ul>
             )}
+            </>)}
           </div>
         )
       })()}

@@ -77,8 +77,18 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   const [saveError, setSaveError] = useState('')
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
-  const [pendingCollapsed, setPendingCollapsed] = useState(false)
-  const [athletesCollapsed, setAthletesCollapsed] = useState(false)
+  const [pendingCollapsed, setPendingCollapsed] = useState(() => {
+    try { return localStorage.getItem('tp_pendingCollapsed') === '1' } catch { return false }
+  })
+  const [athletesCollapsed, setAthletesCollapsed] = useState(() => {
+    try { return localStorage.getItem('tp_athletesCollapsed') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('tp_pendingCollapsed', pendingCollapsed ? '1' : '0') } catch {}
+  }, [pendingCollapsed])
+  useEffect(() => {
+    try { localStorage.setItem('tp_athletesCollapsed', athletesCollapsed ? '1' : '0') } catch {}
+  }, [athletesCollapsed])
 
   useEffect(() => {
     (async () => {

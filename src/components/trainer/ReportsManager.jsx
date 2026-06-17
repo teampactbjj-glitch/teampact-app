@@ -13,6 +13,22 @@ import { getBeltMeta, getBeltLabel, ADULT_BELTS, KIDS_BELTS,
 // ===== Helpers =====
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
+// Supabase מחזיר מקסימום 1000 שורות לכל בקשה (תקרה קשיחה ש-.range לא עוקף).
+// כדי לטעון את כל הנתונים — דפדוף בלולאה. makeQuery חייב להחזיר query *חדש* בכל
+// קריאה (בלי range), ועם order יציב כדי שהדפים לא יחפפו/ידלגו.
+async function fetchAllPaged(makeQuery, pageSize = 1000) {
+  let from = 0
+  const all = []
+  for (;;) {
+    const { data, error } = await makeQuery().range(from, from + pageSize - 1)
+    if (error) return { data: all, error }
+    if (data && data.length) all.push(...data)
+    if (!data || data.length < pageSize) break
+    from += pageSize
+  }
+  return { data: all, error: null }
+}
+
 // נורמליזציה: lowercase + הסרת גרש/גרשיים/רווחים/מקפים — כדי שכל הצורות
 // (ג׳יו ג׳יטסו / ג'יוג'יטסו / גיוגיטסו / ג'יו גיטסו) ימופו לאותה מחרוזת אחת.
 function normalize(s) {
@@ -32,14 +48,14 @@ function detectDiscipline(nameRaw = '') {
   if (/3.?6/.test(n)) return 'ילדים'
 
   // MMA / לחימה משולבת — בכל צורה כתיב (עם/בלי רווחים)
-  if (/(^|[^a-z])mma([^a-z]|$)|לחימהמשולבת|לחימהמעורבת|קרבמשולב|קרבמעורב|משולב|מעורב/.test(n)) return 'MMA'
+  if (/(^|[^a-z])mma([^a-z]|$)|mixedmartial|אםאםאיי|לחימהמשולבת|לחימהמעורבת|קרבמשולב|קרבמעורב|משולב|מעורב/.test(n)) return 'MMA'
 
-  // Muay Thai / איגרוף תאילנדי — בכל צורה כתיב
-  if (/muaythai|muay|מואיטאי|מואיתאי|מואי|איגרוףתאילנדי|איגרוףתאי|תאילנדי|תאילנד/.test(n)) return 'Muay Thai'
+  // Muay Thai / איגרוף תאילנדי — בכל צורה כתיב (עם/בלי יוד, עברית/אנגלית, קיקבוקס)
+  if (/muaythai|muay|מואיטאי|מואיתאי|מואי|מויטאי|איגרוףתאילנדי|אגרוףתאילנדי|איגרוףתאי|אגרוףתאי|תאילנדי|תאילנד|kickbox|קיקבוקס|טאיבוקס/.test(n)) return 'Muay Thai'
 
   // BJJ — כל הצורות: ג׳יו ג׳יטסו / ג'יו ג'יטסו / גיו גיטסו / ג'יוג'יטסו / גיוגיטסו /
-  // BJJ / Jiu Jitsu / נוגי / נו גי / גראפלינג / גרפלינג / Grappling / ברזיל / Open Mat
-  if (/bjj|jiujitsu|jiu|jitsu|גיוגיטסו|גיוגי|גיטסו|נוגי|nogi|גראפלינג|גרפלינג|grappling|ברזיל|brazil|openmat|אופנמט|אופןמט/.test(n)) return 'BJJ'
+  // BJJ / Jiu Jitsu / Jujitsu / נוגי / נו גי / גראפלינג / גרפלינג / Grappling / ברזיל / Open Mat
+  if (/bjj|jiujitsu|jujitsu|jiu|jitsu|גיוגיטסו|גוגיטסו|גיוגי|גיטסו|נוגי|nogi|גראפלינג|גרפלינג|grappling|ברזיל|brazil|openmat|אופנמט|אופןמט/.test(n)) return 'BJJ'
 
   // "גי" כמילה עצמאית (אימון גי / גי שחור) — בודק על המחרוזת המקורית כדי לא לבלבל
   // עם "גיא" / "גיל" וכד'.
@@ -285,16 +301,16 @@ export default function ReportsManager({ isAdmin, profile }) {
           .from('members')
           .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at, belt, belt_received_at, belt_stripes, belt_category, trains_gi, trains_nogi, bjj_start_date, birth_date')
           .range(0, ROW_LIMIT - 1),
-        supabase.from('coaches').select('id, name, branch_id').range(0, ROW_LIMIT - 1),
+        supabase.from('coaches').select('id, name, branch_id, user_id').range(0, ROW_LIMIT - 1),
         supabase.from('classes').select('id, name, class_type, coach_id, coach_name, branch_id, day_of_week, start_time, duration_minutes').range(0, ROW_LIMIT - 1),
         supabase.from('branches').select('id, name').range(0, ROW_LIMIT - 1),
-        // checkins: מסנן בצד השרת לפי טווח של 180 יום + מסיר את מגבלת 1000 השורות
-        supabase
+        // checkins: מסנן בצד השרת לפי 180 יום. דפדוף (>1000 שורות) עם order יציב.
+        fetchAllPaged(() => supabase
           .from('checkins')
           .select('class_id, athlete_id, status, checked_in_at, checkin_date')
           .eq('status', 'present')
           .gte('checked_in_at', sinceMaxISO)
-          .range(0, ROW_LIMIT - 1),
+          .order('checked_in_at', { ascending: true })),
         supabase
           .from('trial_visits')
           .select('id, class_id, visited_at, visitor_name')
@@ -303,17 +319,17 @@ export default function ReportsManager({ isAdmin, profile }) {
         // class_registrations: רישום שבועי. unique על (athlete_id, class_id) —
         // לכן לכל זוג יש שורה אחת בלבד, עם week_start של הרישום האחרון.
         // מסננים בצד השרת לפי 180 יום (date column → string YYYY-MM-DD).
-        supabase
+        fetchAllPaged(() => supabase
           .from('class_registrations')
           .select('class_id, athlete_id, week_start')
           .gte('week_start', sinceMaxISO.slice(0, 10))
-          .range(0, ROW_LIMIT - 1),
+          .order('week_start', { ascending: true })),
         // belt_history: תאריכי קבלת חגורה היסטוריים. נטען לחישוב backfill מדויק.
         // אם הטבלה עוד לא הוקמה (Migration לא רץ) — נטפל בשגיאה בשקט.
-        supabase
+        fetchAllPaged(() => supabase
           .from('belt_history')
           .select('member_id, belt, belt_stripes, received_at, source, event_id')
-          .range(0, ROW_LIMIT - 1),
+          .order('member_id', { ascending: true })),
         // promotion_events של מבחן ילדים יוני (planned + לא נמחקו)
         supabase
           .from('promotion_events')
@@ -323,10 +339,10 @@ export default function ReportsManager({ isAdmin, profile }) {
           .order('event_date', { ascending: true })
           .range(0, ROW_LIMIT - 1),
         // candidates של אירועי kids — נסנן בצד הקליינט לפי event_id
-        supabase
+        fetchAllPaged(() => supabase
           .from('promotion_candidates')
           .select('id, event_id, member_id, current_belt, current_stripes, target_belt, target_stripes, status, attendance_pct, attendance_recommendation, target_to_adult, expected_sessions, attended_sessions')
-          .range(0, ROW_LIMIT - 1),
+          .order('id', { ascending: true })),
         // סילבוס מבחן חגורות
         supabase
           .from('belt_test_syllabus')
@@ -462,31 +478,43 @@ export default function ReportsManager({ isAdmin, profile }) {
     })
   }, [checkins, periodDays, classById])
 
-  // ============================================================
-  // class_registrations מסוננים לפי טווח הזמן של הדוחות.
-  // ⚠️ במודל של דודי: רישום = נוכחות, **בתנאי שהשיעור הסתיים** (start_time + duration < now).
-  // אחרי תחילת השיעור המתאמן לא יכול לבטל (רק מאמן יכול להסיר), לכן ברגע שהשיעור הסתיים —
-  // הרישום הוא הנוכחות הסופית. זה מחליף את הסתמכות הדוחות על checkins (שלא בשימוש פעיל).
-  // ============================================================
-  const filteredRegistrations = useMemo(() => {
+  // myClassIds — הקבוצות (classes) שהמאמן הנוכחי מלמד. מנהל → null (בלי סינון).
+  // שיוך: classes.coach_id ∈ הכרטיסים שלו (coaches.user_id = profile.id), fallback ל-coach_name.
+  const myClassIds = useMemo(() => {
+    if (isAdmin || !profile?.id) return null
+    const myCoachIds = new Set(
+      coaches.filter(c => c.user_id === profile.id).map(c => c.id)
+    )
+    const set = new Set()
+    for (const cls of classes) {
+      const mine = (cls.coach_id && myCoachIds.has(cls.coach_id))
+        || (!cls.coach_id && cls.coach_name && cls.coach_name === profile.full_name)
+      if (mine) set.add(cls.id)
+    }
+    return set
+  }, [isAdmin, profile?.id, profile?.full_name, coaches, classes])
+
+  // filteredAttendance — נוכחות בפועל: checkins במצב 'present' (מסונן בשרת),
+  // לשיעור שהסתיים בפועל ובתוך טווח periodDays. מאמן רגיל → רק הקבוצות שלו.
+  // זהו המקור לכל דוחות הפעילות (במקום class_registrations): סופר רק מי שבאמת נכח,
+  // ולא מי שסומן ✕ נעדר.
+  const filteredAttendance = useMemo(() => {
     const now = Date.now()
     const since = now - periodDays * DAY_MS
-    return registrations.filter(r => {
-      if (!r.class_id || !r.athlete_id) return false
-      const cls = classById.get(r.class_id)
+    return checkins.filter(c => {
+      if (!c.class_id || !c.athlete_id) return false
+      if (myClassIds && !myClassIds.has(c.class_id)) return false
+      const cls = classById.get(c.class_id)
       if (!cls) return false
-      // חישוב תאריך ההופעה של השיעור: week_start + day_of_week.
-      const occDateStr = registrationOccurrenceDateStr(r.week_start, cls.day_of_week)
-      const endMs = classEndMs(occDateStr, cls.start_time, cls.duration_minutes)
-      if (endMs === null) {
-        // נתונים חסרים (start_time/duration_minutes/week_start) — לא ניתן לקבוע אם השיעור הסתיים.
-        // לא סופרים — בטוח יותר מאשר לספור רישום עתידי בטעות.
-        return false
+      if (c.checkin_date) {
+        const endMs = classEndMs(c.checkin_date, cls.start_time, cls.duration_minutes)
+        if (endMs !== null) return endMs <= now && endMs >= since
       }
-      // רק שיעור שהסתיים בפועל ובתוך טווח הזמן הנבחר.
-      return endMs <= now && endMs >= since
+      // fallback: לפי checked_in_at אם חסרים checkin_date/נתוני שיעור
+      const t = c.checked_in_at ? new Date(c.checked_in_at).getTime() : null
+      return t !== null && t <= now && t >= since
     })
-  }, [registrations, periodDays, classById])
+  }, [checkins, periodDays, classById, myClassIds])
 
   // סט מתאמנים פעילים (לצורך סינון נוכחויות)
   const activeMemberIds = useMemo(() => new Set(activeMembers.map(m => m.id)), [activeMembers])
@@ -506,21 +534,20 @@ export default function ReportsManager({ isAdmin, profile }) {
   }, [classes])
 
   // ============================================================
-  // דוחות פעילות — מבוססים על class_registrations (רישומים).
-  // ⚠️ במודל של דודי: רישום = נוכחות (כי אחרי תחילת השיעור המתאמן לא יכול לבטל).
-  // הפילטר filteredRegistrations כבר אוכף "השיעור הסתיים בפועל" + טווח periodDays —
-  // לכן ספירה נכונה של הגעות מתבצעת רק על שיעורים שאכן התקיימו ונגמרו.
+  // דוחות פעילות — מבוססים על נוכחות בפועל (filteredAttendance = checkins 'present').
+  // סופרים רק מי שבאמת נכח; מי שסומן ✕ נעדר אינו נספר. הפילטר כבר אוכף
+  // "השיעור הסתיים בפועל" + טווח periodDays + (למאמן רגיל) רק הקבוצות שלו.
   // ============================================================
 
   // 0b) מתאמנים פעילים לפי תחום + פילוח לפי מאמן בתוך התחום.
-  // count = מתאמנים ייחודיים שנרשמו לתחום (לשיעור שהסתיים),
-  // sessions = סך הרישומים בתחום (כל "הגעה" נספרת).
+  // count = מתאמנים ייחודיים שנכחו בתחום (לשיעור שהסתיים),
+  // sessions = סך ההגעות בתחום (כל נוכחות נספרת).
   const byAssignedDiscipline = useMemo(() => {
     const acc = {}
     DISCIPLINE_ORDER.forEach(d => {
       acc[d] = { members: new Set(), sessions: 0, byCoach: new Map() }
     })
-    filteredRegistrations.forEach(r => {
+    filteredAttendance.forEach(r => {
       if (!r.athlete_id || !r.class_id) return
       if (!activeMemberIds.has(r.athlete_id)) return
       const cls = classById.get(r.class_id)
@@ -551,7 +578,7 @@ export default function ReportsManager({ isAdmin, profile }) {
         .map(([name, agg]) => ({ name, count: agg.members.size, sessions: agg.sessions }))
         .sort((a, b) => b.count - a.count),
     }))
-  }, [filteredRegistrations, classById, coachById, disciplineByClassId, activeMemberIds])
+  }, [filteredAttendance, classById, coachById, disciplineByClassId, activeMemberIds])
 
   // 0c) מתאמנים שלא הגיעו לאימון ב-14 הימים האחרונים.
   // מבוסס על MAX של **שעת סיום השיעור** של רישום בפועל — כי רק שיעור שהסתיים
@@ -700,7 +727,7 @@ export default function ReportsManager({ isAdmin, profile }) {
     const members = new Map()   // coachName → Set<athlete_id>
     const sessions = new Map()  // coachName → total registrations to ended classes
     coaches.forEach(c => { members.set(c.name || '—', new Set()); sessions.set(c.name || '—', 0) })
-    filteredRegistrations.forEach(r => {
+    filteredAttendance.forEach(r => {
       if (!r.athlete_id || !r.class_id) return
       if (!activeMemberIds.has(r.athlete_id)) return
       const cls = classById.get(r.class_id)
@@ -720,7 +747,7 @@ export default function ReportsManager({ isAdmin, profile }) {
     return Array.from(members.entries())
       .map(([name, set]) => ({ name, count: set.size, sessions: sessions.get(name) || 0 }))
       .sort((a, b) => b.count - a.count)
-  }, [filteredRegistrations, coaches, coachById, classById, activeMemberIds])
+  }, [filteredAttendance, coaches, coachById, classById, activeMemberIds])
 
   // 2) כמות מתאמנים לפי תחום + פילוח פנימי לפי מאמן.
   // לכל תחום: סה"כ מתאמנים ייחודיים + סה"כ הגעות (רישומים לשיעורים שהסתיימו),
@@ -733,7 +760,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       acc[d] = { members: new Set(), sessions: 0, byCoach: new Map() }
     })
 
-    filteredRegistrations.forEach(r => {
+    filteredAttendance.forEach(r => {
       if (!r.athlete_id || !r.class_id) return
       if (!activeMemberIds.has(r.athlete_id)) return
       const cls = classById.get(r.class_id)
@@ -766,7 +793,7 @@ export default function ReportsManager({ isAdmin, profile }) {
         .map(([name, agg]) => ({ name, count: agg.members.size, sessions: agg.sessions }))
         .sort((a, b) => b.count - a.count),
     }))
-  }, [filteredRegistrations, disciplineByClassId, activeMemberIds, classById, coachById])
+  }, [filteredAttendance, disciplineByClassId, activeMemberIds, classById, coachById])
 
   // 2.5) שיעורי ניסיון לפי תחום לחימה + פילוח לפי מאמן.
   // עוזר להבין איזה מאמן מקדם המרת ניסיונות ובאיזה תחום.
@@ -1117,40 +1144,34 @@ export default function ReportsManager({ isAdmin, profile }) {
 
   // ===== סינון לפי תפקיד =====
   // מנהל: רואה את כל המתאמנים בכל הסטטיסטיקות.
-  // מאמן רגיל: רק את המתאמנים שמשויכים אליו (3 דרכים אפשריות):
-  //   1. members.coach_id ∈ coaches שלו (coaches.user_id = profile.id)
-  //   2. members.requested_coach_name = שם של אחד מה-coaches שלו
-  //   3. members.requested_coach_names array מכיל שם של coach שלו
-  //
-  // (אותו pattern של AthleteManagement.jsx שורות 115-117.)
+  // מאמן רגיל: רק מתאמנים שרשומים לקבוצות שהוא מלמד במערכת השעות.
+  //   הקבוצות = classes. שיוך מאמן לקבוצה: classes.coach_id ∈ הכרטיסים שלו
+  //   (coaches.user_id = profile.id), fallback ל-coach_name לקבוצות ישנות בלי coach_id.
+  //   שיוך מתאמן לקבוצה: class_registrations (athlete_id↔class_id) — המקור האמיתי
+  //   בפרודקשן. (group_ids/member_classes לא מאוכלסים.) מצטלבים עם מתאמנים פעילים.
+  // מאמן בלי קבוצות → Set ריק = לא רואה כלום. (myClassIds מוגדר למעלה.)
   const myAthleteIds = useMemo(() => {
-    if (isAdmin || !profile?.id) return null // null = "אל תסנן"
-    // coaches מ-fetchAll נטען עם id, name, branch_id, אבל בלי user_id.
-    // לכן נשווה לפי name = profile.full_name.
-    const myCoachNames = new Set()
-    for (const c of coaches) {
-      if (c.name && c.name === profile.full_name) myCoachNames.add(c.name)
-    }
-    // אם אין למאמן רישום ב-coaches עם השם שלו — fallback: נסה direct match על profile.id
-    // (הוספה: גם אם לא נמצא, נחפש לפי full_name במידה והמתאמן כתב במפורש)
+    if (isAdmin || !profile?.id || !myClassIds) return null // null = "אל תסנן"
     const ids = new Set()
-    for (const m of members) {
-      if (m.requested_coach_name && profile.full_name && m.requested_coach_name === profile.full_name) {
-        ids.add(m.id); continue
-      }
-      if (Array.isArray(m.requested_coach_names) && profile.full_name && m.requested_coach_names.includes(profile.full_name)) {
-        ids.add(m.id); continue
-      }
-      // עבור coach_id — נצטרך לחפש את ה-coach המתאים. בינתיים נשתמש ב-name match.
-      if (m.coach_id && myCoachNames.size > 0) {
-        const coach = coaches.find(c => c.id === m.coach_id)
-        if (coach && myCoachNames.has(coach.name)) {
-          ids.add(m.id); continue
-        }
+    if (myClassIds.size === 0) return ids // לא מלמד אף קבוצה → לא רואה כלום
+    for (const r of registrations) {
+      if (r.athlete_id && myClassIds.has(r.class_id) && activeMemberIds.has(r.athlete_id)) {
+        ids.add(r.athlete_id)
       }
     }
     return ids
-  }, [isAdmin, profile?.id, profile?.full_name, members, coaches])
+  }, [isAdmin, profile?.id, registrations, myClassIds, activeMemberIds])
+
+  // הסניפים שמוצגים בתפריט הסינון:
+  // מנהל — כל הסניפים. מאמן רגיל — רק הסניפים שבהם יש לו קבוצות.
+  const visibleBranches = useMemo(() => {
+    if (isAdmin || !profile?.id || !myClassIds) return branches
+    const myBranchIds = new Set()
+    for (const cls of classes) {
+      if (myClassIds.has(cls.id) && cls.branch_id) myBranchIds.add(cls.branch_id)
+    }
+    return branches.filter(b => myBranchIds.has(b.id))
+  }, [isAdmin, profile?.id, branches, classes, myClassIds])
 
   // מסננים את ה-suggestions למאמן רגיל
   const visibleSuggestions = useMemo(() => {
@@ -1164,10 +1185,10 @@ export default function ReportsManager({ isAdmin, profile }) {
   // detectDiscipline (כבר קיים בקובץ) מזהה: bjj, jiujitsu, nogi, grappling, גיוגיטסו, נוגי, ברזיל, openmat, וכו'
   const isBjjCoach = useMemo(() => {
     if (isAdmin) return true                    // מנהל = רואה הכל
-    if (!profile?.full_name) return false
+    if (!profile?.id) return false
     // מצא את ה-coach.id-ים של המאמן הנוכחי בטבלת coaches (יכולים להיות כמה — סניף לסניף)
     const myCoachIds = new Set(
-      coaches.filter(c => c.name === profile.full_name).map(c => c.id)
+      coaches.filter(c => c.user_id === profile.id).map(c => c.id)
     )
     if (myCoachIds.size === 0) return false
     // בודק אם לפחות class אחד שלו הוא BJJ
@@ -1178,7 +1199,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       if (disc === 'BJJ') return true
     }
     return false
-  }, [isAdmin, profile?.full_name, coaches, classes])
+  }, [isAdmin, profile?.id, coaches, classes])
 
   // ============================================================
   // ===== מבחן ילדים יוני — pivots =====
@@ -1265,7 +1286,7 @@ export default function ReportsManager({ isAdmin, profile }) {
   }, [kidsAtRisk])
 
   // ===== ילדים שיעברו לבוגרים השנה =====
-  // מי שיגיע ל-16 בין הdate של אירוע kids הקרוב (או 1.6.YYYY) ל-12 חודש אחריו.
+  // מי שיגיע ל-17 בין הdate של אירוע kids הקרוב (או 1.6.YYYY) ל-12 חודש אחריו.
   const movingToAdult = useMemo(() => {
     // משתמשים בתאריך של אירוע kids הקרוב, או fallback ל-1.6 של השנה הנוכחית
     const today = new Date()
@@ -1285,8 +1306,8 @@ export default function ReportsManager({ isAdmin, profile }) {
       if (!isAdmin && myAthleteIds && !myAthleteIds.has(m.id)) continue
       const bd = new Date(m.birth_date)
       if (isNaN(bd.getTime())) continue
-      const b16 = new Date(bd.getFullYear() + 16, bd.getMonth(), bd.getDate())
-      if (b16 < ref || b16 >= yearLater) continue
+      const b17 = new Date(bd.getFullYear() + 17, bd.getMonth(), bd.getDate())
+      if (b17 < ref || b17 >= yearLater) continue
       // האם כבר מסומן ב-candidate הקרוב?
       let alreadyMarked = false
       let upcomingCandId = null
@@ -1304,13 +1325,13 @@ export default function ReportsManager({ isAdmin, profile }) {
         belt: m.belt,
         beltLabel: m.belt ? getBeltLabel(m.belt) : '—',
         birth_date: m.birth_date,
-        ageAt16: b16.toISOString().slice(0, 10),
+        ageAt17: b17.toISOString().slice(0, 10),
         alreadyMarked,
         upcomingEventId: upcoming?.id || null,
         upcomingCandId,
       })
     }
-    list.sort((a, b) => String(a.ageAt16).localeCompare(String(b.ageAt16)))
+    list.sort((a, b) => String(a.ageAt17).localeCompare(String(b.ageAt17)))
     return list
   }, [activeMembers, visibleKidsEvents, kidsCandsByEvent, isAdmin, myAthleteIds])
 
@@ -1625,7 +1646,7 @@ export default function ReportsManager({ isAdmin, profile }) {
             className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white"
           >
             <option value="all">כל הסניפים</option>
-            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            {visibleBranches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
           <button
             onClick={fetchAll}
@@ -1685,8 +1706,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       </div>
       )}
 
-      {/* ====== סטטיסטיקות כלליות — מנהל בלבד ====== */}
-      {isAdmin && <>
+      {/* ====== בורר טווח זמן + פילוח תחומים — מנהל ומאמן ====== */}
       {/* סלייד אחד מאוחד — משפיע על כל הדוחות (נוכחות + נרשמים חדשים + נטישה) */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-3 flex items-center gap-2 flex-wrap">
         <span className="text-xs text-gray-600 font-semibold">טווח זמן לכל הדוחות:</span>
@@ -1698,13 +1718,13 @@ export default function ReportsManager({ isAdmin, profile }) {
         ))}
       </div>
 
-      {/* === פעילות מאמנים ותחומים (מודל "רישום=הגעה") === */}
+      {/* === פעילות מאמנים ותחומים (מודל "נוכחות בפועל" — checkins present) === */}
 
       {/* מתאמנים פעילים לפי תחום + פילוח לפי מאמן */}
       <SectionCard
         title={`מתאמנים פעילים לפי תחום לחימה (${periodDays} ימים)`}
         icon="🥊"
-        footer="מבוסס על רישומים לאימונים שהסתיימו בפועל (במודל הזה: רישום = הגעה, כי אחרי תחילת השיעור המתאמן לא יכול לבטל). המספר הראשון = מתאמנים ייחודיים שהגיעו לתחום. השני = סה״כ הגעות בתחום. תחת כל תחום, פילוח לפי המאמן."
+        footer="מבוסס על נוכחות בפועל (checkin 'present') לאימונים שהסתיימו — מי שסומן ✕ נעדר לא נספר. המספר הראשון = מתאמנים ייחודיים שנכחו בתחום. השני = סה״כ הגעות בתחום. תחת כל תחום, פילוח לפי המאמן."
       >
         {byAssignedDiscipline.every(r => r.count === 0) ? (
           <p className="text-sm text-gray-500">אין נתונים להצגה.</p>
@@ -1767,6 +1787,8 @@ export default function ReportsManager({ isAdmin, profile }) {
         </p>
       </SectionCard>
 
+      {/* ====== סטטיסטיקות כלליות נוספות — מנהל בלבד ====== */}
+      {isAdmin && <>
       {/* === התראת לא-פעילים — מבוסס על נוכחות בפועל בלבד === */}
       <SectionCard
         title={`מתאמנים שלא הגיעו מעל שבועיים ${inactiveMembers.length > 0 ? `(${inactiveMembers.length})` : ''}`}
@@ -2486,11 +2508,11 @@ export default function ReportsManager({ isAdmin, profile }) {
         <SectionCard
           title={`🎓 מעבר לבוגרים השנה (${movingToAdult.length})`}
           icon="🎓"
-          footer="ילדים שיגיעו לגיל 16 בין מבחן יוני הקרוב ליוני הבא — מועמדים לעבור לקטגוריית בוגרים (target_belt=לבנה). דרוש birth_date מלא ב-AthleteManagement."
+          footer="ילדים שיגיעו לגיל 17 בין מבחן יוני הקרוב ליוני הבא — מועמדים לעבור לקטגוריית בוגרים (target_belt=לבנה). דרוש birth_date מלא ב-AthleteManagement."
         >
           {movingToAdult.length === 0 ? (
             <p className="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
-              אין ילדים שיגיעו ל-16 השנה הקרובה (או שאין להם birth_date מלא).
+              אין ילדים שיגיעו ל-17 השנה הקרובה (או שאין להם birth_date מלא).
             </p>
           ) : (
             <ul className="divide-y divide-gray-100">
@@ -2501,7 +2523,7 @@ export default function ReportsManager({ isAdmin, profile }) {
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-sm text-gray-900 truncate">{item.name}</div>
                       <div className="text-[11px] text-gray-500">
-                        חגורה: {item.beltLabel} · יום הולדת 16: {item.ageAt16}
+                        חגורה: {item.beltLabel} · יום הולדת 17: {item.ageAt17}
                       </div>
                     </div>
                     {item.alreadyMarked ? (

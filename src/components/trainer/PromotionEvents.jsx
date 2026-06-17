@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { fetchAllPaged } from '../../lib/fetchAllPaged'
 import { notifyPush } from '../../lib/notifyPush'
 import {
   ADULT_BELTS, KIDS_BELTS, getBeltMeta, getBeltLabel, getMaxStripes,
@@ -438,8 +439,9 @@ function EventEditDialog({ ev, existingCandidates, presetMemberIds, members, bra
       const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
       const [clsRes, regRes] = await Promise.all([
         supabase.from('classes').select('id, name, branch_id, day_of_week, start_time, trains_gi'),
-        supabase.from('class_registrations')
-          .select('class_id, athlete_id').gte('week_start', since).range(0, 99999),
+        fetchAllPaged(() => supabase.from('class_registrations')
+          .select('class_id, athlete_id, week_start').gte('week_start', since)
+          .order('week_start', { ascending: true }).order('class_id', { ascending: true }).order('athlete_id', { ascending: true })),
       ])
       // Gi+NoGi נחשבים אותו דירוג — כל שיעור = יחידה אחת, ללא הבדל
       const classMap = new Map((clsRes.data || []).map(c => [c.id, c]))
@@ -1011,21 +1013,21 @@ function KidsAnnualTestCreator({ branches, isAdmin, trainerId, onClose, onCreate
         supabase.from('classes')
           .select('id, name, class_type, branch_id, day_of_week, start_time, duration_minutes')
           .range(0, 99999),
-        supabase.from('members')
+        fetchAllPaged(() => supabase.from('members')
           .select('id, full_name, email, phone, belt, belt_stripes, belt_category, belt_received_at, birth_date, branch_id, branch_ids, status, deleted_at')
           .eq('belt_category', 'kids')
           .neq('status', 'pending').neq('status', 'pending_deletion')
           .is('deleted_at', null)
-          .range(0, 99999),
-        supabase.from('class_registrations')
+          .order('id', { ascending: true })),
+        fetchAllPaged(() => supabase.from('class_registrations')
           .select('class_id, athlete_id, week_start')
           .gte('week_start', sinceMaxISO.slice(0, 10))
-          .range(0, 99999),
-        supabase.from('checkins')
+          .order('week_start', { ascending: true }).order('class_id', { ascending: true }).order('athlete_id', { ascending: true })),
+        fetchAllPaged(() => supabase.from('checkins')
           .select('class_id, athlete_id, status, checked_in_at, checkin_date')
           .eq('status', 'present')
           .gte('checked_in_at', sinceMaxISO)
-          .range(0, 99999),
+          .order('checkin_date', { ascending: true }).order('class_id', { ascending: true }).order('athlete_id', { ascending: true })),
       ])
       if (clsRes.error) throw clsRes.error
       if (memRes.error) throw memRes.error

@@ -9,6 +9,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
+import { fetchAllPaged } from '../../lib/fetchAllPaged'
 import * as XLSX from 'xlsx'
 import BranchSettings from './BranchSettings'
 
@@ -118,12 +119,14 @@ export default function SalaryReport({ isAdmin }) {
     const [coachesRes, checkinsRes, classesRes, membersRes, branchesRes,
            ownerRes, expRes, fixedRes, pricesRes, appSettingsRes] = await Promise.all([
       supabase.from('coaches').select('id, name, branch_id, payment_rate, vat_type').order('name'),
-      supabase.from('checkins').select('class_id, athlete_id, checkin_date, status')
-        .gte('checkin_date', from).lte('checkin_date', to).eq('status', 'present'),
+      fetchAllPaged(() => supabase.from('checkins').select('class_id, athlete_id, checkin_date, status')
+        .gte('checkin_date', from).lte('checkin_date', to).eq('status', 'present')
+        .order('checkin_date', { ascending: true }).order('class_id', { ascending: true }).order('athlete_id', { ascending: true })),
       supabase.from('classes').select('id, coach_id, branch_id').is('deleted_at', null),
-      supabase.from('members')
+      fetchAllPaged(() => supabase.from('members')
         .select('id, full_name, subscription_type, branch_id, custom_price, discount_pct')
-        .eq('active', true),
+        .eq('active', true)
+        .order('id', { ascending: true })),
       supabase.from('branches').select('id, name, platform_cut').order('name'),
       supabase.from('branch_owner_settings')
         .select('branch_id, owner1_name, owner1_pct, owner2_name, owner2_pct'),

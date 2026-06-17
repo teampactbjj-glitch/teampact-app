@@ -17,8 +17,11 @@
 5. **תיקון באג 1000 שורות (Supabase cap):** היו 1537 checkins אבל `.range(0,99999)` החזיר רק 1000 אקראיות → עידו סוקז סומן בטעות "27 ימים בלי אימון". הוסף `fetchAllPaged()` (דפדוף chunks של 1000 עם order יציב) והוחל על: `checkins`, `class_registrations`, `belt_history`, `promotion_candidates`. ✅ עידו נעלם אחרי התיקון.
 6. **חיזוק `detectDiscipline`:** נוספו מילים נרדפות (jujitsu, גוגיטסו, kickbox/קיקבוקס/טאיבוקס, mixedmartial/אםאםאיי). אומת על כל 57 הקבוצות + וריאציות כתיב (׳/'/רווח/אנגלית) — אפס רגרסיה. `normalize()` ממילא מסיר גרשים/רווחים/מקפים.
 
+### עדכון — סבב דפדוף מלא (תיקון באג 1000 בכל המערכת)
+נדחף קומיט `62f43e6` (ReportsManager בלבד). אחריו נוסף סבב שני: `src/lib/fetchAllPaged.js` (הלפר משותף) + הוחל על **כל** המקומות הקריטיים: `ReportsManager` (members/checkins/registrations/trial_visits/belt_history/promotion_candidates), `PromotionEvents` (דרגות — היה באג פעיל), `SalaryReport` (שכר), `MyProgressSection` (דרגות מתאמן). **חשוב:** כל שאילתות checkins/registrations שחוצות 1000 קיבלו **מיון ייחודי** (checkin_date/week_start + class_id + athlete_id) כדי שהדפדוף לא ידלג/יכפיל בגבול דף (היו ties רבים על אותו checked_in_at). נשאר לדחוף את הסבב השני.
+
 ### הבא בתור
-- **לדחוף ל-main** את `ReportsManager.jsx` (רק אותו — יש שינויים לא-קשורים תלויים: ראה למטה). לאמת `git log` + Vercel ירוק + hard-refresh.
+- **לדחוף ל-main** את הסבב השני (5 קבצים: fetchAllPaged.js + 4 קבצים). לאמת `git log` + Vercel ירוק + hard-refresh.
 - שינויים לא-קשורים תלויים ב-working tree שלא נגעתי בהם: `MEMORY.md` (זה), ועוד. לבדוק עם דודי אם לדחוף/לבטל.
 - שאלה פתוחה: "לחימה משולבת 3-6" של סהר מסווגת MMA (לפי class_type) ולא "ילדים" — לשאול את דודי אם לשנות.
 

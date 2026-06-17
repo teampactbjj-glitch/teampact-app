@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { fetchAllPaged } from '../../lib/fetchAllPaged'
 import { getBeltMeta, getBeltLabel, formatYearsMonths, formatHebrewMonthYear } from '../../lib/belts'
 
 // ============================================================
@@ -380,12 +381,13 @@ export default function MyProgressSection({ profile, member }) {
       setErr(null)
       try {
         // 1) כל ה-checkins של המתאמן (נוכחות בלבד) — כל ההיסטוריה לצורך badges של שעות
-        const { data: chk, error: chkErr } = await supabase
+        const { data: chk, error: chkErr } = await fetchAllPaged(() => supabase
           .from('checkins')
           .select('class_id, checked_in_at, checkin_date')
           .eq('athlete_id', athleteId)
           .eq('status', 'present')
-          .order('checked_in_at', { ascending: true })
+          // מיון ייחודי לדפדוף יציב (אותו מתאמן → checkin_date+class_id ייחודי)
+          .order('checkin_date', { ascending: true }).order('class_id', { ascending: true }))
         if (chkErr) throw chkErr
         const checkinsData = chk || []
 

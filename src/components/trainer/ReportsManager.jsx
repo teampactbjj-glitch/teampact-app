@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../../lib/supabase'
+import { fetchAllPaged } from '../../lib/fetchAllPaged'
 import { notifyPush } from '../../lib/notifyPush'
 import { useToast, useConfirm } from '../a11y'
 import PromotionEvents from './PromotionEvents'
@@ -13,21 +14,6 @@ import { getBeltMeta, getBeltLabel, ADULT_BELTS, KIDS_BELTS,
 // ===== Helpers =====
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
-// Supabase מחזיר מקסימום 1000 שורות לכל בקשה (תקרה קשיחה ש-.range לא עוקף).
-// כדי לטעון את כל הנתונים — דפדוף בלולאה. makeQuery חייב להחזיר query *חדש* בכל
-// קריאה (בלי range), ועם order יציב כדי שהדפים לא יחפפו/ידלגו.
-async function fetchAllPaged(makeQuery, pageSize = 1000) {
-  let from = 0
-  const all = []
-  for (;;) {
-    const { data, error } = await makeQuery().range(from, from + pageSize - 1)
-    if (error) return { data: all, error }
-    if (data && data.length) all.push(...data)
-    if (!data || data.length < pageSize) break
-    from += pageSize
-  }
-  return { data: all, error: null }
-}
 
 // נורמליזציה: lowercase + הסרת גרש/גרשיים/רווחים/מקפים — כדי שכל הצורות
 // (ג׳יו ג׳יטסו / ג'יוג'יטסו / גיוגיטסו / ג'יו גיטסו) ימופו לאותה מחרוזת אחת.
@@ -297,10 +283,10 @@ export default function ReportsManager({ isAdmin, profile }) {
       const sinceMaxISO = new Date(Date.now() - 180 * DAY_MS).toISOString()
 
       const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes, bhRes, kidsEvRes, kidsCandRes, sylRes] = await Promise.all([
-        supabase
+        fetchAllPaged(() => supabase
           .from('members')
           .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at, belt, belt_received_at, belt_stripes, belt_category, trains_gi, trains_nogi, bjj_start_date, birth_date')
-          .range(0, ROW_LIMIT - 1),
+          .order('id', { ascending: true })),
         supabase.from('coaches').select('id, name, branch_id, user_id').range(0, ROW_LIMIT - 1),
         supabase.from('classes').select('id, name, class_type, coach_id, coach_name, branch_id, day_of_week, start_time, duration_minutes').range(0, ROW_LIMIT - 1),
         supabase.from('branches').select('id, name').range(0, ROW_LIMIT - 1),
@@ -310,12 +296,13 @@ export default function ReportsManager({ isAdmin, profile }) {
           .select('class_id, athlete_id, status, checked_in_at, checkin_date')
           .eq('status', 'present')
           .gte('checked_in_at', sinceMaxISO)
-          .order('checked_in_at', { ascending: true })),
-        supabase
+          // מיון ייחודי (checkin_date+class_id+athlete_id) — חיוני לדפדוף יציב בלי דילוג/כפילות
+          .order('checkin_date', { ascending: true }).order('class_id', { ascending: true }).order('athlete_id', { ascending: true })),
+        fetchAllPaged(() => supabase
           .from('trial_visits')
           .select('id, class_id, visited_at, visitor_name')
           .gte('visited_at', sinceMaxISO)
-          .range(0, ROW_LIMIT - 1),
+          .order('visited_at', { ascending: true })),
         // class_registrations: רישום שבועי. unique על (athlete_id, class_id) —
         // לכן לכל זוג יש שורה אחת בלבד, עם week_start של הרישום האחרון.
         // מסננים בצד השרת לפי 180 יום (date column → string YYYY-MM-DD).
@@ -323,7 +310,7 @@ export default function ReportsManager({ isAdmin, profile }) {
           .from('class_registrations')
           .select('class_id, athlete_id, week_start')
           .gte('week_start', sinceMaxISO.slice(0, 10))
-          .order('week_start', { ascending: true })),
+          .order('week_start', { ascending: true }).order('class_id', { ascending: true }).order('athlete_id', { ascending: true })),
         // belt_history: תאריכי קבלת חגורה היסטוריים. נטען לחישוב backfill מדויק.
         // אם הטבלה עוד לא הוקמה (Migration לא רץ) — נטפל בשגיאה בשקט.
         fetchAllPaged(() => supabase

@@ -370,19 +370,23 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
     const lastSeen = (lastSeenKey && typeof window !== 'undefined' ? window.localStorage.getItem(lastSeenKey) : '') || ''
     const [{ count: leads }, { data: pendingReqs }, { count: pendingOrders }, { data: seminarRows }, { count: allRequests }, { data: latest }, { count: unread }] = await Promise.all([
       supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'pending').is('deleted_at', null),
-      supabase.from('product_requests').select('id, product_name, notes').eq('status', 'pending'),
+      supabase.from('product_requests').select('id, product_name, notes, announcement_id').eq('status', 'pending'),
       supabase.from('product_orders').select('id', { count: 'exact', head: true }).eq('status', 'pending').is('deleted_at', null),
-      supabase.from('announcements').select('title').eq('type', 'seminar').is('deleted_at', null),
+      supabase.from('announcements').select('id, title').eq('type', 'seminar').is('deleted_at', null),
       supabase.from('profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('announcements').select('created_at').order('created_at', { ascending: false }).limit(1),
       supabase.from('announcements').select('id', { count: 'exact', head: true }).gt('created_at', lastSeen || '1970-01-01'),
     ])
     // באדג' חנות: רק בקשות הזמנה שלא טופלו שמוצגות בטאב החנות.
     // הרשמות לסמינרים לא נספרות — הן מנוהלות בטאב ההודעות (סימון "שולם"), לא בחנות.
+    // סיווג סמינר יציב: לפי announcement_id (לא נשבר משינוי כותרת); נפילה לאחור לכותרת/notes לרשומות ישנות.
+    const seminarIds = new Set((seminarRows || []).map(s => s.id))
     const seminarTitles = new Set((seminarRows || []).map(s => s.title))
-    const shopPending = (pendingReqs || []).filter(r =>
-      !seminarTitles.has(r.product_name) && !(r.notes || '').startsWith('הרשמה לסמינר')
-    ).length + (pendingOrders || 0)
+    const isSeminarReg = r =>
+      (r.announcement_id && seminarIds.has(r.announcement_id)) ||
+      seminarTitles.has(r.product_name) ||
+      (r.notes || '').startsWith('הרשמה לסמינר')
+    const shopPending = (pendingReqs || []).filter(r => !isSeminarReg(r)).length + (pendingOrders || 0)
     setLeadsCount(leads || 0)
     setOrdersCount(shopPending)
     setLatestAnnouncementAt(latest?.[0]?.created_at || '')

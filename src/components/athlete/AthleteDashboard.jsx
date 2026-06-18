@@ -625,13 +625,18 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
   useEffect(() => {
     if (!profile?.id || seminars.length === 0) return
     supabase.from('product_requests')
-      .select('product_name, status')
+      .select('product_name, announcement_id, status')
       .eq('athlete_id', profile.id)
       .then(({ data }) => {
-        const pendingNames = new Set((data || []).filter(r => r.status !== 'done').map(r => r.product_name))
-        const doneNames    = new Set((data || []).filter(r => r.status === 'done').map(r => r.product_name))
-        const ids     = seminars.filter(p => pendingNames.has(p.title)).map(p => p.id)
-        const doneIds = seminars.filter(p => doneNames.has(p.title)).map(p => p.id)
+        const rows = data || []
+        // קישור הרשמה לסמינר לפי announcement_id (uuid); נפילה-לאחור לכותרת לרשומות ישנות בלי id.
+        // כך שעריכת כותרת הסמינר לא מנתקת את "ממתין לאישור/לתשלום".
+        const matches = (item, isDone) => rows.some(r =>
+          (isDone ? r.status === 'done' : r.status !== 'done') &&
+          (r.announcement_id ? r.announcement_id === item.id : r.product_name === item.title)
+        )
+        const ids     = seminars.filter(p => matches(p, false)).map(p => p.id)
+        const doneIds = seminars.filter(p => matches(p, true)).map(p => p.id)
         setOrdered(new Set(ids))
         setOrderedDone(new Set(doneIds))
       })
@@ -657,7 +662,7 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
       await supabase.from('product_requests')
         .delete()
         .eq('athlete_id', profile?.id)
-        .eq('product_name', item.title)
+        .eq('announcement_id', item.id)
         .eq('status', 'pending')
       setOrdered(prev => { const n = new Set(prev); n.delete(item.id); return n })
       setOrderingId(null)
@@ -811,6 +816,11 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
                 <span>📅</span><span>{new Date(item.event_date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
               </div>
             )}
+            {item.event_start_time && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                <span>🕒</span><span>{item.event_start_time}{item.event_end_time ? `–${item.event_end_time}` : ''}</span>
+              </div>
+            )}
             {item.event_location && (
               <a href={`https://maps.google.com/?q=${encodeURIComponent(item.event_location)}`}
                 target="_blank" rel="noopener noreferrer"
@@ -859,7 +869,7 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
               {orderingId === item.id ? '...'
                 : orderedDone.has(item.id) ? '✅ נרשמת — התשלום אושר'
-                : ordered.has(item.id) ? '⏳ נרשמת — ממתין לאישור (לחץ לביטול)'
+                : ordered.has(item.id) ? (pr.current > 0 ? '⏳ נרשמת — ממתין לתשלום (לחץ לביטול)' : '⏳ נרשמת — ממתין לאישור (לחץ לביטול)')
                 : `להירשם לסמינר${pr.current != null ? ` · ₪${pr.current}` : ''}`}
             </button>
           )}
@@ -2388,7 +2398,7 @@ export default function AthleteDashboard({ profile }) {
   async function fetchAnnouncements() {
     const statusFilter = 'status.eq.approved,status.is.null'
     const [itemsRes, generalRes] = await Promise.all([
-      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, event_location, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items, links, allow_app_registration').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, event_start_time, event_end_time, event_location, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items, links, allow_app_registration').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
       supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids, links').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
     ])
     setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])

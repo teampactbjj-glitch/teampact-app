@@ -35,7 +35,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   const [resendingId, setResendingId] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [] })
+  const [form, setForm]         = useState({ title: '', content: '', type: 'general', event_date: '', event_start_time: '', event_end_time: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [] })
   const [loading, setLoading]   = useState(true)
   const [uploading, setUploading] = useState(false)
   const [branches, setBranches] = useState([])
@@ -56,7 +56,9 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       title: item.title || '',
       content: item.content || '',
       type: item.type || 'general',
-      event_date: item.event_date ? new Date(item.event_date).toISOString().slice(0, 16) : '',
+      event_date: item.event_date ? (() => { const d = new Date(item.event_date); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })() : '',
+      event_start_time: item.event_start_time || '',
+      event_end_time: item.event_end_time || '',
       event_location: item.event_location || '',
       price: item.price != null ? String(item.price) : '',
       early_price: item.early_price != null ? String(item.early_price) : '',
@@ -75,7 +77,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   function openAdd() {
     setEditingId(null)
-    setForm({ title: '', content: '', type: 'general', event_date: '', event_location: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [], allow_app_registration: true })
+    setForm({ title: '', content: '', type: 'general', event_date: '', event_start_time: '', event_end_time: '', event_location: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [], allow_app_registration: true })
     setShowForm(true)
   }
 
@@ -126,7 +128,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   async function fetchAnnouncements() {
     setLoading(true)
-    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, early_price, early_price_deadline, event_date, event_location, branch_ids, links, allow_app_registration')
+    const { data } = await supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, early_price, early_price_deadline, event_date, event_start_time, event_end_time, event_location, branch_ids, links, allow_app_registration')
       .in('type', ['general', 'announcement', 'seminar'])
       .order('created_at', { ascending: false })
     setItems(data || [])
@@ -302,7 +304,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
       title: form.title, content: form.content, type: form.type, trainer_id: trainerId,
       branch_ids: branchIds.length ? branchIds : null,
       links: cleanLinks.length ? cleanLinks : null,
-      ...(form.type === 'seminar' && form.event_date ? { event_date: form.event_date } : {}),
+      ...(form.type === 'seminar' && form.event_date ? { event_date: form.event_date + 'T12:00:00' } : {}),
+      ...(form.type === 'seminar' ? { event_start_time: form.event_start_time || null, event_end_time: form.event_end_time || null } : {}),
       ...(form.type === 'seminar' ? { event_location: form.event_location?.trim() || null } : {}),
       ...(form.type === 'seminar' && form.price      ? { price: parseFloat(form.price) } : {}),
       ...(form.type === 'seminar' ? { early_price: form.early_price ? parseFloat(form.early_price) : null } : {}),
@@ -349,7 +352,7 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
           .catch(() => {})
       }
     }
-    setForm({ title: '', content: '', type: 'general', event_date: '', event_location: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [], allow_app_registration: true })
+    setForm({ title: '', content: '', type: 'general', event_date: '', event_start_time: '', event_end_time: '', event_location: '', price: '', early_price: '', early_price_deadline: '', image_url: '', branch_ids: [], links: [], allow_app_registration: true })
     setEditingId(null)
     setShowForm(false)
     fetchAnnouncements()
@@ -462,9 +465,21 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
           {form.type === 'seminar' && (
             <>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">תאריך ושעה</label>
-                <input type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm"
+                <label className="text-xs text-gray-500 mb-1 block">תאריך</label>
+                <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.event_date} onChange={e => setForm(p => ({ ...p, event_date: e.target.value }))} />
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs text-gray-500 mb-1 block">שעת התחלה</label>
+                  <input type="time" className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={form.event_start_time} onChange={e => setForm(p => ({ ...p, event_start_time: e.target.value }))} />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-gray-500 mb-1 block">שעת סיום (אופציונלי)</label>
+                  <input type="time" className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={form.event_end_time} onChange={e => setForm(p => ({ ...p, event_end_time: e.target.value }))} />
+                </div>
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">📍 מיקום (אופציונלי)</label>
@@ -636,7 +651,8 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[item.type] || 'bg-gray-100 text-gray-600'}`}>
                       {TYPE_LABELS[item.type] || item.type}
                     </span>
-                    {item.event_date && <span className="text-xs text-gray-400">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</span>}
+                    {item.event_date && <span className="text-xs text-gray-400">{new Date(item.event_date).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}</span>}
+                    {item.event_start_time && <span className="text-xs text-gray-400">🕒 {item.event_start_time}{item.event_end_time ? `–${item.event_end_time}` : ''}</span>}
                     {item.event_location && <span className="text-xs text-gray-500">📍 {item.event_location}</span>}
                     {item.price != null && <span className="text-xs font-bold text-green-600">₪{item.price}</span>}
                     {item.early_price != null && item.early_price_deadline && (

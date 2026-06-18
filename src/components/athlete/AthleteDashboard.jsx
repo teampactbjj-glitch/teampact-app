@@ -678,6 +678,7 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
     setOrderingId(item.id)
     const { error } = await supabase.from('product_requests').insert({
       product_name: item.title,
+      announcement_id: item.id,
       athlete_id: profile?.id || null,
       athlete_name: athleteName,
       status: 'pending',
@@ -1014,8 +1015,11 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
         // pending = כל מה שלא done/cancelled (כולל null מהזמנות ישנות)
         const pendingRows = rows.filter(r => !r.status || r.status === 'pending')
         const doneNames   = new Set(rows.filter(r => r.status === 'done').map(r => r.product_name))
-        const pendingIds = products.filter(p => pendingRows.some(r => r.product_name === p.title)).map(p => p.id)
-        const doneIds    = products.filter(p => doneNames.has(p.title)).map(p => p.id)
+        const pendingTitles = new Set(pendingRows.map(r => r.product_name))
+        const pendingIds = products.filter(p => pendingTitles.has(p.title)).map(p => p.id)
+        // "done" מוצג רק אם אין כרגע הזמנה ממתינה לאותו מוצר — כך שהזמנה חדשה תמיד גוברת
+        // ולא נחסמת ע"י הזמנה ישנה שהושלמה.
+        const doneIds    = products.filter(p => doneNames.has(p.title) && !pendingTitles.has(p.title)).map(p => p.id)
         // בנה map: product_id → רשומת הזמנה ממתינה
         const reqMap = {}
         for (const row of pendingRows) {
@@ -1031,11 +1035,8 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
   // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם אפשרות/מידה/צבע/אורך/רכיבים)
   // כשeditRequestId קיים — עדכון רשומה קיימת במקום יצירת חדשה
   async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null, selectedLength = null, componentSelections = null, quantity = 1, editRequestId = null) {
-    // הזמנה שהמנהל כבר סיים — לא ניתן לביטול
-    if (orderedDone.has(item.id)) {
-      await confirm({ title: 'ההזמנה הושלמה', message: 'ההזמנה כבר טופלה על ידי המאמן ולא ניתנת לביטול.', confirmText: 'הבנתי', danger: false })
-      return
-    }
+    // הערה: הזמנה שהושלמה (done) כבר לא חוסמת — מותר לבצע רכישה חוזרת של אותו מוצר.
+    // (כרטיס done נפתח ל-ProductDetail ויוצר הזמנה pending חדשה.)
     // הזמנה ממתינה שנפתחה לצפייה (לא עריכה) — מאפשר ביטול
     if (ordered.has(item.id) && !editRequestId) {
       const ok = await confirm({ title: 'ביטול הזמנה', message: `לבטל את ההזמנה של "${item.title}"?`, confirmText: 'בטל הזמנה', danger: true })
@@ -1347,18 +1348,20 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
       {/* ═══ כותרת עם אייקון עגלה ═══ */}
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-gray-700 text-sm">🛍️ מוצרים</h3>
-        {pendingCartItems.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowCart(true)}
-            className="relative flex items-center gap-1 text-gray-700 hover:text-gray-900 transition"
-          >
-            <span className="text-2xl">🛒</span>
+        {/* אייקון העגלה תמיד גלוי — גם כשאין הזמנות ממתינות. המספר הירוק מופיע רק כשיש. */}
+        <button
+          type="button"
+          onClick={() => setShowCart(true)}
+          aria-label="עגלת הקניות שלי"
+          className="relative flex items-center gap-1 text-gray-700 hover:text-gray-900 transition"
+        >
+          <span className="text-2xl">🛒</span>
+          {pendingCartItems.length > 0 && (
             <span className="absolute -top-1 -left-1 bg-emerald-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
               {pendingCartItems.length}
             </span>
-          </button>
-        )}
+          )}
+        </button>
       </div>
 
       {/* ═══ רשימת מוצרים ═══ */}
@@ -1371,9 +1374,9 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
               <div key={item.id} className="w-full text-right bg-white rounded-xl border shadow-sm overflow-hidden">
                 <div
                   role="button" tabIndex={0}
-                  onClick={() => { if (!isPending && !isDone) { setSelectedProductId(item.id); setTimeout(() => document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' }), 10) } }}
-                  onKeyDown={e => e.key === 'Enter' && !isPending && !isDone && (setSelectedProductId(item.id), setTimeout(() => document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' }), 10))}
-                  className={!isPending && !isDone ? 'cursor-pointer hover:shadow-md transition' : ''}
+                  onClick={() => { if (!isPending) { setSelectedProductId(item.id); setTimeout(() => document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' }), 10) } }}
+                  onKeyDown={e => e.key === 'Enter' && !isPending && (setSelectedProductId(item.id), setTimeout(() => document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' }), 10))}
+                  className={!isPending ? 'cursor-pointer hover:shadow-md transition' : ''}
                 >
                   {item.image_url && (
                     <div className="aspect-[3/4] w-full overflow-hidden rounded-t-xl">
@@ -1392,7 +1395,10 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
                 </div>
                 <div className="px-4 pb-4 pt-1">
                   {isDone ? (
-                    <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">✅ ההזמנה הושלמה</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">✅ ההזמנה הושלמה</span>
+                      <span className="text-xs text-blue-600 font-medium">לרכישה נוספת לחץ ←</span>
+                    </div>
                   ) : isPending ? (
                     <button type="button" onClick={() => setShowCart(true)}
                       className="text-xs text-amber-600 font-medium">⏳ הוזמן ←</button>

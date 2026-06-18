@@ -3,7 +3,7 @@ import { isPushSupported, requestPermissionAndSubscribe } from '../lib/push'
 import { isIOS, isStandalone } from '../lib/platform'
 
 const DISMISS_KEY = 'tp-push-dismissed'
-const DISMISS_MS = 7 * 24 * 60 * 60 * 1000
+const DISMISS_MS = 2 * 24 * 60 * 60 * 1000 // 2 ימים — חוזר ומזכיר למי שלא הפעיל
 
 function isDismissed() {
   try {
@@ -48,30 +48,37 @@ export default function EnablePushBanner({ profile }) {
   }
 
   return (
-    <div role="region" aria-label="באנר הפעלת התראות" className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-xs">
-      <div className="flex items-center gap-2">
-        <span className="text-base" aria-hidden="true">🔔</span>
-        <span>הפעל התראות כדי לקבל עדכון בזמן אמת</span>
-      </div>
-      <div className="flex gap-2 items-center">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={enable}
-          aria-label="הפעל התראות"
-          className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold px-3 py-1 rounded-lg"
-        >
-          {busy ? '...' : 'הפעל'}
-        </button>
+    <div
+      role="region"
+      aria-label="באנר הפעלת התראות"
+      className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-2xl p-4 shadow-md"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xl" aria-hidden="true">🔔</span>
+          <h3 className="font-black text-sm">הפעל התראות</h3>
+        </div>
         <button
           type="button"
           onClick={dismiss}
           aria-label="סגור באנר"
-          className="text-emerald-800/60 hover:text-emerald-900 text-base leading-none"
+          className="text-white/70 hover:text-white text-lg leading-none"
         >
           <span aria-hidden="true">✕</span>
         </button>
       </div>
+      <p className="text-xs text-emerald-50 mt-2">
+        קבל עדכון מיידי על סמינרים, הודעות חדשות ושינויי לוז — גם כשהאפליקציה סגורה.
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={enable}
+        aria-label="הפעל התראות"
+        className="mt-3 w-full bg-white text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 font-bold py-2 rounded-lg text-sm"
+      >
+        {busy ? '...' : '🔔 הפעל התראות'}
+      </button>
     </div>
   )
 }

@@ -139,8 +139,14 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   }
 
   // ===== ניהול נרשמים לסמינר =====
+  // קישור לפי announcement_id (יציב — לא נשבר משינוי כותרת).
+  // נפילה לאחור לפי כותרת רק עבור רשומות ישנות שאין להן announcement_id.
   function requestsForSeminar(item) {
-    return seminarRequests.filter(r => r.product_name === item.title)
+    return seminarRequests.filter(r =>
+      r.announcement_id
+        ? r.announcement_id === item.id
+        : r.product_name === item.title
+    )
   }
 
   // שולם = status 'done' (המתאמן רואה "✅ נרשמת — התשלום אושר"). לא שולם = 'pending'.

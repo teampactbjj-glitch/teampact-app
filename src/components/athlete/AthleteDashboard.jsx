@@ -1065,6 +1065,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
     const payload = {
       product_name: item.title,
       product_id: item.id || null,
+      announcement_id: item.id || null,
       athlete_id: profile?.id || null,
       athlete_name: athleteName,
       status: 'pending',

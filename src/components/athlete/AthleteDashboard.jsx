@@ -12,6 +12,7 @@ import MyProgressSection from './MyProgressSection'
 import { useToast, useConfirm } from '../a11y'
 import logoUrl from '../../assets/logo.png'
 import { ADULT_BELTS, KIDS_BELTS, getMaxStripes, getBeltLabel } from '../../lib/belts'
+import { classDiscipline, DISCIPLINE_ORDER, DISCIPLINE_LABELS } from '../../lib/disciplines'
 
 const SUBSCRIPTION_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const SUBSCRIPTION_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -134,6 +135,7 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeBranch, setActiveBranch] = useState('all')
+  const [activeDiscipline, setActiveDiscipline] = useState('all') // סינון תחום לחימה
   // weekMode כעת נגזר מ-selectedDate (אין יותר טאב יד-ידני). אם אין תאריך נבחר — current.
   const nextWeekOpen = isNextWeekRegistrationOpen()
   // חישוב המונה האפקטיבי כאן — איפה ש-classes זמין בסקופ. (בהורה הוא לא היה זמין
@@ -255,9 +257,15 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
     )
   }
 
-  const filteredClasses = activeBranch === 'all'
+  // התחומים הקיימים בשיעורים של המתאמן (לפי הסדר הקבוע), להצגת כפתורי הסינון
+  const availableDisciplines = DISCIPLINE_ORDER.filter(d => classes.some(c => classDiscipline(c) === d))
+  // סינון משולב: סניף ואז תחום לחימה
+  const byBranch = activeBranch === 'all'
     ? classes
     : classes.filter(c => c.branch_id === activeBranch)
+  const filteredClasses = activeDiscipline === 'all'
+    ? byBranch
+    : byBranch.filter(c => classDiscipline(c) === activeDiscipline)
 
   const selectedDow = selectedDate ? selectedDate.getDay() : null
   const dayClasses = selectedDate
@@ -371,6 +379,30 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
         </div>
       )}
 
+
+      {/* Discipline switcher — סינון תחום לחימה (מופיע רק אם יש יותר מתחום אחד) */}
+      {availableDisciplines.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <button onClick={() => setActiveDiscipline('all')}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
+              activeDiscipline === 'all'
+                ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md'
+                : 'bg-white text-gray-600 border border-gray-200'
+            }`}>
+            כל התחומים
+          </button>
+          {availableDisciplines.map(d => (
+            <button key={d} onClick={() => setActiveDiscipline(d)}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
+                activeDiscipline === d
+                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md'
+                  : 'bg-white text-gray-600 border border-gray-200'
+              }`}>
+              🥋 {DISCIPLINE_LABELS[d] || d}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* כותרת + מונה שבועי */}
       <div className="flex items-center justify-between">
@@ -654,6 +686,13 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
   }
 
   async function handleOrder(item) {
+    // מתאמן ממתין/נמחק — חסום מהרשמה לסמינר. (ה-DB גם חוסם; כאן הודעה ברורה ורכה במקום שגיאה.)
+    const blocked = !member || !!member.deleted_at || (member.status !== 'approved' && member.status !== 'active')
+    if (blocked) {
+      if (member?.deleted_at) toast.warning('החשבון שלך הוסר על ידי המועדון. לפרטים פנה למאמן.')
+      else toast.info('ממתין לאישור מנהל לבדיקת המנוי. לאחר האישור תוכל להירשם לסמינרים.')
+      return
+    }
     if (orderedDone.has(item.id)) return // הזמנה שהושלמה — אין מה לבטל
     if (ordered.has(item.id)) {
       const ok = await confirm({ title: 'ביטול הזמנה', message: `לבטל את ההזמנה של "${item.title}"?`, confirmText: 'בטל הזמנה', danger: true })
@@ -1045,6 +1084,13 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
   // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם אפשרות/מידה/צבע/אורך/רכיבים)
   // כשeditRequestId קיים — עדכון רשומה קיימת במקום יצירת חדשה
   async function handleOrder(item, selectedOption = null, selectedSize = null, selectedColor = null, selectedLength = null, componentSelections = null, quantity = 1, editRequestId = null) {
+    // מתאמן ממתין/נמחק — חסום מהזמנה בחנות. (ה-DB גם חוסם; כאן הודעה ברורה ורכה במקום שגיאה.)
+    const blocked = !member || !!member.deleted_at || (member.status !== 'approved' && member.status !== 'active')
+    if (blocked) {
+      if (member?.deleted_at) toast.warning('החשבון שלך הוסר על ידי המועדון. לפרטים פנה למאמן.')
+      else toast.info('ממתין לאישור מנהל לבדיקת המנוי. לאחר האישור תוכל להזמין בחנות.')
+      return
+    }
     // הערה: הזמנה שהושלמה (done) כבר לא חוסמת — מותר לבצע רכישה חוזרת של אותו מוצר.
     // (כרטיס done נפתח ל-ProductDetail ויוצר הזמנה pending חדשה.)
     // הזמנה ממתינה שנפתחה לצפייה (לא עריכה) — מאפשר ביטול
@@ -1438,6 +1484,12 @@ function ProfileTab({ profile, member }) {
 // ─── SettingsTab — הגדרות חשבון ─────────────────────────────────────────────
 function SettingsTab({ profile, member }) {
   const toast = useToast()
+  // מתאמן ממתין/נמחק — חסום מכל בקשת שינוי/פעולה. מחזיר true אם חסום (ומציג הודעה רכה).
+  function blockIfNotActive() {
+    if (!member || member.deleted_at) { toast.warning('החשבון שלך הוסר על ידי המועדון. לפרטים פנה למאמן.'); return true }
+    if (member.status !== 'approved' && member.status !== 'active') { toast.info('ממתין לאישור מנהל לבדיקת המנוי. לאחר האישור תוכל לבצע פעולות.'); return true }
+    return false
+  }
   const [saving, setSaving] = useState(false)
   const [pendingRequests, setPendingRequests] = useState([])
   // פרטים אישיים
@@ -1595,6 +1647,7 @@ function SettingsTab({ profile, member }) {
   }
 
   async function submitNameChange() {
+    if (blockIfNotActive()) return
     const trimmed = newName.trim()
     if (!trimmed) { toast.error('הזן שם חדש'); return }
     if (trimmed === athleteName) { toast.error('השם זהה לשם הנוכחי'); return }
@@ -1610,6 +1663,7 @@ function SettingsTab({ profile, member }) {
   }
 
   async function submitEmailChange() {
+    if (blockIfNotActive()) return
     // שינוי מייל ישיר דרך Supabase Auth (כמו אצל הצוות) — נשלח קישור אימות לכתובת החדשה.
     const trimmed = (newEmail || '').trim().toLowerCase()
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) { toast.error('כתובת מייל לא תקינה'); return }
@@ -1630,6 +1684,7 @@ function SettingsTab({ profile, member }) {
   }
 
   async function submitSubChange() {
+    if (blockIfNotActive()) return
     const currentBranches = Array.isArray(member?.branch_ids) ? member.branch_ids : (member?.branch_id ? [member.branch_id] : [])
     const visibleIds = new Set((allBranches || []).map(b => b.id))
     const submitBranchIds = requestedBranchIds.filter(id => visibleIds.has(id))
@@ -1659,6 +1714,7 @@ function SettingsTab({ profile, member }) {
   }
 
   async function submitMembershipRequest() {
+    if (blockIfNotActive()) return
     if (!membershipAction) return
     setSaving(true)
     const { error } = await supabase.from('profile_change_requests').insert({
@@ -1678,6 +1734,7 @@ function SettingsTab({ profile, member }) {
   }
 
   async function submitBeltChange() {
+    if (blockIfNotActive()) return
     if (!beltVal) { toast.error('בחר חגורה'); return }
     if (!reqTrainsGi && !reqTrainsNogi) { toast.error('סמן לפחות סוג אימון אחד (Gi או NoGi)'); return }
     setSaving(true)
@@ -2436,12 +2493,12 @@ export default function AthleteDashboard({ profile }) {
   async function handleRegister(cls, weekMode = 'current') {
     // מתאמן שנמחק ע"י המועדון — חסום לחלוטין. (ה-DB גם חוסם כגיבוי.)
     if (isRemoved) {
-      toast.error('החשבון שלך הוסר על ידי המועדון. לפרטים פנה למאמן.')
+      toast.warning('החשבון שלך הוסר על ידי המועדון. לפרטים פנה למאמן.')
       return
     }
     // מתאמן שטרם אושר — יכול לראות את הלו"ז אך לא להירשם. (ה-DB גם חוסם כגיבוי.)
     if (isPending) {
-      toast.error('ממתין לאישור מנהל לבדיקת המנוי. לאחר האישור תוכל להירשם לאימונים.')
+      toast.info('ממתין לאישור מנהל לבדיקת המנוי. לאחר האישור תוכל להירשם לאימונים.')
       return
     }
     // איזה שבוע אנחנו רושמים/מבטלים — לפי הטאב הפעיל ב-ScheduleTab.

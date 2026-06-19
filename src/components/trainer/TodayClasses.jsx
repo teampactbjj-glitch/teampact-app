@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { notifyPush } from '../../lib/notifyPush'
 import { allTrainerUserIds, allAdminUserIds } from '../../lib/notifyTargets'
 import { useToast, useConfirm } from '../a11y'
+import { classDiscipline, DISCIPLINE_ORDER, DISCIPLINE_LABELS } from '../../lib/disciplines'
 
 const WEEKLY_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
@@ -82,6 +83,7 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
   const [trialForm, setTrialForm] = useState({}) // { classId: { name, phone } }
   const [branches, setBranches] = useState([])
   const [selectedBranch, setSelectedBranch] = useState('all')
+  const [selectedDiscipline, setSelectedDiscipline] = useState('all') // סינון תחום לחימה
   const [pendingRequests, setPendingRequests] = useState([])
   const [showPending, setShowPending] = useState(true)
   // עריכת שיעור — מנהל בלבד
@@ -1183,6 +1185,34 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
         )
       })()}
 
+      {/* Discipline filter — סינון תחום לחימה (מופיע רק אם יש יותר מתחום אחד) */}
+      {(() => {
+        const avail = DISCIPLINE_ORDER.filter(d => classes.some(c => classDiscipline(c) === d))
+        if (avail.length <= 1) return null
+        return (
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+            <button type="button" onClick={() => setSelectedDiscipline('all')}
+              className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
+                selectedDiscipline === 'all'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+              }`}>
+              כל התחומים
+            </button>
+            {avail.map(d => (
+              <button key={d} type="button" onClick={() => setSelectedDiscipline(d)}
+                className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
+                  selectedDiscipline === d
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+                }`}>
+                🥋 {DISCIPLINE_LABELS[d] || d}
+              </button>
+            ))}
+          </div>
+        )
+      })()}
+
       {showAdd && (() => {
         // dedupe coaches by normalized name — עדיפות לרשומה שמקושרת ל־user_id.
         // מנרמל רווחים, תווים בלתי-נראים (zero-width, BOM), וגרסאות אותיות עברית.
@@ -1287,7 +1317,8 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
 
       {(() => {
         if (loading) return <p className="text-center text-gray-400 py-10">טוען שיעורים...</p>
-        const visibleClasses = selectedBranch === 'all' ? classes : classes.filter(c => c.branch_id === selectedBranch)
+        const byBranchVis = selectedBranch === 'all' ? classes : classes.filter(c => c.branch_id === selectedBranch)
+        const visibleClasses = selectedDiscipline === 'all' ? byBranchVis : byBranchVis.filter(c => classDiscipline(c) === selectedDiscipline)
         if (visibleClasses.length === 0) {
           return (
             <div className="text-center py-12 text-gray-400">

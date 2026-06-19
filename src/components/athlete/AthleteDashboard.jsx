@@ -386,7 +386,7 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
           <button onClick={() => setActiveDiscipline('all')}
             className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
               activeDiscipline === 'all'
-                ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md'
+                ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
                 : 'bg-white text-gray-600 border border-gray-200'
             }`}>
             כל התחומים
@@ -395,7 +395,7 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
             <button key={d} onClick={() => setActiveDiscipline(d)}
               className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
                 activeDiscipline === d
-                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md'
+                  ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
                   : 'bg-white text-gray-600 border border-gray-200'
               }`}>
               {DISCIPLINE_LABELS[d] || d}

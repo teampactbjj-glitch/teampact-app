@@ -1194,8 +1194,8 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
             <button type="button" onClick={() => setSelectedDiscipline('all')}
               className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
                 selectedDiscipline === 'all'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow'
-                  : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+                  ? 'bg-red-600 text-white border-red-600 shadow'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-red-400'
               }`}>
               כל התחומים
             </button>
@@ -1203,8 +1203,8 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
               <button key={d} type="button" onClick={() => setSelectedDiscipline(d)}
                 className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
                   selectedDiscipline === d
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow'
-                    : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+                    ? 'bg-red-600 text-white border-red-600 shadow'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-red-400'
                 }`}>
                 {DISCIPLINE_LABELS[d] || d}
               </button>

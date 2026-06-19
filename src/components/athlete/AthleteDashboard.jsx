@@ -2262,6 +2262,11 @@ export default function AthleteDashboard({ profile }) {
   const [cartCount, setCartCount]           = useState(0)
   const [member, setMember]                 = useState(null)
   const [branchesMap, setBranchesMap]       = useState({})
+  // מתאמן שנמחק ע"י המועדון (soft-delete — deleted_at מסומן) — חסום לחלוטין מפעולות.
+  const isRemoved = !!member?.deleted_at
+  // מתאמן שטרם אושר (status לא approved/active) — רואה את האפליקציה אך לא יכול לבצע פעולות.
+  // מסד הנתונים אוכף את שניהם (current_user_can_book + deleted_at); כאן זה לחוויית המשתמש.
+  const isPending = !!member && !isRemoved && member.status !== 'approved' && member.status !== 'active'
   const [registrations, setRegistrations]   = useState(new Set())
   const [registrationsNext, setRegistrationsNext] = useState(new Set())
   // welcome-back overlay — קופץ כשמגיעים מ-Push של "מתגעגעים אליך"
@@ -2349,6 +2354,9 @@ export default function AthleteDashboard({ profile }) {
         // מבטיח שאם בקשת רישום נכשלה ברקע / בעוד הטאב היה מוקפא,
         // ה-UI יוצג בהתאם למצב האמיתי בשרת.
         fetchRegistrations()
+        // ריענון רשומת המתאמן (status) — כך שמתאמן "ממתין לאישור" שאושר בינתיים
+        // ייפתח אוטומטית כשהוא חוזר למסך, בלי פולינג רציף.
+        fetchMyClasses()
       }
     }
     document.addEventListener('visibilitychange', onVis)
@@ -2426,6 +2434,16 @@ export default function AthleteDashboard({ profile }) {
   }
 
   async function handleRegister(cls, weekMode = 'current') {
+    // מתאמן שנמחק ע"י המועדון — חסום לחלוטין. (ה-DB גם חוסם כגיבוי.)
+    if (isRemoved) {
+      toast.error('החשבון שלך הוסר על ידי המועדון. לפרטים פנה למאמן.')
+      return
+    }
+    // מתאמן שטרם אושר — יכול לראות את הלו"ז אך לא להירשם. (ה-DB גם חוסם כגיבוי.)
+    if (isPending) {
+      toast.error('ממתין לאישור מנהל לבדיקת המנוי. לאחר האישור תוכל להירשם לאימונים.')
+      return
+    }
     // איזה שבוע אנחנו רושמים/מבטלים — לפי הטאב הפעיל ב-ScheduleTab.
     const isNext = weekMode === 'next'
     // רישום לשבוע הבא פתוח תמיד (הלוז מציג שבועיים קדימה).
@@ -2636,7 +2654,20 @@ export default function AthleteDashboard({ profile }) {
       <main className="flex-1 overflow-y-auto overflow-x-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="p-4 max-w-lg w-full mx-auto">
           <div className="mb-3 space-y-2">
-            {!isStandalone() && <InstallBanner variant="slim" />}
+            {isRemoved && (
+              <div className="bg-red-50 border-2 border-red-300 rounded-xl px-4 py-3 text-center" role="alert">
+                <p className="text-sm font-bold text-red-800">⛔ החשבון שלך הוסר על ידי המועדון</p>
+                <p className="text-xs text-red-700 mt-1">לא ניתן להירשם לאימונים או לבצע פעולות. לפרטים פנה למאמן או למזכירות.</p>
+              </div>
+            )}
+            {isPending && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-xl px-4 py-3 text-center" role="status">
+                <p className="text-sm font-bold text-amber-900">⏳ הבקשה שלך ממתינה לאישור מנהל</p>
+                <p className="text-xs text-amber-700 mt-1">המנהל בודק שהתשלום תואם את המנוי. לאחר האישור תוכל להירשם לאימונים — בינתיים אפשר לצפות ולהתרשם.</p>
+              </div>
+            )}
+            {/* שלט התקנה: למתאמן ממתין — אדום בולט; למאושר — שורה דקה; לנמחק — לא מציגים. */}
+            {!isStandalone() && !isRemoved && <InstallBanner variant={isPending ? 'hero' : 'slim'} />}
             <EnablePushBanner profile={profile} />
           </div>
           {activeTab === 'schedule' && <ScheduleTab member={member} limit={limit} registrations={registrations} registrationsNext={registrationsNext} onRegister={handleRegister} branchesMap={branchesMap} />}

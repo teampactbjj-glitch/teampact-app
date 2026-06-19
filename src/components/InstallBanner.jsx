@@ -13,7 +13,8 @@ function isDismissed() {
 }
 
 export default function InstallBanner({ variant = 'card' }) {
-  const [hidden, setHidden] = useState(() => isStandalone() || isDismissed())
+  // variant 'hero' (מסך הרשמה) מתעלם מ-dismiss — זה ה-CTA הראשי, מוסתר רק אם כבר מותקן.
+  const [hidden, setHidden] = useState(() => isStandalone() || (variant !== 'hero' && isDismissed()))
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [guideOpen, setGuideOpen] = useState(false)
 
@@ -71,6 +72,52 @@ export default function InstallBanner({ variant = 'card' }) {
           </div>
         </div>
         <InstallGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
+      </>
+    )
+  }
+
+  // variant 'hero' — שלט אדום בולט להתקנה, ל-CTA הראשי במסך ההרשמה
+  if (variant === 'hero') {
+    return (
+      <>
+        <InstallGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
+        <div className="bg-gradient-to-br from-red-600 to-red-800 text-white rounded-2xl p-5 shadow-lg text-center">
+          <div className="text-3xl mb-1" aria-hidden="true">📲</div>
+          <h3 className="font-black text-lg">התקן את האפליקציה עכשיו</h3>
+          <p className="text-sm text-red-100 mt-1">כדי שתהיה מוכן ברגע שהבקשה תאושר — ותקבל התראות על אימונים, הודעות וסמינרים.</p>
+          {ios ? (
+            <>
+              <ol className="mt-3 space-y-1.5 text-sm text-red-50 list-decimal pr-5 text-right marker:text-red-200">
+                <li>לחץ על כפתור השיתוף בסרגל התחתון של Safari</li>
+                <li>גלול ובחר <b>"הוסף למסך הבית"</b></li>
+                <li>פתח את TeamPact מהאייקון במסך הבית</li>
+              </ol>
+              <button
+                type="button"
+                onClick={() => setGuideOpen(true)}
+                className="mt-3 inline-block bg-white text-red-700 font-bold py-2.5 px-5 rounded-xl text-sm hover:bg-red-50 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-white"
+              >
+                📖 הצג מדריך התקנה מפורט
+              </button>
+            </>
+          ) : deferredPrompt ? (
+            <button
+              type="button"
+              onClick={install}
+              className="mt-3 w-full bg-white text-red-700 hover:bg-red-50 font-black py-3 rounded-xl text-base focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-white"
+            >
+              📥 התקן את האפליקציה
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setGuideOpen(true)}
+              className="mt-3 w-full bg-white text-red-700 hover:bg-red-50 font-black py-3 rounded-xl text-base focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-white"
+            >
+              📥 איך מתקינים? הצג מדריך
+            </button>
+          )}
+        </div>
       </>
     )
   }

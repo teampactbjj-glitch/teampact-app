@@ -50,13 +50,14 @@ export default function RegisterPage() {
     })
   }, [])
 
-  // כשהמסך "הבקשה נשלחה" פעיל — בודקים כל 5 שניות אם המנהל אישר
-  // ברגע שהסטטוס הופך ל-active — מעבירים אוטומטית לאפליקציה
+  // אין פולינג רציף (חוסך egress). במקום זה — בודקים סטטוס *פעם אחת* בכל פעם
+  // שהמשתמש חוזר למסך (הטאב הופך פעיל / focus / פתיחת האפליקציה המותקנת).
+  // כך ברגע שהמנהל מאשר והמשתמש חוזר/פותח — הוא נכנס מיד, בלי תעבורה מתמשכת.
   useEffect(() => {
     if (!done) return
     let cancelled = false
-    const interval = setInterval(async () => {
-      if (cancelled) return
+    async function checkApproved() {
+      if (cancelled || document.visibilityState !== 'visible') return
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       const { data: member } = await supabase
@@ -66,11 +67,16 @@ export default function RegisterPage() {
         .maybeSingle()
       if (cancelled) return
       if (member?.status === 'approved' || member?.status === 'active') {
-        clearInterval(interval)
         window.location.replace('/')
       }
-    }, 5000)
-    return () => { cancelled = true; clearInterval(interval) }
+    }
+    document.addEventListener('visibilitychange', checkApproved)
+    window.addEventListener('focus', checkApproved)
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', checkApproved)
+      window.removeEventListener('focus', checkApproved)
+    }
   }, [done])
 
   function toggleBranch(id) {
@@ -164,25 +170,47 @@ export default function RegisterPage() {
         tag: `lead:${userId || Date.now()}`,
       }))
       .catch(() => {})
-    setDone(true)
+    // אוטומטי: אם נוצר session (התחברות מיידית אחרי signUp) — פותחים ישר את האפליקציה
+    // במצב צפייה. בתוך האפליקציה יוצג באנר "ממתין לאישור" + שלט התקנה ברור.
+    // אם אין session (למשל אם אימות מייל מופעל) — נופלים למסך "הבקשה נשלחה" כגיבוי.
+    if (authData?.session) {
+      window.location.replace('/')
+    } else {
+      setDone(true)
+    }
   }
 
   if (done) return (
     <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4" dir="rtl">
       <div className="max-w-sm w-full space-y-3">
-        <main id="main-content" className="bg-white rounded-2xl shadow p-8 text-center space-y-3" role="status" aria-live="polite">
-          <div className="text-5xl" aria-hidden="true">✅</div>
+        <main id="main-content" className="bg-white rounded-2xl shadow p-8 text-center space-y-4" role="status" aria-live="polite">
+          <div className="text-5xl" aria-hidden="true">🥋</div>
           <h2 className="font-bold text-xl text-gray-800">הבקשה נשלחה!</h2>
-          <p className="text-gray-700 text-sm">הצוות יאשר אותך בקרוב.</p>
-          <div className="flex items-center justify-center gap-2 text-xs text-emerald-700 mt-2">
-            <div className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" aria-hidden="true" />
-            <span>ממתין לאישור... הדף יתעדכן אוטומטית</span>
+          <p className="text-gray-700 text-sm leading-relaxed">
+            ברוך הבא לעולם שלם של ג'יו־ג'יטסו.<br />
+            עוד רגע אתה איתנו על המזרן.
+          </p>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-sm text-amber-800 font-medium">
+            ⏳ ממתין לאישור מנהל לבדיקת המנוי.<br />
+            לאחר האישור — תוכל להירשם לאימונים.
           </div>
-          <a href="/" className="block mt-2 text-sm text-blue-700 underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-400 rounded">
-            כבר אושרת? לחץ כאן להיכנס
+
+          {/* שלב 1 — כניסה מיידית לאפליקציה (מצב צפייה; פעולות נפתחות אחרי אישור) */}
+          <a
+            href="/"
+            className="block w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3.5 rounded-xl text-base no-underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-300"
+          >
+            פתח את האפליקציה עכשיו ←
           </a>
-          <div className="pt-4 mt-4 border-t border-gray-100">
-            <p className="text-xs text-gray-600 mb-2">בינתיים — הכירו אותנו טוב יותר</p>
+          <p className="text-xs text-gray-500">
+            אפשר כבר להיכנס ולהתרשם — ההרשמה לאימונים תיפתח אוטומטית אחרי שהמנהל יאשר.
+          </p>
+
+          {/* שלב 2 — התקנה לקבלת התראות (אדום בולט, לפי הוראות iOS/Android) */}
+          <p className="text-xs font-semibold text-gray-600 pt-1">וכדי לקבל התראות גם כשהאפליקציה סגורה — התקן אותה:</p>
+          <InstallBanner variant="hero" />
+
+          <div className="pt-4 mt-2 border-t border-gray-100">
             <a href="https://www.teampact.co.il" target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800 hover:underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-400 rounded">
               <span aria-hidden="true">🌐 </span>לאתר המועדון — teampact.co.il
@@ -196,7 +224,6 @@ export default function RegisterPage() {
             </a>
           </div>
         </main>
-        <InstallBanner />
       </div>
     </div>
   )

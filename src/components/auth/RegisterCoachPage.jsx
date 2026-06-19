@@ -61,7 +61,7 @@ export default function RegisterCoachPage() {
         clearInterval(interval)
         window.location.replace('/')
       }
-    }, 5000)
+    }, 30000) // 30ש' (היה 5ש') — חוסך egress; המעבר האוטומטי נשמר
     return () => { cancelled = true; clearInterval(interval) }
   }, [done])
 

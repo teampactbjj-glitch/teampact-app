@@ -149,25 +149,8 @@ export default function App() {
     setLoadingProfile(false)
   }
 
-  // כאשר יש בקשה ממתינה — בודקים כל 5 שניות אם המנהל אישר
-  useEffect(() => {
-    if (memberStatus !== 'pending' || !session?.user?.id) return
-    const userId = session.user.id
-    let cancelled = false
-    const interval = setInterval(async () => {
-      if (cancelled) return
-      const { data: member } = await supabase
-        .from('members')
-        .select('status')
-        .eq('id', userId)
-        .maybeSingle()
-      if (cancelled) return
-      if (member?.status && member.status !== 'pending') {
-        setMemberStatus(member.status)
-      }
-    }, 5000)
-    return () => { cancelled = true; clearInterval(interval) }
-  }, [memberStatus, session?.user?.id])
+  // (הוסר) פולינג מתאמן ממתין-לאישור: מתאמן ממתין נכנס עכשיו לדשבורד במצב צפייה,
+  // והסטטוס מתרענן בעת חזרה למסך (visibilitychange ב-AthleteDashboard) — בלי פולינג רציף.
 
   // מאמן ממתין לאישור — בודקים כל 5 שניות אם אושר
   useEffect(() => {
@@ -185,7 +168,7 @@ export default function App() {
       if (data?.is_approved) {
         setProfile(p => p ? { ...p, is_approved: true } : p)
       }
-    }, 5000)
+    }, 30000) // 30ש' (היה 5ש') — חוסך egress; מאמן ממתין-לאישור עובר אוטומטית כשמאושר (עד 30ש')
     return () => { cancelled = true; clearInterval(interval) }
   }, [profile?.role, profile?.is_approved, session?.user?.id])
 
@@ -267,6 +250,7 @@ export default function App() {
     return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><TrainerDashboard profile={profile} isAdmin={false} isSecretary={true} secretaryBranchId={profile.secretary_branch_id} /></>)
   }
   if (profile?.role === 'trainer') return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><TrainerDashboard profile={profile} isAdmin={!!profile.is_admin} /></>)
-  if (memberStatus === 'pending') return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><PendingApprovalScreen /></>)
+  // מתאמן ממתין-לאישור נכנס עכשיו לדשבורד במצב צפייה (פעולות נעולות עד אישור),
+  // במקום מסך חוסם נפרד. הנעילה נאכפת ב-AthleteDashboard + ב-RLS (current_user_can_book).
   return (<><SkipLink /><UpdateBanner /><AccessibilityWidget /><AthleteDashboard profile={profile} /></>)
 }

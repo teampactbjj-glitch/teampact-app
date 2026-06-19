@@ -61,8 +61,8 @@ export const DISCIPLINE_COLORS = {
 // תוויות תצוגה (כפתורי סינון). מפתחות = הערכים מ-detectDiscipline.
 export const DISCIPLINE_LABELS = {
   'BJJ': "ג'יו-ג'יטסו",
-  'Muay Thai': 'מואי תאי',
-  'MMA': 'MMA',
+  'Muay Thai': 'איגרוף תאילנדי',
+  'MMA': 'MMA / לחימה משולבת',
   'ילדים': 'ילדים',
   'אחר': 'אחר',
 }

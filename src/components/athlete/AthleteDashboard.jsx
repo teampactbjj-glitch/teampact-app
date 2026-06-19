@@ -398,7 +398,7 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
                   ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md'
                   : 'bg-white text-gray-600 border border-gray-200'
               }`}>
-              🥋 {DISCIPLINE_LABELS[d] || d}
+              {DISCIPLINE_LABELS[d] || d}
             </button>
           ))}
         </div>

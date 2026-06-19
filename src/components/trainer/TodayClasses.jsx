@@ -1206,7 +1206,7 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
                     ? 'bg-indigo-600 text-white border-indigo-600 shadow'
                     : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
                 }`}>
-                🥋 {DISCIPLINE_LABELS[d] || d}
+                {DISCIPLINE_LABELS[d] || d}
               </button>
             ))}
           </div>

@@ -156,6 +156,9 @@ export default function RegisterCoachPage() {
       }))
       .catch(e => console.warn('coach notify push failed', e?.message || e))
 
+    // יש session (אישור-מייל כבוי) — פותחים ישר את האפליקציה; שם מוצג מסך
+    // "ממתין לאישור" עם הוראות התקנה, בדיוק כמו אצל מתאמן. אחרת — מסך גיבוי.
+    if (authData?.session) { window.location.replace('/'); return }
     setDone(true)
   }
 
@@ -167,20 +170,29 @@ export default function RegisterCoachPage() {
   if (done) return (
     <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4" dir="rtl">
       <div className="max-w-sm w-full space-y-3">
-        <main id="main-content" className="bg-white rounded-2xl shadow p-8 text-center space-y-3" role="status" aria-live="polite">
+        <main id="main-content" className="bg-white rounded-2xl shadow p-8 text-center space-y-4" role="status" aria-live="polite">
           <div className="text-5xl" aria-hidden="true">🥋</div>
           <h2 className="font-bold text-xl text-gray-800">בקשת המאמן נשלחה!</h2>
           <p className="text-gray-700 text-sm">המנהל קיבל התראה ויאשר אותך בקרוב.</p>
-          <p className="text-gray-600 text-xs">לאחר האישור תקבל גישה מלאה כמאמן עם כל הכלים.</p>
-          <div className="flex items-center justify-center gap-2 text-xs text-blue-700 mt-2">
-            <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" aria-hidden="true" />
-            <span>ממתין לאישור... הדף יתעדכן אוטומטית</span>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-sm text-amber-800 font-medium">
+            ⏳ ממתין לאישור המנהל.<br />
+            לאחר האישור — תקבל גישה מלאה כמאמן עם כל הכלים.
           </div>
-          <button type="button" onClick={handleSignOut} className="mt-3 text-sm text-gray-700 underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-400 rounded">
+
+          {/* שלב 1 — כניסה מיידית לאפליקציה (מצב צפייה; הכלים נפתחים אחרי אישור) */}
+          <a href="/" className="block w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3.5 rounded-xl text-base no-underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-300">
+            פתח את האפליקציה עכשיו ←
+          </a>
+          <p className="text-xs text-gray-500">הדף יתעדכן אוטומטית כשהמנהל יאשר.</p>
+
+          {/* שלב 2 — התקנה לקבלת התראות (בולט, לפי הוראות iOS/Android) */}
+          <p className="text-xs font-semibold text-gray-600 pt-1">וכדי לקבל התראות גם כשהאפליקציה סגורה — התקן אותה:</p>
+          <InstallBanner variant="hero" />
+
+          <button type="button" onClick={handleSignOut} className="mt-2 text-sm text-gray-700 underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-blue-400 rounded">
             התנתק
           </button>
         </main>
-        <InstallBanner />
       </div>
     </div>
   )

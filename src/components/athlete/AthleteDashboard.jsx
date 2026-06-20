@@ -631,9 +631,11 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
     return () => clearTimeout(t)
   }, [focusId, announcements.length])
   const athleteName = member?.full_name || profile?.full_name || profile?.email || 'לא ידוע'
+  // ה-id של המתאמן הפעיל (ילד נבחר במתג ההורה) — הרשמות סמינר נשמרות תחתיו, לא תחת ההורה.
+  const athleteId = member?.id || profile?.id || null
   const general = announcements.filter(a => a.type === 'general' || a.type === 'announcement' || a.type === 'promotion')
   const seminars = announcements.filter(a => a.type === 'seminar')
-  const storageKey = profile?.id ? `seminars_ordered_${profile.id}` : null
+  const storageKey = athleteId ? `seminars_ordered_${athleteId}` : null
   const [ordered, setOrdered] = useState(() => {
     if (!storageKey) return new Set()
     try { return new Set(JSON.parse(localStorage.getItem(storageKey) || '[]')) } catch { return new Set() }
@@ -655,10 +657,10 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
   }, [ordered, storageKey])
 
   useEffect(() => {
-    if (!profile?.id || seminars.length === 0) return
+    if (!athleteId || seminars.length === 0) return
     supabase.from('product_requests')
       .select('product_name, announcement_id, status')
-      .eq('athlete_id', profile.id)
+      .eq('athlete_id', athleteId)
       .then(({ data }) => {
         const rows = data || []
         // קישור הרשמה לסמינר לפי announcement_id (uuid); נפילה-לאחור לכותרת לרשומות ישנות בלי id.
@@ -672,7 +674,7 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
         setOrdered(new Set(ids))
         setOrderedDone(new Set(doneIds))
       })
-  }, [profile?.id, seminars.length])
+  }, [athleteId, seminars.length])
 
   // מחיר אפקטיבי לסמינר: אם הוגדר מחיר מוקדם ותאריך תפוגה — עד התאריך (כולל) המחיר המוקדם,
   // אחריו המחיר הרגיל. אם אין מחיר מוקדם — המחיר הרגיל.
@@ -700,7 +702,7 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
       setOrderingId(item.id)
       await supabase.from('product_requests')
         .delete()
-        .eq('athlete_id', profile?.id)
+        .eq('athlete_id', athleteId)
         .eq('announcement_id', item.id)
         .eq('status', 'pending')
       setOrdered(prev => { const n = new Set(prev); n.delete(item.id); return n })
@@ -723,7 +725,7 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
     const { error } = await supabase.from('product_requests').insert({
       product_name: item.title,
       announcement_id: item.id,
-      athlete_id: profile?.id || null,
+      athlete_id: athleteId,
       athlete_name: athleteName,
       status: 'pending',
       notes: `הרשמה לסמינר${pr.earlyActive ? ' · מחיר מוקדם' : ''}`,
@@ -979,7 +981,9 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
   const confirm = useConfirm()
   const products = allAnnouncements.filter(a => a.type === 'product' || a.type === 'bundle')
   const athleteName = member?.full_name || profile?.full_name || profile?.email || 'לא ידוע'
-  const storageKey = profile?.id ? `shop_ordered_${profile.id}` : null
+  // ה-id של המתאמן הפעיל (ילד נבחר במתג ההורה) — הרשמות/הזמנות נשמרות תחתיו, לא תחת ההורה.
+  const athleteId = member?.id || profile?.id || null
+  const storageKey = athleteId ? `shop_ordered_${athleteId}` : null
   const [ordered, setOrdered] = useState(() => {
     if (!storageKey) return new Set()
     try { return new Set(JSON.parse(localStorage.getItem(storageKey) || '[]')) } catch { return new Set() }
@@ -1055,10 +1059,10 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
   }, [selectedProductId])
 
   useEffect(() => {
-    if (!profile?.id || products.length === 0) return
+    if (!athleteId || products.length === 0) return
     supabase.from('product_requests')
       .select('*')
-      .eq('athlete_id', profile.id)
+      .eq('athlete_id', athleteId)
       .then(({ data }) => {
         const rows = data || []
         // pending = כל מה שלא done/cancelled (כולל null מהזמנות ישנות)
@@ -1079,7 +1083,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
         setOrderedDone(new Set(doneIds))
         setOrderedRequestsMap(reqMap)
       })
-  }, [profile?.id, products.length])
+  }, [athleteId, products.length])
 
   // handleOrder מטפל גם בהזמנה ישירה (מהרשימה) וגם בהזמנה מדף פירוט (עם אפשרות/מידה/צבע/אורך/רכיבים)
   // כשeditRequestId קיים — עדכון רשומה קיימת במקום יצירת חדשה
@@ -1105,7 +1109,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
         // fallback: עדכן לפי שם (כולל הזמנות ישנות עם status=null)
         await supabase.from('product_requests')
           .update({ status: 'cancelled' })
-          .eq('athlete_id', profile?.id)
+          .eq('athlete_id', athleteId)
           .eq('product_name', item.title)
           .or('status.eq.pending,status.is.null')
       }
@@ -1122,7 +1126,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
       product_name: item.title,
       product_id: item.id || null,
       announcement_id: item.id || null,
-      athlete_id: profile?.id || null,
+      athlete_id: athleteId,
       athlete_name: athleteName,
       status: 'pending',
     }
@@ -1376,7 +1380,7 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
                         } else {
                           await supabase.from('product_requests')
                             .update({ status: 'cancelled' })
-                            .eq('athlete_id', profile?.id)
+                            .eq('athlete_id', athleteId)
                             .eq('product_name', item.title)
                             .or('status.eq.pending,status.is.null')
                         }
@@ -2318,6 +2322,14 @@ export default function AthleteDashboard({ profile }) {
   const [loading, setLoading]               = useState(true)
   const [cartCount, setCartCount]           = useState(0)
   const [member, setMember]                 = useState(null)
+  // כל המתאמנים שהחשבון מורשה להם: עצמו (id=auth.uid) + ילדיו (guardian_id=auth.uid).
+  // אם יש יותר מאחד — מוצג מתג החלפה למעלה. מתאמן רגיל (רשומה אחת) — זהה להיום.
+  const [myMembers, setMyMembers]           = useState([])
+  const activeMemberKey = profile?.id ? `tp_active_member_${profile.id}` : null
+  // טופס "➕ הוסף ילד" מתוך האפליקציה (הורה קיים מוסיף ילד נוסף)
+  const [addChildOpen, setAddChildOpen]     = useState(false)
+  const [addChildSaving, setAddChildSaving] = useState(false)
+  const [childForm, setChildForm]           = useState({ full_name: '', birth_date: '', branch_ids: [], subscription_type: '2x_week' })
   const [branchesMap, setBranchesMap]       = useState({})
   // מתאמן שנמחק ע"י המועדון (soft-delete — deleted_at מסומן) — חסום לחלוטין מפעולות.
   const isRemoved = !!member?.deleted_at
@@ -2396,8 +2408,13 @@ export default function AthleteDashboard({ profile }) {
   }, [activeTab, announcements, lastSeenKey])
 
   useEffect(() => {
-    if (profile?.id) { fetchMyClasses(); fetchAnnouncements(); fetchRegistrations(); fetchBranches() }
+    if (profile?.id) { fetchMyClasses(); fetchAnnouncements(); fetchBranches() }
   }, [profile])
+
+  // רישומי השיעורים תלויים במתאמן הפעיל — מתרעננים בבחירה הראשונית ובכל החלפת ילד.
+  useEffect(() => {
+    if (member?.id) fetchRegistrations(member.id)
+  }, [member?.id])
 
   useEffect(() => {
     if (!profile?.id) return
@@ -2432,27 +2449,38 @@ export default function AthleteDashboard({ profile }) {
   async function fetchMyClasses() {
     setLoading(true)
     try {
-      console.log('[athlete] profile:', { id: profile?.id, email: profile?.email, role: profile?.role })
-      let memberData = null
+      // טוען את כל המתאמנים של החשבון: עצמו (id=auth.uid) + ילדיו (guardian_id=auth.uid).
+      // (member.id ו-profile.id יכולים להיות שונים — לא מאחדים IDs, זה שובר FK של checkins.)
+      let list = []
       if (profile?.id) {
-        const r = await supabase.from('members').select('*').eq('id', profile.id).maybeSingle()
-        console.log('[athlete] member by id:', { found: !!r.data, error: r.error })
-        memberData = r.data
+        const r = await supabase.from('members').select('*')
+          .or(`id.eq.${profile.id},guardian_id.eq.${profile.id}`)
+          .is('deleted_at', null)
+        if (r.error) console.error('members fetch (.or) error:', r.error)
+        list = r.data || []
       }
-      if (!memberData && profile?.email) {
+      // נפילה לאחור: חשבונות ישנים שבהם member.id ≠ auth.uid — איתור לפי email.
+      if (list.length === 0 && profile?.email) {
         const email = profile.email.toLowerCase()
         const r = await supabase.from('members').select('*').eq('email', email).maybeSingle()
-        console.log('[athlete] member by email:', { email, found: !!r.data, error: r.error, data: r.data })
         if (r.error) console.error('member fetch by email error:', r.error)
-        memberData = r.data
+        if (r.data) list = [r.data]
       }
-      // הערה: בעבר היה כאן קוד שמנסה לעדכן את member.id ב-DB להיות שווה ל-profile.id
-      // כדי לאחד IDs. זה גרם לבאג חמור: ה-FK של checkins.athlete_id מצביע על members(id)
-      // בלי ON UPDATE CASCADE — לכן שינוי ID שבר את הקישור לכל הצ'ק-אינים הקיימים.
-      // התוצאה: מתאמן שראה 0/1 אימונים בלבד למרות שהיו לו עשרות.
-      // הגישה הנכונה: לקבל ש-profile.id ו-member.id יכולים להיות שונים, ולהשתמש
-      // ב-member.id (עם fallback ל-profile.id) בכל מקום שעובד עם checkins/class_registrations.
-      setMember(memberData || null)
+      // מיון יציב: ההורה-עצמו ראשון, אחר כך ילדים לפי שם.
+      list.sort((a, b) => {
+        const aSelf = a.id === profile?.id ? 0 : 1
+        const bSelf = b.id === profile?.id ? 0 : 1
+        if (aSelf !== bSelf) return aSelf - bSelf
+        return (a.full_name || '').localeCompare(b.full_name || '', 'he')
+      })
+      setMyMembers(list)
+      // בחירת המתאמן הפעיל: שמור ב-localStorage אם עדיין תקף, אחרת ההורה-עצמו, אחרת הראשון.
+      const savedId = activeMemberKey ? window.localStorage.getItem(activeMemberKey) : null
+      const pick = list.find(m => m.id === savedId)
+        || list.find(m => m.id === profile?.id)
+        || list[0]
+        || null
+      setMember(pick)
     } catch (e) {
       console.error('fetchMyClasses threw:', e)
     } finally {
@@ -2469,13 +2497,55 @@ export default function AthleteDashboard({ profile }) {
     setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])
   }
 
-  async function fetchRegistrations() {
+  // החלפת המתאמן הפעיל (מתג ההורה) — מעדכן member, שומר ב-localStorage,
+  // וה-useEffect על member?.id מרענן את הרישומים אוטומטית.
+  function switchMember(id) {
+    const m = myMembers.find(x => x.id === id)
+    if (!m) return
+    setMember(m)
+    if (activeMemberKey) window.localStorage.setItem(activeMemberKey, id)
+  }
+
+  // הוספת ילד מתוך האפליקציה (הורה קיים) — INSERT עם guardian_id=auth.uid, status=pending.
+  // הילד הקיים לא נגע; שאילתת הטעינה .or() תחזיר את שניהם.
+  async function submitAddChild() {
+    const name = (childForm.full_name || '').trim()
+    if (name.split(/\s+/).filter(Boolean).length < 2) { toast.error('יש להזין שם מלא של הילד/ה (פרטי + משפחה)'); return }
+    if (!childForm.birth_date) { toast.error('נא למלא תאריך לידה'); return }
+    if (childForm.branch_ids.length === 0) { toast.error('נא לבחור סניף'); return }
+    setAddChildSaving(true)
+    // שם ההורה ושם הטלפון — מהרשומות הקיימות אם יש, אחרת מהפרופיל.
+    const existingChild = myMembers.find(m => m.guardian_id === profile?.id)
+    const parentName = existingChild?.parent_name || profile?.full_name || null
+    const phone = existingChild?.phone || myMembers[0]?.phone || null
+    const { error } = await supabase.from('members').insert({
+      full_name: name,
+      email: null,
+      phone,
+      branch_ids: childForm.branch_ids,
+      branch_id: childForm.branch_ids[0],
+      subscription_type: childForm.subscription_type,
+      membership_type: childForm.subscription_type,
+      status: 'pending',
+      birth_date: childForm.birth_date || null,
+      guardian_id: profile?.id,
+      parent_name: parentName,
+    })
+    setAddChildSaving(false)
+    if (error) { console.error('add child error:', error); toast.error('שגיאה בהוספת הילד — נסה שוב'); return }
+    toast.success('הילד נוסף! ממתין לאישור המאמן')
+    setAddChildOpen(false)
+    setChildForm({ full_name: '', birth_date: '', branch_ids: [], subscription_type: '2x_week' })
+    await fetchMyClasses()
+  }
+
+  async function fetchRegistrations(forMemberId) {
     // מביאים את שני השבועות (נוכחי + הבא) בשאילתה אחת ומפצלים לפי week_start.
     // ככה לא מבצעים שתי קריאות נפרדות, וקטגוריית הספירה תמיד מסונכרנת.
     const wsCurrent = getWeekStart()
     const wsNext = getNextWeekStart()
     // ה-registrations נשמרים תחת members.id — fallback ל-profile.id לתאימות.
-    const athleteId = member?.id || profile.id
+    const athleteId = forMemberId || member?.id || profile.id
     const { data } = await supabase.from('class_registrations')
       .select('class_id, week_start')
       .eq('athlete_id', athleteId)
@@ -2706,6 +2776,42 @@ export default function AthleteDashboard({ profile }) {
           </div>
         )}
       </header>
+      {/* מתג החלפה בין הילדים (הורה רב-ילדים) — מוצג רק אם יש יותר ממתאמן אחד.
+          מתאמן רגיל (רשומה אחת) לא רואה כלום — זהה להיום. */}
+      {(myMembers.length > 1 || myMembers.some(m => m.guardian_id === profile?.id)) && (
+        <div className="shrink-0 bg-white border-b border-gray-200 overflow-x-auto">
+          <div className="flex items-center gap-2 max-w-lg mx-auto px-4 py-2">
+            <span className="text-xs text-gray-500 shrink-0">מתאמן:</span>
+            {myMembers.map(m => {
+              const active = m.id === member?.id
+              const pending = m.status !== 'approved' && m.status !== 'active'
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => switchMember(m.id)}
+                  aria-pressed={active}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-semibold border transition focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-emerald-400 ${
+                    active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-700 border-gray-300 hover:border-emerald-400'
+                  }`}
+                >
+                  {(m.full_name || 'מתאמן').split(' ')[0]}
+                  {pending && (
+                    <span className={`mr-1 text-[10px] ${active ? 'text-emerald-100' : 'text-amber-600'}`}>· ממתין</span>
+                  )}
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              onClick={() => setAddChildOpen(true)}
+              className="shrink-0 px-3 py-1.5 rounded-full text-sm font-semibold border border-dashed border-emerald-400 text-emerald-700 hover:bg-emerald-50 transition focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-emerald-400"
+            >
+              ➕ הוסף ילד
+            </button>
+          </div>
+        </div>
+      )}
       {/* main ברוחב מלא — scrollbar מופיע בקצה המסך, לא באמצע (כפי שהיה ב-desktop רחב).
           התוכן עצמו עדיין מרוכז ב-max-w-lg כדי לשמור על UX מובייל-first. */}
       <main className="flex-1 overflow-y-auto overflow-x-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
@@ -2742,6 +2848,60 @@ export default function AthleteDashboard({ profile }) {
           {activeTab === 'settings' && <SettingsTab profile={profile} member={member} />}
         </div>
       </main>
+      {addChildOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" dir="rtl" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-lg text-gray-800">➕ הוספת ילד</h2>
+              <button type="button" onClick={() => setAddChildOpen(false)} aria-label="סגור" className="text-gray-400 hover:text-gray-700 text-xl leading-none">✕</button>
+            </div>
+            <p className="text-xs text-gray-500">הילד יתווסף לחשבון שלך וימתין לאישור המאמן.</p>
+            <div>
+              <label className="text-xs font-semibold text-gray-700 block mb-1">שם מלא של הילד/ה *</label>
+              <input type="text" value={childForm.full_name}
+                onChange={e => setChildForm(p => ({ ...p, full_name: e.target.value }))}
+                placeholder="ישראל ישראלי"
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-700 block mb-1">תאריך לידה *</label>
+              <input type="date" max={new Date().toISOString().split('T')[0]} value={childForm.birth_date}
+                onChange={e => setChildForm(p => ({ ...p, birth_date: e.target.value }))}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-700 block mb-1">סניף *</label>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(branchesMap).map(([id, name]) => {
+                  const sel = childForm.branch_ids.includes(id)
+                  return (
+                    <button key={id} type="button"
+                      onClick={() => setChildForm(p => ({ ...p, branch_ids: sel ? p.branch_ids.filter(x => x !== id) : [...p.branch_ids, id] }))}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${sel ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-700 border-gray-300 hover:border-emerald-400'}`}>
+                      {sel ? '✓ ' : ''}{name}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-700 block mb-1">סוג מנוי</label>
+              <select value={childForm.subscription_type}
+                onChange={e => setChildForm(p => ({ ...p, subscription_type: e.target.value }))}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <option value="1x_week">1× שבוע</option>
+                <option value="2x_week">2× שבוע</option>
+                <option value="4x_week">4× שבוע</option>
+                <option value="unlimited">ללא הגבלה</option>
+              </select>
+            </div>
+            <button type="button" onClick={submitAddChild} disabled={addChildSaving}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition disabled:opacity-50">
+              {addChildSaving ? 'שומר...' : 'הוסף ילד'}
+            </button>
+          </div>
+        </div>
+      )}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} isTrainer={false} announcementsCount={announcementsCount} cartCount={cartCount} />
       {welcomeBack.open && (
         <WelcomeBackOverlay

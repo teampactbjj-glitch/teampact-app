@@ -1,5 +1,123 @@
 # MEMORY - TeamPact App
 
+## 🟢 Session 20.06.2026 (ערב) — פיצ'ר הורה רב-ילדים: DB הושלם על staging ✅
+
+**הושלם על staging (ref `tfrcyntrusfrjcpevotq`, חיבור דרך SQL Editor של סופרבייס, לא טרמינל):**
+- **שלב 1** — `members.guardian_id uuid REFERENCES auth.users(id)` (nullable) + index + comment. קובץ: `src/lib/migration-guardian-1-column.sql`. אומת.
+- **שלב 2** — `public.is_guardian_of(uuid)` SECURITY DEFINER. קובץ: `migration-guardian-2-function.sql`. אומת.
+- **שלב 3** — 7 RLS policies לאפוטרופוס (תוספת OR בלבד, לא שובר קיים): `members_select_guardian`, `members_insert_guardian_child`, `checkins_guardian_all` (FOR ALL), `class_reg_guardian_all` (FOR ALL), `product_req_select_guardian` / `_insert_guardian` / `_delete_guardian` (pending). קובץ: `migration-guardian-3-policies.sql`. אומת — 7 שורות.
+- **שלב 4** — בדיקת בידוד אוטומטית (2 הורים+3 ילדים, פונקציה זמנית, ניקוי עצמי). קובץ: `migration-guardian-4-isolation-test.sql`. **כל 7 הבדיקות pass=true** — הורה רואה רק ילדיו, לא של משפחה אחרת/זר.
+
+**לקחים טכניים מה-SQL Editor של סופרבייס (חשוב לסשנים הבאים!):**
+1. **לא לכבד `BEGIN...ROLLBACK`** כצפוי — הצהרות נפרדות, טבלאות זמניות `ON COMMIT DROP` נמחקות מיד.
+2. **מזריק אוטומטית `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` על כל `CREATE TABLE`** — שובר פונקציות עם temp table בפנים. פתרון: בלי CREATE TABLE; להחזיר תוצאות עם `RETURN QUERY ... FROM (VALUES ...)`.
+3. **`members` יש `tr_soft_delete` BEFORE DELETE** — מחיקה ראשונה רק מסמנת `deleted_at`, השנייה מוחקת פיזית. לניקוי: קודם `UPDATE deleted_at=now()` ואז `DELETE`. (גם `trg_delete_auth_user_on_member_delete` AFTER DELETE מוחק את ה-auth.user של ה-member.)
+4. בדיקת RLS פר-משתמש: `set_config('request.jwt.claims', '{"sub":"<uid>","role":"authenticated"}', true)` + פונקציה SECURITY DEFINER.
+
+### My last pending task
+**DB מוכן (1-4). קוד שלב 5 בעיצומו — נבדק לוקאלית מול staging, טרם נדחף:**
+
+**✅ הושלם ונבדק לוקאלית מול staging:**
+- **5א — `src/components/RegisterPage.jsx`** (נכתב מחדש; גיבוי ב-`backup_20260620_multichild/`): צ'קבוקס "אני הורה שרושם ילדים" → signUp אחד + כרטיסי ילדים + "➕ הוסף עוד ילד" + "אני גם מתאמן בעצמי". ילדים: INSERT עם `guardian_id`, `email=null`. **עבד** — נרשמו 2 ילדים, המנהל ראה ואישר.
+- **5ב — `src/components/athlete/AthleteDashboard.jsx`**: `fetchMyClasses` טוען `.or(id.eq,guardian_id.eq)` → state `myMembers`; בחירת פעיל `tp_active_member_<profile.id>` ב-localStorage; `switchMember()`; `fetchRegistrations(forMemberId)`; effect על `member?.id` שמרענן רישומים; סרגל מתג עליון (מוצג רק אם >1). **עבד** — מתג מציג שמות (אבי/דני), החלפה עובדת.
+
+**🔑 פרטי התחברות לבדיקה ב-staging (`teampact-staging`):**
+| תפקיד | מייל | סיסמה |
+|-------|------|-------|
+| מנהל | `teampacttest@gmail.com` | `0542250993` |
+| הורה (של אבי + דני) | `teampactbjj+2@gmail.com` | `123456` |
+
+**הקמת staging לבדיקה (נזרע ב-SQL):** 3 סניפים (חולון `8ecebf3c-1baa-4582-84e4-e12f840c325f`, ת"א, רחובות); חשבון מנהל `teampacttest@gmail.com` (bootstrap: `UPDATE profiles SET is_admin=true,is_approved=true,role='trainer'`); הורה `teampactbjj+2@gmail.com` + 2 ילדים (אבי/דני); 6 שיעורי בדיקה (`seed-staging-classes.sql`). **Confirm email כובה ב-staging Auth** (אחרת מייל מומצא נדחה).
+**לשנות שם מתאמן ב-SQL** צריך "להתחזות" למנהל (trigger `trg_enforce_member_edit_admin_only`): `set_config('request.jwt.claims', json_build_object('sub',<admin_id>,'role','authenticated')::text, true)` בתוך DO block.
+
+- **5ד ✅ עבד ונבדק** — "➕ הוסף ילד" מתוך האפליקציה (כפתור מקווקו בסרגל המתג → מודאל → INSERT `guardian_id=auth.uid`, `status=pending`, email=null). דודי הוסיף ילד שלישי (יעקב), אישר כמנהל, ונרשם — **יש הפרדה ברישומים** (RLS כתיבה לאפוטרופוס אומת! זה הסיכון הקריטי).
+- **5ג ✅ עבד ונבדק חי** (דודי נרשם לסמינר עם אבי, נשמר תחתיו, נראה במנהל) — `AthleteDashboard.jsx`: ב-`AnnouncementsTab` (סמינרים) וב-`ShopTab` (חנות) נוסף `const athleteId = member?.id || profile?.id` והוחלפו כל שימושי `profile.id` כ-athlete_id (select/insert/delete/localStorage keys) → הרשמה לסמינר/מוצר נשמרת תחת הילד הפעיל. לבדיקה צריך לזרוע סמינר/מוצר ב-staging.
+  - **מודע ולא שונה (מחוץ ל-scope):** `SettingsTab` (בקשת שינוי שם/מייל `profile_change_requests`, בקשת חגורה, הקפאת/ביטול מנוי — שורות ~1562,1660,1710,1725,1746) עדיין על `profile.id`. אין להן guardian RLS policies — שינוי ל-member.id יחסום בשקט. אם בעתיד רוצים בקשות-פר-ילד צריך להוסיף policies + לשנות. רשום ב-backlog.
+
+**✅ 5ה עבר** — מתאמן רגיל יחיד (אין מתג, נרשם לסמינר+אימון), הורה רב-ילדים, מאמן רגיל (נטען תקין, אין שינוי קוד), מנהל — כולם נבדקו.
+
+**➕ תוספת (בקשת דודי, נכלל בהעלאה): הרשמת מאמן כמו הרשמת מתאמן.** שונו 3 קבצים (build נקי):
+- `src/components/auth/RegisterCoachPage.jsx` — אחרי הרשמה אם יש session → `window.location.replace('/')` (פותח אפליקציה); מסך ה"נשלח" קיבל כפתור "פתח את האפליקציה" + `InstallBanner variant="hero"`.
+- `src/components/PendingApprovalScreen.jsx` — InstallBanner שודרג ל-`variant="hero"` + שורת הסבר התקנה (מסך זה = מאמן ממתין; App.jsx מעלה אותו אוטומטית לאישור).
+**טרם נבדק חי** — לבדוק: הרשמת מאמן ב-staging פותחת אפליקציה עם מסך המתנה + הוראות התקנה בולטות, והמנהל מאשר → מעבר אוטומטי.
+
+**⬜ נשאר:**
+- **בדיקת 5ג חיה** — לזרוע סמינר/מוצר ב-staging, להירשם עם ילד אחד ולוודא שנשמר תחתיו.
+- **רק אחרי "עובד נקי"**: גיבוי prod → הרצת קבצי מיגרציה **1+2+3 בלבד** (לא 4) על prod → push קוד ל-main (RegisterPage.jsx + AthleteDashboard.jsx).
+
+---
+
+## 🧭 Backlog למוצר — להפיכת TeamPact למוצר למכירה (לא עכשיו! רשימת המתנה)
+
+דודי ביקש לזכור את אלה כשנרצה למכור את האפליקציה ללקוחות חיצוניים (מועדונים אחרים):
+
+1. **מסך "צוות" לניהול תפקידים מתוך האפליקציה** — היום `is_admin` נקבע **רק ידנית ב-DB** (bootstrap), אין כפתור בממשק. צריך מסך שבו מנהל ממנה/מוריד: מנהל נוסף, מזכירה, מאמן — בלחיצה. (היום: מאמן נרשם ב-`/register-coach` → מנהל מאשר ב-`CoachesManager`; מזכירה דרך `CoachesManager`; מנהל ראשון = SQL `UPDATE profiles SET is_admin=true, is_approved=true, role='trainer'`.)
+2. **Multi-tenant** — הפרדת מועדונים: כל לקוח רואה רק את הנתונים שלו. או DB נפרד לכל לקוח (התקנה לכל אחד), או טננט-איידי משותף עם RLS לפי מועדון. כרגע הכל single-tenant (מועדון אחד).
+3. **תהליך onboarding ללקוח חדש** — איך לקוח חדש מגדיר מנהל ראשון בלי SQL ידני (טופס הקמה / סקריפט bootstrap).
+4. (להוסיף כאן עוד פריטים שיעלו)
+
+---
+
+## 🟢 Session 20.06.2026 (המשך) — סביבת staging הוקמה במלואה ✅
+
+**הושלם:** סביבת staging חינמית מוכנה ועובדת — מראה-מראה של מבנה הפרודקשן.
+
+**מה נעשה בפועל:**
+1. **ארגון Supabase חדש `TeamPact-Free` (תוכנית Free, $0)** — נפרד לגמרי מארגון ה-Pro של הפרודקשן. הפרודקשן נשאר Pro ולא נגעו בו.
+2. **פרויקט `teampact-staging`** נוצר בו. פרטים:
+   - ref: `tfrcyntrusfrjcpevotq`, region: **West EU (Ireland)** eu-west-1.
+   - URL: `https://tfrcyntrusfrjcpevotq.supabase.co`
+   - anon key (legacy JWT `eyJ...`) — שמור ב-`.env.staging`.
+   - **סיסמת DB של staging: `TeampactStaging2026`** (אופסה דרך Connect→Reset password).
+3. **שכפול סכמה בוצע ב-pg_dump נאמן:**
+   - `pg_dump --schema-only --no-owner --schema=public` מ-prod → קובץ `staging-schema.sql` בריפו.
+   - גרסה נקייה `staging-schema-clean.sql` — הוסרו: שורות `\restrict`/`\unrestrict` (psql meta), `CREATE SCHEMA public;` (כבר קיים), ו-12 שורות `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` (postgres לא מורשה → permission denied). הוסף ידנית ה-trigger `trg_sync_email_on_auth_change` על `auth.users` (לא נכלל ב-dump של public בלבד; הפונקציה כן נכללה).
+   - נטען בהצלחה ל-staging דרך **חיבור ישיר** (לא pooler!): `psql -h db.tfrcyntrusfrjcpevotq.supabase.co -U postgres --single-transaction -v ON_ERROR_STOP=1 -f staging-schema-clean.sql`. רץ עד `CREATE TRIGGER` בלי ERROR.
+4. **`.env.staging` נוצר** (ב-gitignore): VITE_SUPABASE_URL + ANON_KEY של staging + VITE_APP_ENV=staging.
+
+**לקחים טכניים חשובים (לסשן הבא):**
+- **ה-Shared Pooler (`aws-0-eu-west-1.pooler.supabase.com`, user `postgres.<ref>`) לא סנכרן את סיסמת ה-staging החדשה** → `password authentication failed` שוב ושוב למרות סיסמה נכונה. **הפתרון: חיבור ישיר** — host `db.<ref>.supabase.co`, user `postgres` (בלי סיומת ref). prod דווקא עבד דרך ה-pooler. **לסשן הבא: אם staging נכשל בהזדהות — לעבור מיד לחיבור הישיר.**
+- prod DB password מאומת: `Teampact1986=` (user `postgres.pnicoluujpidguvniwub` דרך pooler).
+- ה-sandbox של Claude חסום מ-Supabase → כל psql/pg_dump רץ בטרמינל של דודי.
+
+### My last pending task
+**סביבת staging מוכנה. נשארו 2 שלבים:**
+1. **חיבור ובדיקה:** דודי מריץ `cd /Users/dudibenzaken/teampact-app && npm run dev -- --mode staging` → האפליקציה תרוץ מול staging (ה-DB ריק, אפשר לרשום משתמשי דמה). לוודא שעולה ושאפשר להירשם/להתחבר.
+2. **בניית פיצ'ר הורה רב-ילדים** לפי `SPEC-multi-child-guardian.md` (~4 ימי עבודה): מיגרציית `guardian_id` + `is_guardian_of()` + ~7 policies על staging → נתוני דמה (2 הורים+ילדים) + בדיקת בידוד משפחות → קוד `RegisterPage`/`activeMember`/מתג החלפה, בדיקה ב-4 הממשקים מול staging → ורק אחרי "עובד נקי": גיבוי prod → מיגרציה על prod → push קוד ל-main.
+
+**פתוח לדודי (לא דחוף):** מייל support לביטול הסנטים מהפרויקט הקודם שנמחק (`nmghcqyotgpwxmmncalp`).
+
+---
+
+## 🟠 Session 20.06.2026 — תחילת הקמת סביבת staging לפיצ'ר הורה רב-ילדים (נעצר ב-75% טוקנים)
+
+**מטרת הסשן:** להתחיל לבנות את פיצ'ר ההורה-רב-ילדים לפי `SPEC-multi-child-guardian.md`. החלטה ראשונה: סביבת בדיקה. נבחר **staging בענן**.
+
+**מה קרה בפועל:**
+1. **נפתח פרויקט Supabase שני `teampact-staging` (ref `nmghcqyotgpwxmmncalp`) — תחת הארגון של ה-Pro. זו היתה טעות:** פרויקט שני בארגון Pro עולה ~$10/חודש (compute, billed hourly, in arrears). Claude טעה כשאמר "פרויקט שני חינמי" (זה נכון רק בתוכנית חינמית).
+2. **הפרויקט נמחק** (כדי לעצור חיוב). אומת מול הדוקס: החיוב לפי שעה, נעצר עם המחיקה, מצטבר רק לסוף מחזור (19.7) — לכן בפועל ירדו ~סנטים בודדים, לא $10. נוסח לדודי מייל ל-support לביטול הסנטים (טרם נשלח).
+3. **הותקן `pg_dump` (libpq 18.4) על המק של דודי** דרך brew. `PATH` נוסף ל-`~/.zshrc` (`/opt/homebrew/opt/libpq/bin`). עובד — `pg_dump (PostgreSQL) 18.4`.
+4. **שיטת שכפול סכמה שנבחרה: `pg_dump --schema-only` מהפרודקשן** (עותק נאמן 1:1). קובץ הסכמה בריפו (`src/lib/supabase-schema.sql`) **מיושן** — אסור להסתמך עליו. ~40 קבצי מיגרציה מצטברים קיימים אבל מסוכנים לשחזור ידני.
+
+**עובדות תשתית חשובות:**
+- **prod = `pnicoluujpidguvniwub` בשם `teampact`** (eu-west-1). **staging שנמחק היה `nmghcqyotgpwxmmncalp`** (Singapore).
+- ה-sandbox של Claude **חסום מרשת Supabase** (HTTP 000) → כל SQL רץ דרך SQL Editor / טרמינל של דודי, לא דרך Claude ישירות.
+- Session pooler URI של prod (לפג'דאמפ): `postgresql://postgres.pnicoluujpidguvniwub:[PW]@aws-0-eu-west-1.pooler.supabase.com:5432/postgres`. **סיסמת DB של prod עדיין לא אופסה/ידועה** — דודי צריך Connect → Session pooler → Reset password.
+- **דודי לא-טכני** → צריך הוראות בלחיצות פשוטות, ולוודא לפני כל פעולה כספית/בלתי-הפיכה.
+
+### My last pending task
+**להמשיך הקמת סביבת staging חינמית ואז לבנות את הפיצ'ר. הסדר המומלץ לסשן הבא (יעיל בטוקנים):**
+1. **דודי פותח ארגון Supabase חדש בתוכנית Free** (`TeamPact-Free`) ובתוכו פרויקט `teampact-staging` (region: West EU). שולח ל-Claude **Project URL + Publishable key**. עלות: **$0** (פרויקט בארגון חינמי).
+2. **שכפול סכמה — שתי דרכים, להחליט:** (א) `pg_dump` מ-prod (נאמן; דורש reset סיסמת DB + הרצת פקודה אחת בטרמינל), או (ב) **Claude משחזר סכמה מקבצי המיגרציה ונותן SQL אחד מוכן להדבקה** (פחות חיכוך לדודי; סיכון drift קטן). **המלצה לסשן הבא: דרך (ב)** כי דודי רוצה מינימום צעדים — Claude עושה את העבודה, דודי מדביק פעם אחת ב-SQL Editor של staging.
+3. אחרי שהסכמה ב-staging: נתוני דמה (2 הורים+ילדים) → בדיקת בידוד משפחות.
+4. מיגרציית `guardian_id` + `is_guardian_of()` + ~7 policies (SPEC סעיף 3) על staging → אימות אין רגרסיה.
+5. קוד: `RegisterPage` (signUp אחד + "הוסף ילד") + `activeMember` + מתג החלפה (SPEC סעיף 4-5), נבדק מול staging ב-4 הממשקים.
+6. רק אחרי "עובד נקי": גיבוי prod → מיגרציה על prod → push קוד ל-main.
+
+**פתוח לדודי:** לשלוח את מייל ה-support לביטול הסנטים (הנוסח בהיסטוריית הצ'אט של הסשן הזה).
+
+---
+
 ## 🔴 Session 19.06.2026 — מניעת קריסת פרודקשן (egress) + שדרוג ל-Pro + אפיון פיצ'ר הורה רב-ילדים
 
 **רקע:** דודי ביקש פיצ'ר — הורה אחד שיכול לרשום/לנהל כמה ילדים תחת אותו חשבון (אותו מייל+סיסמה), עם כפתור החלפה בין הילדים, גם בטופס הרישום וגם להוספת ילד מתוך האפליקציה בהמשך.

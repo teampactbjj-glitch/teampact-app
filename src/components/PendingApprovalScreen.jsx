@@ -27,7 +27,8 @@ export default function PendingApprovalScreen() {
             התנתק
           </button>
         </div>
-        <InstallBanner />
+        <p className="text-xs font-semibold text-gray-600 text-center pt-1">כדי לקבל התראות גם כשהאפליקציה סגורה — התקן אותה:</p>
+        <InstallBanner variant="hero" />
       </div>
     </main>
   )

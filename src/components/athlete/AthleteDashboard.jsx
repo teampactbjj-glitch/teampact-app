@@ -205,7 +205,7 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
       try {
         if (branchIds.length === 0) { setClasses([]); return }
         const { data, error } = await supabase.from('classes')
-          .select('*, branches!inner(name, hidden)')
+          .select('*, branches!inner(name, hidden), coaches(name)')
           .in('branch_id', branchIds)
           .eq('branches.hidden', false)
           .or('status.eq.approved,status.is.null')
@@ -513,6 +513,11 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
                       {cls.duration_minutes && ` · ${cls.duration_minutes} דק'`}
                       {cls.branches?.name && ` · 📍 ${cls.branches.name}`}
                     </p>
+                    {cls.coaches?.name && (
+                      <p className={`text-xs mt-0.5 ${(isReg || lateWindow) && !actionBlocked ? 'text-white/90' : 'text-gray-500'}`}>
+                        👤 {cls.coaches.name}
+                      </p>
+                    )}
                   </div>
                   <span className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap ${
                     actionBlocked ? 'bg-gray-200 text-gray-500'
@@ -576,6 +581,11 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
                     📅 יום {DAYS_HE[cls.day_of_week]} · {dateStr} · 🕐 {cls.start_time?.slice(0,5)}
                     {cls.branches?.name && ` · 📍 ${cls.branches.name}`}
                   </p>
+                  {cls.coaches?.name && (
+                    <p className={`text-xs mt-0.5 ${past ? 'text-gray-500' : 'text-red-100'}`}>
+                      👤 {cls.coaches.name}
+                    </p>
+                  )}
                 </div>
                 <span className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap ${
                   past ? 'bg-gray-200 text-gray-500' : 'bg-white text-red-700'

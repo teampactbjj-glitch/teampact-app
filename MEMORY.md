@@ -4021,3 +4021,27 @@ Build ✓ (vite, 111 מודולים, ל-outDir זמני — מחיקת dist חס
 **מצב git:** על branch `staging`. main↔staging התפצלו (4↔7) אבל תוכן RegisterPage/AthleteManagement/CLAUDE.md **זהה** ב-committed בשני הברנצ'ים → הבאת הקבצים ל-main מכניסה רק את עריכותי. סנדבוקס לא יכול git (EPERM/lock) — דודי מריץ בטרמינל.
 
 **ממתין:** דודי לדחוף (פקודות ניתנו), לבדוק לוקאלית/פרודקשן, hard-refresh + Unregister SW. מהפעם הבאה: להקים staging אמיתי (DB נפרד + env ב-Vercel).
+
+## My last pending task (2026-06-21 — הקמת סביבת staging הושלמה ✅)
+
+**מה הושלם בסשן הזה (בקשת דודי: לסיים אחת ולתמיד את סביבת הטסט):**
+
+1. **סנכרון סכמת DB** — הורדנו עם pg_dump את סכמת prod (`pnicoluujpidguvniwub`) ו-staging (`tfrcyntrusfrjcpevotq`) והשווינו. **הסכמות זהות.** ההבדלים היחידים: טבלת גיבוי חד-פעמית `members_backup_20260620_guardian` (רק ב-prod, לא נחוצה ל-staging) ופונקציה אחת עם הודעות שגיאה בעברית ב-staging מול אנגלית ב-prod (staging עדכני יותר). אין טבלאות/עמודות/policies חסרים. **לא נדרשה פעולה.**
+
+2. **Vercel env ל-branch staging** — הוגדרו 3 משתנים, scope = Preview + branch `staging`:
+   - `VITE_SUPABASE_URL` = https://tfrcyntrusfrjcpevotq.supabase.co
+   - `VITE_SUPABASE_ANON_KEY` = (anon key של staging)
+   - `VITE_APP_ENV` = staging
+   - ⚠️ תוקנה אי-התאמה: ה-env הישן ב-Vercel נקרא `VITE_SUPABASE_KEY` אבל הקוד (`src/lib/supabase.js`) קורא `VITE_SUPABASE_ANON_KEY`. פרודקשן עבד רק בזכות fallback קשיח בקוד. עכשיו ל-staging יש את השם הנכון.
+   - בוצע **Redeploy** ל-deploy האחרון של staging (8bf906f) → Ready. הכתובת teampact-app-git-staging-…vercel.app נטענת (לא דף לבן).
+
+3. **תיקון לוקאלי (package.json)** — שונו ה-scripts (Vite 8: `.env.staging` *כן* דורס את `.env.local` ב-`--mode staging` — המלכודת הישנה ב-CLAUDE.md לא נכונה ל-Vite 8):
+   - `"dev": "vite --mode staging"` (ברירת מחדל בטוחה → טסט)
+   - `"dev:prod": "vite --mode production"` (פתח חירום → אמיתי)
+   - `"build:staging": "vite build --mode staging"`
+   - דודי בדק לוקאלית: `npm run dev` הציג `staging` ✅.
+
+**פתוח / לסיום:**
+- `package.json` שונה לוקאלית אך **טרם בוצע commit/push**. להחליט אם לקמט (ולאיזה branch — main? staging?).
+- נוצרו קבצים `prod_schema.sql` + `staging_schema.sql` בשורש — להוסיף ל-.gitignore או למחוק (לא למחוק בלי אישור דודי).
+- אופציונלי: לתקן את ה-fallback הקשיח ב-`src/lib/supabase.js` שמצביע על prod (סיכון: אם env נכשל, נופלים לאמיתי) — שינוי קוד שדורש פרוטוקול dev→test→push.

@@ -35,3 +35,8 @@ dist-test*
 *.sw?
 .vercel
 .claude/worktrees/
+
+# DB schema dumps (local comparison only — never commit)
+prod_schema.sql
+staging_schema.sql
+*_schema.sql

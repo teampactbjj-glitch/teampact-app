@@ -1,5 +1,27 @@
 # MEMORY - TeamPact App
 
+## 🟡 Session 21.06.2026 — עבודת מוצר: פריט 2 (מסך ניהול צוות) + שכבת בעלים
+
+**כלל ברזל שדודי חידד (לזכור תמיד):** כל פעולה מורכבת — ובמיוחד שינוי DB — **חייבת לעבור קודם בסביבת טסט (staging)**, ורק אחרי אימות → פרודקשן. זו הדרך הנכונה לעבוד והוא השקיע בה הרבה.
+
+**הבהרת סביבות (קריטי — היה בלבול):**
+- `.env.local` → **DB של פרודקשן** (`pnicoluujpidguvniwub`). כלומר `npm run dev` לוקאלי **נוגע בפרודקשן!**
+- staging DB קיים: `tfrcyntrusfrjcpevotq` (ב-`.env.staging`, `VITE_APP_ENV=staging`). מיגרציות מורצות עליו דרך ה-SQL Editor של סופרבייס (כך נעשה פיצ'ר ההורה).
+- מלכודת Vite: `.env.local` גובר על `.env.staging` גם ב-`--mode staging` → צריך `.env.staging.local` או החלפה זמנית כדי לבדוק לוקאלית מול staging.
+- **TODO גדול שדודי רוצה לסיים אחת ולתמיד:** השלמת סביבת הטסט (env ב-Vercel ל-branch staging + לוקאלי שמצביע ל-staging).
+
+**מה נבנה (פריט 2 + שכבת בעלים):**
+- `src/lib/migration-team-management.sql` — עמודת `is_owner` + טריגר `protect_profile_privileges` (BEFORE UPDATE על profiles): (1) רק מנהל משנה שדות תפקיד/הרשאה — סוגר חור self-promotion; (2) רק הבעלים משנה is_owner; (3) מנהל רגיל לא יכול להסיר את הבעלים; (4) הגנת מנהל אחרון. `auth.uid() IS NULL` (SQL Editor) עוקף. bootstrap: דודי לפי email = בעלים.
+- `src/components/trainer/CoachesManager.jsx` — באדג' תפקיד (👑 בעלים / מנהל / 🗂 מזכיר/ה / מאמן), כפתורי מינוי/הסרת מנהל, נעילת הסרת בעלים. esbuild עבר נקי.
+
+### My last pending task
+**פריט 2 + שכבת בעלים — קוד מוכן, build (esbuild) נקי, טרם נדחף וטרם הורץ SQL.**
+- ממתין: (א) להריץ `migration-team-management.sql` על **staging** → אימות → **פרודקשן**; (ב) push של CoachesManager ל-main אחרי אישור דודי.
+- דודי אישר עקרונית הרצה בפרודקשן (שינוי קטן והפיך), אבל ביקש לעשות זאת דרך staging כי "זו הדרך הנכונה".
+- **הבא בתור:** פריט 4 (הוספת סניף מהממשק + חיזוק חובת פרטי שיעור). וכן: השלמת סביבת הטסט.
+
+---
+
 ## 🟢 Session 20.06.2026 (ערב) — פיצ'ר הורה רב-ילדים: DB הושלם על staging ✅
 
 **הושלם על staging (ref `tfrcyntrusfrjcpevotq`, חיבור דרך SQL Editor של סופרבייס, לא טרמינל):**

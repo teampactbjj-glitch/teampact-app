@@ -58,10 +58,10 @@ export default function CoachesManager({ profile, onChange }) {
         .order('name'),
       supabase.from('branches').select('id, name').order('name'),
       supabase.from('classes').select('coach_id').is('deleted_at', null),
-      // פרטי מאמנים מאושרים — טלפון + מזכיר/ה
+      // פרטי מאמנים מאושרים — טלפון + מזכיר/ה + מנהל
       supabase
         .from('profiles')
-        .select('id, phone, is_secretary, secretary_branch_id')
+        .select('id, phone, is_secretary, secretary_branch_id, is_admin, is_owner')
         .eq('role', 'trainer')
         .eq('is_approved', true),
       // בקשות שינוי שם ממאמנים
@@ -82,7 +82,7 @@ export default function CoachesManager({ profile, onChange }) {
     const secMap = {}
     ;(trainerProfilesRes.data || []).forEach(p => {
       phones[p.id] = p.phone || ''
-      secMap[p.id] = { is_secretary: !!p.is_secretary, secretary_branch_id: p.secretary_branch_id || null }
+      secMap[p.id] = { is_secretary: !!p.is_secretary, secretary_branch_id: p.secretary_branch_id || null, is_admin: !!p.is_admin, is_owner: !!p.is_owner }
     })
     setPhoneByUserId(phones)
     setSecretaryByUserId(secMap)
@@ -107,7 +107,7 @@ export default function CoachesManager({ profile, onChange }) {
     const map = new Map()
     for (const c of coaches) {
       const key = c.name
-      if (!map.has(key)) map.set(key, { name: c.name, rows: [], totalClasses: 0, hasUser: false, userId: null, phone: '', isSecretary: false, secretaryBranchId: null })
+      if (!map.has(key)) map.set(key, { name: c.name, rows: [], totalClasses: 0, hasUser: false, userId: null, phone: '', isSecretary: false, secretaryBranchId: null, isAdmin: false, isOwner: false })
       const g = map.get(key)
       g.rows.push(c)
       g.totalClasses += classCounts[c.id] || 0
@@ -116,11 +116,16 @@ export default function CoachesManager({ profile, onChange }) {
         if (!g.userId) g.userId = c.user_id
         if (!g.phone) g.phone = phoneByUserId[c.user_id] || ''
         const sec = secretaryByUserId[c.user_id]
-        if (sec) { g.isSecretary = sec.is_secretary; g.secretaryBranchId = sec.secretary_branch_id }
+        if (sec) { g.isSecretary = sec.is_secretary; g.secretaryBranchId = sec.secretary_branch_id; g.isAdmin = sec.is_admin; g.isOwner = sec.is_owner }
       }
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'he'))
   })()
+
+  // מספר המנהלים הפעילים — להגנת "מנהל אחרון"
+  const adminCount = coachGroups.filter(g => g.isAdmin).length
+  const myUserId = profile?.id || null
+  const myIsOwner = !!profile?.is_owner
 
   // ---------- עדכון טלפון של מאמן (בטבלת profiles לפי user_id) ----------
   async function updateCoachPhone(userId, newPhone) {
@@ -171,6 +176,44 @@ export default function CoachesManager({ profile, onChange }) {
       return
     }
     showMsg('ok', isSecretary ? '✅ הוגדר/ה כמזכיר/ה בהצלחה' : 'הוסרה הגדרת מזכיר/ה')
+    fetchAll()
+  }
+
+  // ---------- מינוי / הסרת מנהל (is_admin) ----------
+  async function setAdminStatus(userId, makeAdmin, targetIsOwner) {
+    if (!userId) { showMsg('err', 'אין משתמש מקושר — לא ניתן לעדכן'); return }
+    // הגנת בעלים: רק הבעלים יכול להסיר מנהל-בעלים (גם ב-DB יש טריגר)
+    if (!makeAdmin && targetIsOwner && !myIsOwner) {
+      showMsg('err', 'לא ניתן להסיר את הבעלים — רק הבעלים עצמו רשאי')
+      return
+    }
+    // הגנת מנהל אחרון (גם ב-DB יש טריגר, זו שכבה שנייה ב-UI)
+    if (!makeAdmin && adminCount <= 1) {
+      showMsg('err', 'חייב להישאר לפחות מנהל אחד — לא ניתן להסיר את האחרון')
+      return
+    }
+    const ok = await confirm({
+      title: makeAdmin ? 'מינוי מנהל' : 'הסרת הרשאות מנהל',
+      message: makeAdmin
+        ? 'להפוך את איש הצוות הזה למנהל מערכת? תהיה לו שליטה מלאה — ניהול צוות, סניפים, שכר והגדרות.'
+        : 'להסיר את הרשאות המנהל מאיש הצוות הזה? הוא יישאר מאמן.',
+      confirmText: makeAdmin ? 'מנה כמנהל' : 'הסר ניהול',
+      danger: !makeAdmin,
+    })
+    if (!ok) return
+    setBusyId(`admin:${userId}`)
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ is_admin: makeAdmin })
+      .eq('id', userId)
+      .select('id, is_admin')
+    setBusyId(null)
+    if (error) { showMsg('err', error.message); return }
+    if (!data || data.length === 0) {
+      showMsg('err', 'לא עודכן — ייתכן בעיית הרשאות (RLS). פנה למפתח.')
+      return
+    }
+    showMsg('ok', makeAdmin ? '👑 הוגדר כמנהל מערכת' : 'הרשאות המנהל הוסרו')
     fetchAll()
   }
 
@@ -577,6 +620,10 @@ export default function CoachesManager({ profile, onChange }) {
                 onStartReplaceAll={() => setReplacing({ fromGroup: group, toCoachId: '', scope: 'all' })}
                 onUpdatePhone={(newPhone) => updateCoachPhone(group.userId, newPhone)}
                 onSetSecretary={(isSec, branchId) => setSecretaryStatus(group.userId, isSec, branchId)}
+                onSetAdmin={(makeAdmin) => setAdminStatus(group.userId, makeAdmin, group.isOwner)}
+                adminCount={adminCount}
+                isMe={!!myUserId && group.userId === myUserId}
+                myIsOwner={myIsOwner}
               />
             ))}
           </div>
@@ -626,7 +673,7 @@ export default function CoachesManager({ profile, onChange }) {
 }
 
 // ---------- שורת קבוצת מאמן (מאוחד לפי שם) ----------
-function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAddBranch, onRemoveBranch, onStartReplaceAll, onUpdatePhone, onSetSecretary }) {
+function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAddBranch, onRemoveBranch, onStartReplaceAll, onUpdatePhone, onSetSecretary, onSetAdmin, adminCount, isMe, myIsOwner }) {
   const [renaming, setRenaming] = useState(false)
   const [newName, setNewName] = useState(group.name)
   const [adding, setAdding] = useState(false)
@@ -635,6 +682,7 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
   const [phoneDraft, setPhoneDraft] = useState(group.phone || '')
   const [secBranchId, setSecBranchId] = useState(group.secretaryBranchId || '')
   const [secBusy, setSecBusy] = useState(false)
+  const [adminBusy, setAdminBusy] = useState(false)
 
   const groupBusy = busyId === `group:${group.name}`
   const phoneBusy = busyId === `phone:${group.userId}`
@@ -668,6 +716,17 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
           ) : (
             <div className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
               <span>{group.name}</span>
+              {isMe && <span className="text-[10px] bg-gray-800 text-white px-1.5 py-0.5 rounded">אתה</span>}
+              {/* תפקיד — מי זה מי */}
+              {group.isOwner ? (
+                <span className="text-[10px] bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 border border-amber-500 px-1.5 py-0.5 rounded font-black">👑 בעלים</span>
+              ) : group.isAdmin ? (
+                <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-bold">מנהל</span>
+              ) : group.isSecretary ? (
+                <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">🗂 מזכיר/ה</span>
+              ) : (
+                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">מאמן</span>
+              )}
               {group.hasUser ? (
                 <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">מחובר</span>
               ) : (
@@ -791,6 +850,46 @@ function CoachGroupRow({ group, branches, classCounts, busyId, onRenameAll, onAd
               >
                 {secBusy ? '...' : 'הגדר כמזכיר/ה'}
               </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* מנהל מערכת — רק אם המאמן מחובר */}
+      {group.hasUser && (
+        <div className="mb-2 border-t border-gray-200 pt-2 mt-1">
+          <p className="text-[11px] text-gray-400 mb-1.5 font-medium">הרשאות מנהל מערכת</p>
+          {group.isOwner ? (
+            <div className="flex items-center justify-between gap-2 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-300 rounded-lg px-3 py-2">
+              <span className="text-xs font-black text-amber-900">👑 בעלים — מנהל-על מוגן</span>
+              {myIsOwner && !isMe ? (
+                <button
+                  onClick={async () => { setAdminBusy(true); await onSetAdmin(false); setAdminBusy(false) }}
+                  disabled={adminBusy || adminCount <= 1}
+                  className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >{adminBusy ? '...' : 'הסר ניהול'}</button>
+              ) : (
+                <span className="text-[10px] text-amber-700">לא ניתן להסרה</span>
+              )}
+            </div>
+          ) : group.isAdmin ? (
+            <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <span className="text-xs font-bold text-amber-800">מנהל מערכת — שליטה מלאה</span>
+              <button
+                onClick={async () => { setAdminBusy(true); await onSetAdmin(false); setAdminBusy(false) }}
+                disabled={adminBusy || adminCount <= 1}
+                title={adminCount <= 1 ? 'זה המנהל האחרון — חייב להישאר לפחות אחד' : 'הסר הרשאות מנהל'}
+                className="text-xs bg-red-600 hover:bg-red-700 active:bg-red-800 text-white px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >{adminBusy ? '...' : 'הסר ניהול'}</button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-gray-500">מאמן רגיל — ללא הרשאות מנהל</span>
+              <button
+                onClick={async () => { setAdminBusy(true); await onSetAdmin(true); setAdminBusy(false) }}
+                disabled={adminBusy}
+                className="shrink-0 text-xs bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >{adminBusy ? '...' : '👑 מנה כמנהל'}</button>
             </div>
           )}
         </div>

@@ -294,6 +294,11 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    // תאריך אירוע חובה לסמינר/אירוע — בלעדיו המערכת לא יכולה לדעת מתי האירוע מסתיים ולסגור הרשמה.
+    if (form.type === 'seminar' && !form.event_date) {
+      toast.error('חובה למלא תאריך אירוע לסמינר/אירוע — אחרת ההרשמה לא תיסגר אוטומטית כשהאירוע יסתיים.')
+      return
+    }
     const branchIds = Array.isArray(form.branch_ids) ? form.branch_ids.filter(Boolean) : []
     // ניקוי קישורים: רק שורות עם URL, ונרמול https:// אם חסר
     const cleanLinks = (Array.isArray(form.links) ? form.links : [])
@@ -465,9 +470,10 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
           {form.type === 'seminar' && (
             <>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">תאריך</label>
-                <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                <label className="text-xs text-gray-500 mb-1 block">תאריך אירוע <span className="text-red-500">*</span></label>
+                <input type="date" required className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.event_date} onChange={e => setForm(p => ({ ...p, event_date: e.target.value }))} />
+                <p className="text-[11px] text-gray-400 mt-1">חובה — לפי תאריך זה ההרשמה נסגרת והאירוע נעלם אצל המתאמן כשהוא מסתיים.</p>
               </div>
               <div className="flex gap-2">
                 <div className="flex-1">
@@ -570,15 +576,22 @@ export default function AnnouncementsManager({ trainerId, isAdmin, onChange }) {
   // ארגון לשני אזורים — כמו בתצוגת המתאמן, אך עם כל כלי הניהול.
   // אירועים (סמינרים) לפי תאריך האירוע, הודעות לפי תאריך פרסום (הסדר שכבר נטען מה-DB).
   const nowMgr = new Date()
+  // אירוע נחשב "הסתיים" ברגע ששעת הסיום עברה (אם הוגדרה), אחרת בסוף יום האירוע — עקבי עם תצוגת המתאמן.
+  const isMgrPast = item => {
+    if (!item.event_date) return false
+    const end = new Date(item.event_date)
+    const m = /^(\d{1,2}):(\d{2})/.exec(item.event_end_time || '')
+    if (m) end.setHours(Number(m[1]), Number(m[2]), 0, 0)
+    else end.setHours(23, 59, 59, 999)
+    return nowMgr > end
+  }
   const mgrEventRank = item => {
     const d = item.event_date ? new Date(item.event_date) : null
     if (!d) return [1, -(new Date(item.created_at || 0).getTime())]
-    return d >= nowMgr ? [0, d.getTime()] : [2, -d.getTime()]
+    return !isMgrPast(item) ? [0, d.getTime()] : [2, -d.getTime()]
   }
   const managerEvents  = items.filter(i => i.type === 'seminar').sort((a, b) => { const ra = mgrEventRank(a), rb = mgrEventRank(b); return ra[0] - rb[0] || ra[1] - rb[1] })
   const managerNotices = items.filter(i => i.type !== 'seminar')
-  // אירוע שעבר — מוסתר עד שלוחצים "אירועים שעברו"
-  const isMgrPast = item => !!(item.event_date && new Date(item.event_date) < nowMgr)
   const mgrPastCount = managerEvents.filter(isMgrPast).length
 
   return (

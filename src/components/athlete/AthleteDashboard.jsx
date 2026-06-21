@@ -658,8 +658,6 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
   const [filter, setFilter] = useState('all')
   // צילום מצב "נקרא עד" ברגע הכניסה לטאב — כדי שנקודות ה"לא נקרא" יישארו יציבות בזמן הצפייה
   const [seenSnapshot] = useState(() => lastSeen || '')
-  // אירועים שעברו — מקופלים כברירת מחדל
-  const [showPastEvents, setShowPastEvents] = useState(false)
 
   useEffect(() => {
     if (!storageKey) return
@@ -771,16 +769,28 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
   const now = new Date()
   // "לא נקרא" — פורסם אחרי הצילום של last_seen (אותו מקור אמת של הבאדג' על הטאב)
   const isUnread = item => !!(item.created_at && item.created_at > seenSnapshot)
-  // דירוג אירוע: [0]=עתידי (מהקרוב לרחוק), [1]=ללא תאריך (החדש שפורסם ראשון), [2]=עבר (נדחף לתחתית)
+  // אירוע נחשב "הסתיים" ברגע ששעת הסיום שלו עברה.
+  // אם הוגדרה שעת סיום (event_end_time) — משתמשים בה; אחרת נופלים לסוף יום האירוע (חצות).
+  // event_date נשמר עם T12:00:00, לכן מציבים עליו את שעת הסיום הנכונה לפני ההשוואה.
+  const isEventPast = item => {
+    if (!item.event_date) return false
+    const end = new Date(item.event_date)
+    const m = /^(\d{1,2}):(\d{2})/.exec(item.event_end_time || '')
+    if (m) end.setHours(Number(m[1]), Number(m[2]), 0, 0)
+    else end.setHours(23, 59, 59, 999)
+    return now > end
+  }
+  // דירוג אירוע: [0]=עתידי (מהקרוב לרחוק), [1]=ללא תאריך (החדש שפורסם ראשון)
   const eventRank = item => {
     const d = item.event_date ? new Date(item.event_date) : null
     if (!d) return [1, -(new Date(item.created_at || 0).getTime())]
-    return d >= now ? [0, d.getTime()] : [2, -d.getTime()]
+    return [0, d.getTime()]
   }
-  const events  = [...seminars].sort((a, b) => { const ra = eventRank(a), rb = eventRank(b); return ra[0] - rb[0] || ra[1] - rb[1] })
-  const isPastEvent = item => !!(item.event_date && new Date(item.event_date) < now)
-  const upcomingEvents = events.filter(e => !isPastEvent(e))
-  const pastEvents = events.filter(isPastEvent)
+  const isPastEvent = isEventPast
+  // אצל המתאמן — אירוע שהסתיים נעלם לגמרי (לא מוצג בכלל, גם לא מקופל).
+  const events  = [...seminars].filter(e => !isPastEvent(e)).sort((a, b) => { const ra = eventRank(a), rb = eventRank(b); return ra[0] - rb[0] || ra[1] - rb[1] })
+  const upcomingEvents = events
+  const pastEvents = []
   const notices = [...general].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
 
   // קיבוץ הודעות לפי זמן: היום / השבוע / מוקדם יותר
@@ -844,7 +854,7 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
     const pr = seminarPricing(item)
     const fmtD = d => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })
     const unread = isUnread(item)
-    const past = item.event_date ? new Date(item.event_date) < now : false
+    const past = isEventPast(item)
     const earlyDaysLeft = pr.earlyActive && pr.deadline ? Math.ceil((pr.deadline - now) / 86400000) : null
     const showButton = item.allow_app_registration !== false && (!past || ordered.has(item.id) || orderedDone.has(item.id))
     return (
@@ -881,7 +891,8 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
             )}
           </div>
           {item.content && <p className="text-xs text-gray-500 mt-2 whitespace-pre-line">{linkifyText(item.content)}</p>}
-          {Array.isArray(item.links) && item.links.length > 0 && (
+          {/* קישורי הרשמה חיצונית (אינטרקלאב/תחרות) — מוסתרים אחרי שהאירוע הסתיים כדי שלא ניתן יהיה להירשם לאירוע שעבר */}
+          {!past && Array.isArray(item.links) && item.links.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-2">
               {item.links.map((lnk, i) => (
                 <a key={i} href={lnk.url} target="_blank" rel="noopener noreferrer"
@@ -890,6 +901,10 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
                 </a>
               ))}
             </div>
+          )}
+          {/* אירוע שהסתיים שההרשמה אליו הייתה דרך קישור חיצוני — חיווי "ההרשמה נסגרה" במקום הקישור */}
+          {past && item.allow_app_registration === false && Array.isArray(item.links) && item.links.length > 0 && (
+            <p className="mt-2 text-xs text-gray-400 font-medium">🔒 ההרשמה לאירוע נסגרה</p>
           )}
           {/* תמחור: אם יש מחיר מוקדם — מציגים את שני המחירים, הנוכחי מודגש והשני מחוק/אפור */}
           {pr.early != null && pr.deadline && pr.regular != null ? (
@@ -951,16 +966,6 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
           {upcomingEvents.length > 0
             ? upcomingEvents.map(renderEvent)
             : <p className="text-sm text-gray-400 py-2">אין אירועים קרובים</p>}
-          {pastEvents.length > 0 && (
-            <div className="pt-1">
-              <button onClick={() => setShowPastEvents(v => !v)}
-                className="w-full flex items-center justify-between text-sm text-gray-500 bg-gray-50 hover:bg-gray-100 rounded-xl px-4 py-2.5 font-medium transition">
-                <span>🗂️ אירועים שעברו ({pastEvents.length})</span>
-                <span>{showPastEvents ? '▲' : '▼'}</span>
-              </button>
-              {showPastEvents && <div className="space-y-3 mt-3">{pastEvents.map(renderEvent)}</div>}
-            </div>
-          )}
         </div>
       )}
 

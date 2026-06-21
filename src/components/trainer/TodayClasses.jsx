@@ -1260,6 +1260,16 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
+            {newClass.coach_id && (() => {
+              const c = coaches.find(x => x.id === newClass.coach_id)
+              const bName = branches.find(b => b.id === c?.branch_id)?.name
+              return (
+                <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800 flex items-center gap-1.5">
+                  <span>📍</span>
+                  <span>סניף השיעור: <strong>{bName || 'ללא סניף'}</strong> — נקבע אוטומטית לפי המאמן</span>
+                </div>
+              )
+            })()}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

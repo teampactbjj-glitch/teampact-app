@@ -19,6 +19,10 @@ export default function AdminSettings({ profile }) {
   const [loading,        setLoading]        = useState(true)
   const [saving,         setSaving]         = useState(null)
 
+  // הוספת סניף חדש
+  const [newBranchName,  setNewBranchName]  = useState('')
+  const [addingBranch,   setAddingBranch]   = useState(false)
+
   // איזו שורה פתוחה
   const [expanded, setExpanded] = useState(null)
   function toggle(id) { setExpanded(p => (p === id ? null : id)) }
@@ -68,6 +72,23 @@ export default function AdminSettings({ profile }) {
     setSaving('vat')
     await supabase.from('app_settings').update({ vat_rate: val }).eq('id', 1)
     setSaving(null); setEditVatRate(null); fetchAll()
+  }
+
+  async function addBranch() {
+    const name = newBranchName.trim()
+    if (!name) return
+    // מניעת כפילות שם (case-insensitive)
+    if (branches.some(b => (b.name || '').trim().toLowerCase() === name.toLowerCase())) {
+      alert('כבר קיים סניף בשם הזה')
+      return
+    }
+    setAddingBranch(true)
+    // platform_cut: 0 במפורש — ברירת המחדל ב-DB היא 40%, ולא רוצים ניכוי סמוי על סניף חדש.
+    const { error } = await supabase.from('branches').insert({ name, platform_cut: 0 })
+    setAddingBranch(false)
+    if (error) { alert('שגיאה בהוספת סניף: ' + error.message); return }
+    setNewBranchName('')
+    fetchAll()
   }
 
   async function saveCut(branchId) {
@@ -255,6 +276,25 @@ export default function AdminSettings({ profile }) {
 
       {/* ══ סעיף: סניפים ══ */}
       <SectionLabel>סניפים</SectionLabel>
+
+      {/* הוספת סניף חדש */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 mb-2">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="שם סניף חדש — לדוגמה: חולון, רחובות..."
+            value={newBranchName}
+            onChange={e => setNewBranchName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addBranch()}
+            className={inputCls} />
+          <button onClick={addBranch} disabled={addingBranch || !newBranchName.trim()}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold px-4 rounded-xl whitespace-nowrap">
+            {addingBranch ? '...' : '+ הוסף סניף'}
+          </button>
+        </div>
+        <p className="text-[11px] text-gray-400 mt-1.5">סניף חדש יהיה זמין מיד בהרשמה, בשיוך מאמנים ובמערכת השעות.</p>
+      </div>
+
       {loading ? (
         <Group><div className="px-4 py-5 text-center text-sm text-gray-400">טוען...</div></Group>
       ) : (

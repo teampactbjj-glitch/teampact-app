@@ -15,10 +15,15 @@
 - `src/components/trainer/CoachesManager.jsx` — באדג' תפקיד (👑 בעלים / מנהל / 🗂 מזכיר/ה / מאמן), כפתורי מינוי/הסרת מנהל, נעילת הסרת בעלים. esbuild עבר נקי.
 
 ### My last pending task
-**פריט 2 + שכבת בעלים — קוד מוכן, build (esbuild) נקי, טרם נדחף וטרם הורץ SQL.**
-- ממתין: (א) להריץ `migration-team-management.sql` על **staging** → אימות → **פרודקשן**; (ב) push של CoachesManager ל-main אחרי אישור דודי.
-- דודי אישר עקרונית הרצה בפרודקשן (שינוי קטן והפיך), אבל ביקש לעשות זאת דרך staging כי "זו הדרך הנכונה".
-- **הבא בתור:** פריט 4 (הוספת סניף מהממשק + חיזוק חובת פרטי שיעור). וכן: השלמת סביבת הטסט.
+**✅ פריט 2 + שכבת בעלים — הושלם ועלה לפרודקשן (קומיט `85bfbff` ב-main, 21.06.2026).**
+- SQL `migration-team-management.sql` רץ ב-staging (גרסה עברית) וב-פרודקשן (גרסה אנגלית). דודי מאומת כבעלים בפרודקשן (`is_owner=true`).
+- **לקח חשוב:** טקסט עברי (RTL) בתוך גוף פונקציית SQL **שובר את ההדבקה ב-SQL Editor של Supabase** → להשתמש בהודעות RAISE באנגלית + dollar-quote בשם (`$fn$`).
+- **חוב קטן:** ב-staging הפונקציה עדיין עם הודעות עברית (לוגיקה זהה) — אפשר לרענן לגרסה האנגלית לאחידות.
+- **פריט 4 — בנוי, ממתין לדחיפה (אין SQL):**
+  - 4a: הוספת סניף ב-AdminSettings (סעיף סניפים) — insert `{name, platform_cut:0}` (ברירת מחדל ב-DB היא 40%! מכאן ה-0 המפורש). RLS `branches_write` כבר מתיר. קבצים: `AdminSettings.jsx`.
+  - 4b: בטופס הוספת שיעור (`TodayClasses.jsx`) — הצגת "📍 סניף השיעור: X נקבע לפי המאמן". החובה (מאמן+תאריך+שעה) כבר נאכפה קודם.
+  - טבלת branches: id(default), name(NOT NULL, אני מספק), address(null), created_at(default), hidden(default false), platform_cut(default 40).
+- **TODO גדול:** השלמת סביבת הטסט (Vercel env ל-staging + לוקאלי שמצביע ל-staging, לעקוף מלכודת `.env.local`).
 
 ---
 

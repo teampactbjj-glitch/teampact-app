@@ -752,7 +752,7 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
           userIds: ids,
           title: '🎓 הרשמה חדשה לסמינר',
           body: bodyParts.join(' · '),
-          url: '/#shop',
+          url: '/#announcements',
           tag: `order:${Date.now()}`,
         }))
         .catch(() => {})

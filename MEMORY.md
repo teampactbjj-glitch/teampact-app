@@ -19,7 +19,7 @@
 - SQL `migration-team-management.sql` רץ ב-staging (גרסה עברית) וב-פרודקשן (גרסה אנגלית). דודי מאומת כבעלים בפרודקשן (`is_owner=true`).
 - **לקח חשוב:** טקסט עברי (RTL) בתוך גוף פונקציית SQL **שובר את ההדבקה ב-SQL Editor של Supabase** → להשתמש בהודעות RAISE באנגלית + dollar-quote בשם (`$fn$`).
 - **חוב קטן:** ב-staging הפונקציה עדיין עם הודעות עברית (לוגיקה זהה) — אפשר לרענן לגרסה האנגלית לאחידות.
-- **פריט 4 — בנוי, ממתין לדחיפה (אין SQL):**
+- **✅ פריט 4 — עלה לפרודקשן (קומיט `363b312`, אין SQL):**
   - 4a: הוספת סניף ב-AdminSettings (סעיף סניפים) — insert `{name, platform_cut:0}` (ברירת מחדל ב-DB היא 40%! מכאן ה-0 המפורש). RLS `branches_write` כבר מתיר. קבצים: `AdminSettings.jsx`.
   - 4b: בטופס הוספת שיעור (`TodayClasses.jsx`) — הצגת "📍 סניף השיעור: X נקבע לפי המאמן". החובה (מאמן+תאריך+שעה) כבר נאכפה קודם.
   - טבלת branches: id(default), name(NOT NULL, אני מספק), address(null), created_at(default), hidden(default false), platform_cut(default 40).

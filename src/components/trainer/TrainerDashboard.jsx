@@ -22,6 +22,7 @@ import { isStandalone } from '../../lib/platform'
 import logoUrl from '../../assets/logo.png'
 
 function RegisterLinkCard() {
+  const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showQr, setShowQr] = useState(false)
   const url = typeof window !== 'undefined' ? `${window.location.origin}/register` : '/register'
@@ -42,31 +43,44 @@ function RegisterLinkCard() {
   }
 
   return (
-    <div className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl p-4 shadow-md">
-      <div className="flex items-center gap-2 mb-2">
+    <div className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl shadow-md overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 p-4 text-right"
+      >
         <span className="text-xl">🔗</span>
-        <h3 className="font-black text-sm">קישור הרשמה למתאמנים חדשים</h3>
-      </div>
-      <p className="text-xs text-blue-100 mb-3">שלח את הקישור הזה למתאמן חדש — הוא ימלא פרטים ואתה תאשר אותו תחת "בקשות הצטרפות".</p>
-      <div className="bg-white/10 backdrop-blur border border-white/20 rounded-lg px-3 py-2 text-xs font-mono break-all mb-2">{url}</div>
-      <div className="grid grid-cols-2 gap-2">
-        <button onClick={copy} className="bg-white text-blue-700 hover:bg-blue-50 font-bold py-2 rounded-lg text-sm">
-          {copied ? '✓ הועתק' : '📋 העתק'}
-        </button>
-        <button onClick={share} className="bg-blue-900 hover:bg-blue-950 text-white font-bold py-2 rounded-lg text-sm">
-          📤 שתף
-        </button>
-        <button onClick={sendWhatsapp} className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-lg text-sm">
-          💬 וואטסאפ
-        </button>
-        <button onClick={() => setShowQr(s => !s)} className="bg-blue-900/60 hover:bg-blue-900/80 text-white font-bold py-2 rounded-lg text-sm">
-          {showQr ? '▲ סגור QR' : '📱 הצג QR'}
-        </button>
-      </div>
-      {showQr && (
-        <div className="mt-3 bg-white rounded-lg p-3 flex flex-col items-center">
-          <img src={qrSrc} alt="QR להרשמת מתאמן" className="w-48 h-48" />
-          <p className="text-xs text-gray-600 mt-2 text-center">סרוק את הקוד כדי להגיע ישירות לטופס ההרשמה</p>
+        <h3 className="font-black text-sm flex-1">קישור הרשמה למתאמנים חדשים</h3>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor"
+          className={`w-4 h-4 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+        </svg>
+      </button>
+      {open && (
+        <div className="px-4 pb-4">
+          <p className="text-xs text-blue-100 mb-3">שלח את הקישור הזה למתאמן חדש — הוא ימלא פרטים ואתה תאשר אותו תחת "בקשות הצטרפות".</p>
+          <div className="bg-white/10 backdrop-blur border border-white/20 rounded-lg px-3 py-2 text-xs font-mono break-all mb-2">{url}</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={copy} className="bg-white text-blue-700 hover:bg-blue-50 font-bold py-2 rounded-lg text-sm">
+              {copied ? '✓ הועתק' : '📋 העתק'}
+            </button>
+            <button onClick={share} className="bg-blue-900 hover:bg-blue-950 text-white font-bold py-2 rounded-lg text-sm">
+              📤 שתף
+            </button>
+            <button onClick={sendWhatsapp} className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-lg text-sm">
+              💬 וואטסאפ
+            </button>
+            <button onClick={() => setShowQr(s => !s)} className="bg-blue-900/60 hover:bg-blue-900/80 text-white font-bold py-2 rounded-lg text-sm">
+              {showQr ? '▲ סגור QR' : '📱 הצג QR'}
+            </button>
+          </div>
+          {showQr && (
+            <div className="mt-3 bg-white rounded-lg p-3 flex flex-col items-center">
+              <img src={qrSrc} alt="QR להרשמת מתאמן" className="w-48 h-48" />
+              <p className="text-xs text-gray-600 mt-2 text-center">סרוק את הקוד כדי להגיע ישירות לטופס ההרשמה</p>
+            </div>
+          )}
         </div>
       )}
     </div>

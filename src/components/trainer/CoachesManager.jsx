@@ -24,6 +24,7 @@ export default function CoachesManager({ profile, onChange }) {
   const [busyId, setBusyId] = useState(null)
   const [msg, setMsg] = useState(null) // { type: 'ok'|'err', text }
   const [showAdd, setShowAdd] = useState(false)
+  const [showCoachLink, setShowCoachLink] = useState(false)
   const [newCoach, setNewCoach] = useState({ name: '', branch_id: '' })
   const [replacing, setReplacing] = useState(null) // { fromCoach, toCoachId, scope: 'all'|'branch' }
   const [classCounts, setClassCounts] = useState({}) // { coach_id: count }
@@ -549,14 +550,27 @@ export default function CoachesManager({ profile, onChange }) {
         </section>
       )}
 
-      {/* קישור הרשמה למאמן */}
-      <section className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl p-4 shadow-md">
-        <div className="flex items-center gap-2 mb-2">
+      {/* קישור הרשמה למאמן — ניתן לקיפול */}
+      <section className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl shadow-md overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowCoachLink(s => !s)}
+          aria-expanded={showCoachLink}
+          className="w-full flex items-center gap-2 p-4 text-right"
+        >
           <span className="text-xl">🔗</span>
-          <h3 className="font-black text-sm">קישור הרשמה למאמנים חדשים</h3>
-        </div>
-        <p className="text-xs text-blue-100 mb-3">שלח את הקישור הזה רק למאמנים שאתה רוצה להוסיף — הם ימלאו פרטים ויחכו לאישור שלך.</p>
-        <RegisterCoachLink />
+          <h3 className="font-black text-sm flex-1">קישור הרשמה למאמנים חדשים</h3>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor"
+            className={`w-4 h-4 flex-shrink-0 transition-transform ${showCoachLink ? 'rotate-180' : ''}`}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </button>
+        {showCoachLink && (
+          <div className="px-4 pb-4">
+            <p className="text-xs text-blue-100 mb-3">שלח את הקישור הזה רק למאמנים שאתה רוצה להוסיף — הם ימלאו פרטים ויחכו לאישור שלך.</p>
+            <RegisterCoachLink />
+          </div>
+        )}
       </section>
 
       {/* רשימת מאמנים פעילים + הוספה */}

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import StagingBanner from './components/StagingBanner.jsx'
 import { ToastProvider, ConfirmProvider } from './components/a11y'
 
 createRoot(document.getElementById('root')).render(
@@ -10,6 +11,7 @@ createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <ToastProvider>
         <ConfirmProvider>
+          <StagingBanner />
           <App />
         </ConfirmProvider>
       </ToastProvider>

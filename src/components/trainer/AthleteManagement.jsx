@@ -7,6 +7,7 @@ import { notifyPush } from '../../lib/notifyPush'
 import { allAdminUserIds } from '../../lib/notifyTargets'
 import { useToast, useConfirm } from '../a11y'
 import { ADULT_BELTS, KIDS_BELTS, getBeltMeta, getMaxStripes } from '../../lib/belts'
+import { cancelFutureBookings } from '../../lib/freezeCancel'
 
 const MEMBERSHIP_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 const SESSION_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
@@ -60,6 +61,20 @@ function endOfMonthDate() {
   return last.toISOString().split('T')[0]
 }
 
+function todayStr() {
+  return new Date().toISOString().split('T')[0]
+}
+
+// מספר ימים כולל בין שני תאריכים (כולל קצוות)
+function daysBetween(start, end) {
+  if (!start || !end) return 0
+  const ms = new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')
+  return Math.round(ms / 86400000) + 1
+}
+
+
+const FREEZE_REASONS = { military: 'מילואים', study: 'לימודים', medical: 'רפואי', injury: 'פציעה', other: 'אחר' }
+
 export default function AthleteManagement({ trainerId, isAdmin, isSecretary = false, branchFilter = null, hideSchedule = false, registerLinkCard = null, onPendingChange = null, stackedLayout = false, extraTop = null }) {
   const toast = useToast()
   const confirm = useConfirm()
@@ -77,6 +92,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   const [saveError, setSaveError] = useState('')
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [freezeModal, setFreezeModal] = useState(null)
   const [pendingCollapsed, setPendingCollapsed] = useState(() => {
     try { return localStorage.getItem('tp_pendingCollapsed') === '1' } catch { return false }
   })
@@ -300,17 +316,183 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     fetchAthletes()
   }
 
-  async function freezeAthlete(id) {
-    const ok = await confirm({ title: 'הקפאת מנוי', message: 'להקפיא את המנוי? המתאמן לא יוכל להירשם לאימונים עד שתפעיל מחדש.', confirmText: 'הקפא' })
-    if (!ok) return
-    const { error } = await supabase.from('members').update({ membership_status: 'frozen' }).eq('id', id)
-    if (error) { toast.error('שגיאה: ' + error.message); return }
-    toast.success('המנוי הוקפא בהצלחה')
+  // ---- הקפאת מנוי עם תאריכים (שלב 1) ----
+  function openFreezeModal(a, editing = false) {
+    const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+    const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
+    const isBegin = /בגין/.test(bnames)
+    // עריכת הקפאה קיימת — טוען את הערכים הנוכחיים
+    if (editing) {
+      setFreezeModal({
+        id: a.id,
+        name: a.full_name,
+        isBegin,
+        editing: true,
+        billing_mode: isBegin ? 'continue_credit' : 'stop',
+        start_date: a.freeze_start_date || todayStr(),
+        end_date: a.freeze_end_date || '',
+        open_ended: !a.freeze_end_date,
+        reason: a.freeze_reason || (isBegin ? 'medical' : 'military'),
+        return_mode: a.freeze_return_mode || 'manual',
+        requires_medical: !!a.freeze_requires_medical,
+        note: a.freeze_note || '',
+        saving: false,
+        error: '',
+      })
+      return
+    }
+    setFreezeModal({
+      id: a.id,
+      name: a.full_name,
+      isBegin,
+      editing: false,
+      billing_mode: isBegin ? 'continue_credit' : 'stop',
+      start_date: todayStr(),
+      end_date: '',
+      open_ended: isBegin, // בבגין ברירת מחדל: חזרה רק באישור רפואי (פתוח)
+      reason: isBegin ? 'medical' : 'military',
+      return_mode: 'manual',
+      requires_medical: isBegin,
+      note: '',
+      saving: false,
+      error: '',
+    })
+  }
+
+  async function submitFreeze() {
+    const f = freezeModal
+    if (!f) return
+    // ולידציה
+    if (!f.start_date) { setFreezeModal(m => ({ ...m, error: 'חובה לבחור תאריך התחלה' })); return }
+    if (!f.open_ended) {
+      if (!f.end_date) { setFreezeModal(m => ({ ...m, error: 'חובה לבחור תאריך חזרה (או לסמן "הקפאה פתוחה")' })); return }
+      if (f.end_date < f.start_date) { setFreezeModal(m => ({ ...m, error: 'תאריך החזרה לפני תאריך ההתחלה' })); return }
+    }
+    // חוקי סניף בגין
+    if (f.isBegin) {
+      if (!f.requires_medical) { setFreezeModal(m => ({ ...m, error: 'בסניף בגין חובה אישור רפואי לחזרה' })); return }
+      if (!f.open_ended && daysBetween(f.start_date, f.end_date) < 21) {
+        setFreezeModal(m => ({ ...m, error: 'בסניף בגין מינימום הקפאה 3 שבועות (21 ימים)' })); return
+      }
+    }
+    // בדיקת נוכחות — אי אפשר להקפיא תקופה שבה המתאמן כבר היה נוכח באימון (עבר/היום)
+    {
+      const tdy = todayStr()
+      const { data: present } = await supabase.from('checkins')
+        .select('checkin_date').eq('athlete_id', f.id).eq('status', 'present')
+        .gte('checkin_date', f.start_date).lte('checkin_date', tdy)
+        .order('checkin_date', { ascending: false }).limit(1)
+      if (present && present[0]) {
+        const d = present[0].checkin_date
+        const next = new Date(d + 'T00:00:00'); next.setDate(next.getDate() + 1)
+        const nextStr = next.toISOString().split('T')[0]
+        setFreezeModal(m => ({ ...m, error: `המתאמן היה נוכח באימון ב-${formatDate(d)}. אפשר להקפיא רק מ-${formatDate(nextStr)} והלאה.` }))
+        return
+      }
+    }
+    setFreezeModal(m => ({ ...m, saving: true, error: '' }))
+
+    const today = todayStr()
+    const credit_days = f.open_ended ? null : daysBetween(f.start_date, f.end_date)
+    const isRetro = !f.open_ended && f.end_date < today
+    const isActiveNow = !isRetro && f.start_date <= today && (f.open_ended || f.end_date >= today)
+    const status = isRetro ? 'ended' : (isActiveNow ? 'active' : 'scheduled')
+
+    // מצב עריכה — עדכון ההקפאה הקיימת במקום יצירת חדשה
+    if (f.editing) {
+      const { error: upEvErr } = await supabase.from('member_freezes').update({
+        start_date: f.start_date,
+        end_date: f.open_ended ? null : f.end_date,
+        reason: f.reason,
+        return_mode: f.return_mode,
+        requires_medical: f.requires_medical,
+        note: f.note || null,
+        billing_mode: f.billing_mode,
+        credit_days,
+      }).eq('member_id', f.id).in('status', ['active', 'scheduled'])
+      if (upEvErr) { setFreezeModal(m => ({ ...m, saving: false, error: 'שגיאה: ' + upEvErr.message })); return }
+      const { error } = await supabase.from('members').update({
+        membership_status: 'frozen',
+        freeze_start_date: f.start_date,
+        freeze_end_date: f.open_ended ? null : f.end_date,
+        freeze_reason: f.reason,
+        freeze_return_mode: f.return_mode,
+        freeze_requires_medical: f.requires_medical,
+        freeze_note: f.note || null,
+      }).eq('id', f.id)
+      if (error) { setFreezeModal(m => ({ ...m, saving: false, error: 'שגיאה: ' + error.message })); return }
+      await cancelFutureBookings(f.id, f.start_date)
+      setFreezeModal(null)
+      toast.success('ההקפאה עודכנה')
+      fetchAthletes()
+      return
+    }
+
+    // 1) רשומת אירוע הקפאה (היסטוריה + זיכוי)
+    const { error: evErr } = await supabase.from('member_freezes').insert({
+      member_id: f.id,
+      start_date: f.start_date,
+      end_date: f.open_ended ? null : f.end_date,
+      reason: f.reason,
+      return_mode: f.return_mode,
+      requires_medical: f.requires_medical,
+      note: f.note || null,
+      status,
+      billing_mode: f.billing_mode,
+      credit_days,
+      is_retroactive: isRetro,
+      released_at: isRetro ? new Date().toISOString() : null,
+    })
+    if (evErr) { setFreezeModal(m => ({ ...m, saving: false, error: 'שגיאה: ' + evErr.message })); return }
+
+    // 2) עדכון המתאמן — רק אם ההקפאה פעילה עכשיו
+    if (isActiveNow) {
+      const { error } = await supabase.from('members').update({
+        membership_status: 'frozen',
+        freeze_start_date: f.start_date,
+        freeze_end_date: f.open_ended ? null : f.end_date,
+        freeze_reason: f.reason,
+        freeze_return_mode: f.return_mode,
+        freeze_requires_medical: f.requires_medical,
+        freeze_note: f.note || null,
+      }).eq('id', f.id)
+      if (error) { setFreezeModal(m => ({ ...m, saving: false, error: 'שגיאה: ' + error.message })); return }
+      // ביטול רישומים עתידיים מתאריך ההקפאה והלאה
+      await cancelFutureBookings(f.id, f.start_date)
+    }
+
+    setFreezeModal(null)
+    toast.success(
+      isRetro ? `נרשמה הקפאה רטרואקטיבית (${credit_days} ימי זיכוי)` :
+      isActiveNow ? 'המנוי הוקפא' :
+      `הקפאה תוזמנה ל-${formatDate(f.start_date)}`
+    )
     fetchAthletes()
   }
 
   async function unfreezeAthlete(id) {
-    const { error } = await supabase.from('members').update({ membership_status: 'active', cancel_date: null }).eq('id', id)
+    // סגירת אירוע ההקפאה הפעיל האחרון
+    const today = todayStr()
+    const { data: ev } = await supabase.from('member_freezes')
+      .select('id,start_date,end_date,credit_days')
+      .eq('member_id', id).in('status', ['active', 'scheduled'])
+      .order('created_at', { ascending: false }).limit(1)
+    if (ev && ev[0]) {
+      const e = ev[0]
+      const endd = e.end_date && e.end_date < today ? e.end_date : today
+      await supabase.from('member_freezes').update({
+        status: 'ended',
+        end_date: endd,
+        credit_days: e.credit_days ?? daysBetween(e.start_date, endd),
+        released_at: new Date().toISOString(),
+      }).eq('id', e.id)
+    }
+    const { error } = await supabase.from('members').update({
+      membership_status: 'active',
+      cancel_date: null,
+      freeze_start_date: null, freeze_end_date: null, freeze_reason: null,
+      freeze_return_mode: 'manual', freeze_requires_medical: false, freeze_note: null,
+    }).eq('id', id)
     if (error) { toast.error('שגיאה: ' + error.message); return }
     toast.success('המנוי הופעל מחדש')
     fetchAthletes()
@@ -1029,7 +1211,9 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                             <p className="font-medium text-gray-800 text-sm">{a.full_name}</p>
                             {!a.active && <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 rounded">לא פעיל</span>}
                             {a.membership_status === 'frozen' && (
-                              <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">❄️ מוקפא</span>
+                              <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">
+                                ❄️ {a.freeze_end_date ? `מוקפא עד ${formatDate(a.freeze_end_date)}` : 'מוקפא — ממתין לאישור חזרה'}
+                              </span>
                             )}
                             {a.membership_status === 'cancelled' && (
                               <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium">🚫 מבוטל</span>
@@ -1043,26 +1227,47 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                             {a.phone && <span> · {a.phone}</span>}
                             {bnames && !isSecretary && <span> · 📍 {bnames}</span>}
                           </p>
+                          {a.membership_status === 'frozen' && (
+                            <p className="text-[11px] text-blue-600 mt-0.5">
+                              ❄️ {a.freeze_reason ? FREEZE_REASONS[a.freeze_reason] || a.freeze_reason : 'הקפאה'}
+                              {a.freeze_start_date && <span> · מ-{formatDate(a.freeze_start_date)}</span>}
+                              <span> · {a.freeze_end_date ? `עד ${formatDate(a.freeze_end_date)}` : 'ממתין לאישור חזרה'}</span>
+                              {a.freeze_requires_medical && <span> · 🩺 אישור רפואי</span>}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-1.5 shrink-0 flex-wrap justify-end items-center">
                         {isAdmin && (
-                          <>
-                            <button onClick={() => startEdit(a)}
-                              className="text-xs px-2 py-1 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition">
-                              עריכה
-                            </button>
-                            {a.membership_status === 'cancelled' || a.membership_status === 'frozen' ? (
+                          <button onClick={() => startEdit(a)}
+                            className="text-xs px-2 py-1 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition">
+                            עריכה
+                          </button>
+                        )}
+                        {/* הקפאה/עריכה/הפעלה — מנהל ומזכירה */}
+                        {(isAdmin || isSecretary) && (
+                          a.membership_status === 'cancelled' || a.membership_status === 'frozen' ? (
+                            <>
+                              {a.membership_status === 'frozen' && (
+                                <button onClick={() => openFreezeModal(a, true)}
+                                  className="text-xs px-2 py-1 rounded-lg border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 transition">
+                                  ✏️ ערוך הקפאה
+                                </button>
+                              )}
                               <button onClick={() => unfreezeAthlete(a.id)}
                                 className="text-xs px-2 py-1 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition font-medium">
                                 ✅ הפעל
                               </button>
-                            ) : (
-                              <button onClick={() => freezeAthlete(a.id)}
-                                className="text-xs px-2 py-1 rounded-lg border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 transition">
-                                ❄️ הקפא
-                              </button>
-                            )}
+                            </>
+                          ) : (
+                            <button onClick={() => openFreezeModal(a)}
+                              className="text-xs px-2 py-1 rounded-lg border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 transition">
+                              ❄️ הקפא
+                            </button>
+                          )
+                        )}
+                        {isAdmin && (
+                          <>
                             {a.cancel_date && a.membership_status !== 'cancelled' ? (
                               <button onClick={() => undoCancelAthlete(a.id)}
                                 className="text-xs px-2 py-1 rounded-lg border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 transition">
@@ -1090,6 +1295,113 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
           </div>
         )
       })()}
+
+      {/* מודאל הקפאת מנוי */}
+      {freezeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !freezeModal.saving && setFreezeModal(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-gray-800">❄️ {freezeModal.editing ? 'עריכת הקפאה' : 'הקפאת מנוי'} — {freezeModal.name}</h3>
+              <button onClick={() => setFreezeModal(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+
+            {freezeModal.isBegin && (
+              <div className="mb-3 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2.5">
+                סניף בגין: מינימום הקפאה 3 שבועות, חובת אישור רפואי לחזרה.
+              </div>
+            )}
+
+            <div className="mb-3 text-xs bg-gray-50 border border-gray-200 text-gray-600 rounded-lg p-2.5">
+              💳 {freezeModal.billing_mode === 'continue_credit'
+                ? 'התשלום ממשיך כרגיל, ותקופת ההקפאה נצברת כזיכוי לרישום עתידי.'
+                : 'התשלום נעצר מתאריך ההקפאה ועד חזרה מלאה של המנוי.'}
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">תאריך התחלה</label>
+                <input type="date" value={freezeModal.start_date}
+                  onChange={e => setFreezeModal(m => ({ ...m, start_date: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={freezeModal.open_ended}
+                  onChange={e => setFreezeModal(m => ({ ...m, open_ended: e.target.checked, return_mode: e.target.checked ? 'manual' : m.return_mode }))}
+                  className="w-4 h-4 accent-blue-600" />
+                הקפאה פתוחה — עד הבאת אישור חזרה (בלי תאריך)
+              </label>
+
+              {!freezeModal.open_ended && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">תאריך חזרה</label>
+                  <input type="date" value={freezeModal.end_date} min={freezeModal.start_date}
+                    onChange={e => setFreezeModal(m => ({ ...m, end_date: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  {freezeModal.end_date && (
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {daysBetween(freezeModal.start_date, freezeModal.end_date)} ימים
+                      {freezeModal.end_date < todayStr() && ' · רטרואקטיבי (התקופה כבר עברה — יירשם זיכוי בלבד)'}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">סיבה</label>
+                <select value={freezeModal.reason}
+                  onChange={e => setFreezeModal(m => ({ ...m, reason: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white">
+                  {Object.entries(FREEZE_REASONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+
+              {!freezeModal.open_ended && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">חזרה בתאריך</label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setFreezeModal(m => ({ ...m, return_mode: 'manual' }))}
+                      className={`flex-1 text-xs px-2 py-2 rounded-lg border transition ${freezeModal.return_mode === 'manual' ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium' : 'border-gray-200 text-gray-500'}`}>
+                      ידנית (אישור מזכירה)
+                    </button>
+                    <button type="button" onClick={() => setFreezeModal(m => ({ ...m, return_mode: 'auto' }))}
+                      className={`flex-1 text-xs px-2 py-2 rounded-lg border transition ${freezeModal.return_mode === 'auto' ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium' : 'border-gray-200 text-gray-500'}`}>
+                      אוטומטית בתאריך
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={freezeModal.requires_medical}
+                  onChange={e => setFreezeModal(m => ({ ...m, requires_medical: e.target.checked }))}
+                  className="w-4 h-4 accent-blue-600" />
+                חזרה רק באישור רפואי
+              </label>
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">הערה (לא חובה)</label>
+                <textarea value={freezeModal.note} rows={2}
+                  onChange={e => setFreezeModal(m => ({ ...m, note: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm resize-none" />
+              </div>
+
+              {freezeModal.error && <p className="text-xs text-red-600">{freezeModal.error}</p>}
+            </div>
+
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setFreezeModal(null)} disabled={freezeModal.saving}
+                className="flex-1 px-4 py-2 rounded-lg border text-gray-600 hover:bg-gray-50 text-sm">
+                ביטול
+              </button>
+              <button onClick={submitFreeze} disabled={freezeModal.saving}
+                className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium disabled:opacity-50">
+                {freezeModal.saving ? 'שומר...' : (freezeModal.editing ? 'עדכן הקפאה' : 'הקפא מנוי')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

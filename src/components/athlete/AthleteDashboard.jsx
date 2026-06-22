@@ -16,6 +16,7 @@ import { classDiscipline, DISCIPLINE_ORDER, DISCIPLINE_LABELS } from '../../lib/
 
 const SUBSCRIPTION_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const SUBSCRIPTION_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
+const FREEZE_REASON_LABELS = { military: 'מילואים', study: 'לימודים', medical: 'רפואי', injury: 'פציעה', other: 'אחר' }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 const DAYS_HE_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
@@ -1546,6 +1547,29 @@ function SettingsTab({ profile, member }) {
   // הקפאה/ביטול מנוי
   const [membershipAction, setMembershipAction] = useState(null) // 'freeze' | 'cancel' | null
   const [membershipNote, setMembershipNote] = useState('')
+  const [freezeReqStart, setFreezeReqStart] = useState('')
+  const [freezeReqReason, setFreezeReqReason] = useState('military')
+  const [freezeMinDate, setFreezeMinDate] = useState('')
+
+  // התאריך המוקדם ביותר שאפשר להקפיא ממנו: יום אחרי האימון האחרון שהמתאמן היה בו נוכח
+  async function computeFreezeMinDate() {
+    const aid = member?.id || profile?.id
+    const today = new Date().toISOString().split('T')[0]
+    let min = today
+    if (aid) {
+      const { data } = await supabase.from('checkins')
+        .select('checkin_date').eq('athlete_id', aid).eq('status', 'present')
+        .order('checkin_date', { ascending: false }).limit(1)
+      if (data && data[0]?.checkin_date) {
+        const next = new Date(data[0].checkin_date + 'T00:00:00')
+        next.setDate(next.getDate() + 1)
+        const nextStr = next.toISOString().split('T')[0]
+        if (nextStr > min) min = nextStr
+      }
+    }
+    setFreezeMinDate(min)
+    setFreezeReqStart(min)
+  }
 
   const athleteName = member?.full_name || profile?.full_name || profile?.email || '—'
   const currentSub = member?.subscription_type || profile?.subscription_type || '—'
@@ -1735,6 +1759,13 @@ function SettingsTab({ profile, member }) {
   async function submitMembershipRequest() {
     if (blockIfNotActive()) return
     if (!membershipAction) return
+    if (membershipAction === 'freeze') {
+      if (!freezeReqStart) { toast.error('בחר תאריך התחלת הקפאה'); return }
+      if (freezeMinDate && freezeReqStart < freezeMinDate) {
+        toast.error(`אי אפשר להקפיא בתאריך שבו היית באימון. הכי מוקדם: ${freezeMinDate.split('-').reverse().join('/')}`)
+        return
+      }
+    }
     setSaving(true)
     const { error } = await supabase.from('profile_change_requests').insert({
       athlete_id: profile.id,
@@ -1743,12 +1774,33 @@ function SettingsTab({ profile, member }) {
       current_value: currentSub,
       requested_value: membershipAction,
       note: membershipNote || null,
+      ...(membershipAction === 'freeze' ? {
+        requested_freeze_start: freezeReqStart,
+        requested_freeze_reason: freezeReqReason,
+        requested_freeze_open: true, // המתאמן מבקש תאריך התחלה; החזרה תיקבע ע"י המנהל
+      } : {}),
     })
     setSaving(false)
     if (error) { toast.error('שגיאה: ' + error.message); return }
     toast.success(membershipAction === 'freeze' ? 'בקשת ההקפאה נשלחה למנהל' : 'בקשת הביטול נשלחה למנהל')
     setMembershipNote('')
     setMembershipAction(null)
+    loadPending()
+  }
+
+  async function submitUnfreezeRequest() {
+    if (blockIfNotActive()) return
+    setSaving(true)
+    const { error } = await supabase.from('profile_change_requests').insert({
+      athlete_id: profile.id,
+      athlete_name: athleteName,
+      change_type: 'membership_unfreeze',
+      current_value: 'frozen',
+      requested_value: 'active',
+    })
+    setSaving(false)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    toast.success('בקשת הפעלת המנוי נשלחה למנהל')
     loadPending()
   }
 
@@ -1781,6 +1833,8 @@ function SettingsTab({ profile, member }) {
   const hasPendingSub = pendingRequests.some(r => r.change_type === 'subscription')
   const hasPendingBelt = pendingRequests.some(r => r.change_type === 'belt')
   const hasPendingMembership = pendingRequests.some(r => r.change_type === 'membership_freeze' || r.change_type === 'membership_cancel')
+  const isFrozen = member?.membership_status === 'frozen'
+  const hasPendingUnfreeze = pendingRequests.some(r => r.change_type === 'membership_unfreeze')
 
   return (
     <div className="space-y-4">
@@ -1958,7 +2012,35 @@ function SettingsTab({ profile, member }) {
             {/* הקפאה / ביטול מנוי */}
             <div className="space-y-2">
               <p className="text-xs text-gray-400 px-1">הקפאה או ביטול מנוי</p>
-              {hasPendingMembership ? (
+              {isFrozen ? (
+                <div className="space-y-3">
+                  <div className="text-sm bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1">
+                    <p className="font-semibold text-blue-800">❄️ המנוי שלך מוקפא</p>
+                    <p className="text-xs text-blue-700">
+                      {member?.freeze_reason ? `סיבה: ${FREEZE_REASON_LABELS[member.freeze_reason] || member.freeze_reason}` : 'הקפאה פעילה'}
+                      {member?.freeze_start_date && ` · מ-${member.freeze_start_date.split('-').reverse().join('/')}`}
+                      {member?.freeze_end_date
+                        ? ` · עד ${member.freeze_end_date.split('-').reverse().join('/')}`
+                        : ' · ממתין לאישור חזרה'}
+                    </p>
+                    {member?.freeze_requires_medical && (
+                      <p className="text-xs text-blue-700">🩺 החזרה מותנית באישור רפואי</p>
+                    )}
+                  </div>
+                  {hasPendingUnfreeze ? (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      בקשת הפעלת המנוי נשלחה — ממתינה לאישור מנהל
+                    </p>
+                  ) : (
+                    <button
+                      onClick={submitUnfreezeRequest}
+                      disabled={saving}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                      {saving ? 'שולח...' : '✅ בקשת הפעלת מנוי'}
+                    </button>
+                  )}
+                </div>
+              ) : hasPendingMembership ? (
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                   יש בקשה ממתינה לאישור מנהל
                 </p>
@@ -1967,7 +2049,7 @@ function SettingsTab({ profile, member }) {
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setMembershipAction(a => a === 'freeze' ? null : 'freeze')}
+                      onClick={() => { setMembershipAction(a => a === 'freeze' ? null : 'freeze'); if (membershipAction !== 'freeze') computeFreezeMinDate() }}
                       className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition ${
                         membershipAction === 'freeze'
                           ? 'bg-blue-600 text-white border-blue-600'
@@ -1989,7 +2071,31 @@ function SettingsTab({ profile, member }) {
                   {membershipAction && (
                     <div className="space-y-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
                       {membershipAction === 'freeze' ? (
-                        <p className="text-xs text-blue-700 font-medium">הקפאת מנוי — תחול מיידית עם אישור המנהל.</p>
+                        <>
+                          <p className="text-xs text-blue-700 font-medium">הקפאת מנוי — הבקשה תאושר ע"י המנהל.</p>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">תאריך התחלת הקפאה</label>
+                            <input type="date" value={freezeReqStart} min={freezeMinDate}
+                              onChange={e => setFreezeReqStart(e.target.value)}
+                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" />
+                            {freezeMinDate && (
+                              <p className="text-[11px] text-gray-400 mt-1">
+                                לא ניתן להקפיא בתאריך שבו היית באימון. הכי מוקדם: {freezeMinDate.split('-').reverse().join('/')}
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">סיבה</label>
+                            <select value={freezeReqReason} onChange={e => setFreezeReqReason(e.target.value)}
+                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+                              <option value="military">מילואים</option>
+                              <option value="study">לימודים</option>
+                              <option value="medical">רפואי</option>
+                              <option value="injury">פציעה</option>
+                              <option value="other">אחר</option>
+                            </select>
+                          </div>
+                        </>
                       ) : (
                         <p className="text-xs text-red-700 font-medium">ביטול מנוי — ייכנס לתוקף בסוף החודש הנוכחי.</p>
                       )}
@@ -2592,6 +2698,12 @@ export default function AthleteDashboard({ profile }) {
     const targetSet = isNext ? registrationsNext : registrations
     const setTargetSet = isNext ? setRegistrationsNext : setRegistrations
     const isRegistered = targetSet.has(cls.id)
+
+    // מתאמן מוקפא — חסום מרישום חדש (ביטול רישום קיים עדיין מותר)
+    if (member?.membership_status === 'frozen' && !isRegistered) {
+      toast.info('המנוי שלך מוקפא — לא ניתן להירשם לאימונים עד החזרה.')
+      return
+    }
 
     // נעילה רק על השבוע הנוכחי. עבור שבוע הבא — אין נעילה כי השיעור עוד לא התחיל.
     //   ביטול — חסום ברגע שהשיעור מתחיל.

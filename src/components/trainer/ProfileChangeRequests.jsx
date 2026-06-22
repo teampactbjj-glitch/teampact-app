@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../a11y'
 import { getBeltLabel } from '../../lib/belts'
+import { cancelFutureBookings } from '../../lib/freezeCancel'
 
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
@@ -80,7 +81,58 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
       const { error } = await supabase.from('members').update(update).eq('id', req.athlete_id)
       memberError = error
     } else if (req.change_type === 'membership_freeze') {
-      const { error } = await supabase.from('members').update({ membership_status: 'frozen' }).eq('id', req.athlete_id)
+      const today = new Date().toISOString().split('T')[0]
+      const m = membersMap[req.athlete_id]
+      const bids = Array.isArray(m?.branch_ids) && m.branch_ids.length > 0 ? m.branch_ids : (m?.branch_id ? [m.branch_id] : [])
+      const bnames = bids.map(id => branchesMap[id]).filter(Boolean).join(', ')
+      const isBegin = /בגין/.test(bnames)
+      const start = req.requested_freeze_start || today
+      const end = req.requested_freeze_open ? null : (req.requested_freeze_end || null)
+      const isActiveNow = start <= today && (!end || end >= today)
+      // רישום אירוע הקפאה (היסטוריה + זיכוי)
+      await supabase.from('member_freezes').insert({
+        member_id: req.athlete_id,
+        start_date: start,
+        end_date: end,
+        reason: req.requested_freeze_reason || 'other',
+        return_mode: isBegin ? 'manual' : 'manual',
+        requires_medical: isBegin,
+        note: req.note || null,
+        status: isActiveNow ? 'active' : 'scheduled',
+        billing_mode: isBegin ? 'continue_credit' : 'stop',
+      })
+      const patch = isActiveNow
+        ? { membership_status: 'frozen', freeze_start_date: start, freeze_end_date: end,
+            freeze_reason: req.requested_freeze_reason || 'other',
+            freeze_requires_medical: isBegin, freeze_note: req.note || null }
+        : {} // עתידי — ה-cron יקפיא בתאריך (שלב 2)
+      if (Object.keys(patch).length) {
+        const { error } = await supabase.from('members').update(patch).eq('id', req.athlete_id)
+        memberError = error
+      }
+      // ביטול רישומים + צ'ק-אינים עתידיים בלבד (כולל ימים עתידיים בשבוע הנוכחי)
+      if (isActiveNow) {
+        await cancelFutureBookings(req.athlete_id, start)
+      }
+    } else if (req.change_type === 'membership_unfreeze') {
+      // הפעלת מנוי מחדש — סגירת אירוע ההקפאה הפעיל + ניקוי שדות
+      const today = new Date().toISOString().split('T')[0]
+      const { data: ev } = await supabase.from('member_freezes')
+        .select('id, start_date, end_date, credit_days')
+        .eq('member_id', req.athlete_id).in('status', ['active', 'scheduled'])
+        .order('created_at', { ascending: false }).limit(1)
+      if (ev && ev[0]) {
+        const e = ev[0]
+        const endd = e.end_date && e.end_date < today ? e.end_date : today
+        await supabase.from('member_freezes').update({
+          status: 'ended', end_date: endd, released_at: new Date().toISOString(),
+        }).eq('id', e.id)
+      }
+      const { error } = await supabase.from('members').update({
+        membership_status: 'active',
+        freeze_start_date: null, freeze_end_date: null, freeze_reason: null,
+        freeze_return_mode: 'manual', freeze_requires_medical: false, freeze_note: null,
+      }).eq('id', req.athlete_id)
       memberError = error
     } else if (req.change_type === 'membership_cancel') {
       // ביטול — תחול בסוף החודש
@@ -191,12 +243,22 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
                 {req.change_type === 'subscription' && '🎫 שינוי מנוי'}
                 {req.change_type === 'belt' && '🥋 בקשת אישור דרגה'}
                 {req.change_type === 'membership_freeze' && '❄️ בקשת הקפאת מנוי'}
+                {req.change_type === 'membership_unfreeze' && '✅ בקשת הפעלת מנוי'}
                 {req.change_type === 'membership_cancel' && '🚫 בקשת ביטול מנוי'}
               </p>
               {(req.change_type === 'membership_freeze' || req.change_type === 'membership_cancel') && (
                 <div className={`mt-2 text-xs rounded-lg p-2.5 space-y-1 ${req.change_type === 'membership_freeze' ? 'bg-blue-50 border border-blue-200' : 'bg-red-50 border border-red-200'}`}>
                   {req.change_type === 'membership_freeze' && (
-                    <p className="text-blue-700 font-medium">הקפאה תחול מיידית עם האישור</p>
+                    <>
+                      <p className="text-blue-700 font-medium">
+                        {req.requested_freeze_start
+                          ? `הקפאה מתאריך ${req.requested_freeze_start.split('-').reverse().join('/')}`
+                          : 'הקפאה תחול עם האישור'}
+                      </p>
+                      {req.requested_freeze_reason && (
+                        <p className="text-gray-600">סיבה: {({ military: 'מילואים', study: 'לימודים', medical: 'רפואי', injury: 'פציעה', other: 'אחר' })[req.requested_freeze_reason] || req.requested_freeze_reason}</p>
+                      )}
+                    </>
                   )}
                   {req.change_type === 'membership_cancel' && (
                     <p className="text-red-700 font-medium">הביטול ייכנס לתוקף בסוף החודש הנוכחי</p>

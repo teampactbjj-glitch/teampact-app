@@ -259,6 +259,8 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     if (isAdmin) {
       const ok = await confirm({ title: 'מחיקת מתאמן', message: 'למחוק את המתאמן לצמיתות?', confirmText: 'מחק', danger: true })
       if (!ok) return
+      // ניקוי רישומים+צ'ק-אינים עתידיים בלבד — עבר/היום נשמרים (שכר המאמנים על מה שהגיע)
+      await cancelFutureBookings(id)
       const { data: deleted, error } = await supabase.from('members').delete().eq('id', id).select('id')
       if (error) { toast.error('שגיאה במחיקה: ' + error.message); return }
       if (!deleted || deleted.length === 0) {
@@ -290,6 +292,8 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   async function approveDeletion(id) {
     const ok = await confirm({ title: 'אישור מחיקה', message: 'לאשר מחיקה? המתאמן יימחק לצמיתות. הפעולה לא הפיכה.', confirmText: 'אשר מחיקה', danger: true })
     if (!ok) return
+    // ניקוי רישומים+צ'ק-אינים עתידיים בלבד — עבר/היום נשמרים (שכר המאמנים על מה שהגיע)
+    await cancelFutureBookings(id)
     const { data: deleted, error } = await supabase.from('members').delete().eq('id', id).select('id')
     if (error) { toast.error('שגיאה במחיקה: ' + error.message); return }
     if (!deleted || deleted.length === 0) {
@@ -563,6 +567,8 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
         let totalDeleted = 0
         for (let i = 0; i < ids.length; i += CHUNK) {
           const part = ids.slice(i, i + CHUNK)
+          // ניקוי רישומים+צ'ק-אינים עתידיים בלבד לכל מתאמן — עבר/היום נשמרים (שכר המאמנים)
+          await Promise.all(part.map(mid => cancelFutureBookings(mid)))
           const { data: deleted, error } = await supabase.from('members').delete().in('id', part).select('id')
           if (error) { console.error('bulk delete error:', error); toast.error('שגיאה במחיקה: ' + error.message); break }
           totalDeleted += deleted?.length || 0

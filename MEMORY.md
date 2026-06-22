@@ -10,8 +10,12 @@
 **שורש:** מחיקת מתאמן ע"י מנהל = **soft-delete** (טריגר `tr_soft_delete` הופך DELETE ראשון ל-`UPDATE deleted_at`; `deleteAthlete` מריץ DELETE אחד → השורה נשארת מסומנת מחוקה). `fetchMemberCounts` כבר סינן `deleted_at`, אבל ב-`TodayClasses.jsx` → `fetchClassDetails` שתי שליפות **לא** סיננו: (1) `member_classes`→`members`, (2) הנרשמים השבועיים מ-`members`. לכן הרוח-רפאים הופיעה רק בתצוגה המורחבת של השיעור (בכל 4 הממשקים — אותה פונקציה).
 **מה תוקן (`src/components/trainer/TodayClasses.jsx`, `fetchClassDetails`):** (1) שינוי ל-`members!inner(...)` + `.is('members.deleted_at', null)`; (2) הוספת `.is('deleted_at', null)` בשליפת הנרשמים השבועיים. תיקון קריאה-בלבד (לא כותב/מוחק). build: `✓ 115 modules transformed`.
 **הערה על הספירה:** המספר "תלמידים רשומים" כבר סינן מחוקים (ב-`fetchMemberCounts`), לכן מחוק לא נספר — והסרה ידנית של הרישום היתומה לא משנה את המספר (היה כבר נכון). לפני התיקון, כשפותחים שיעור `fetchClassDetails` היה דורס את הספירה עם המספר שכלל את הרוח-רפאים; אחרי התיקון שניהם עקביים.
+**תיקון תצוגה נדחף ל-`main` (commit `f0ad0b0`), אומת ע"י דודי ("אותם מספרים").**
+
+**המשך — ניקוי רישומים יתומים בעת מחיקת מתאמן (`AthleteManagement.jsx`):** דודי בחר **"רק עתידי"** — נימוק: מתאמן שנמחק (ביטל מנוי) — המאמנים עדיין צריכים לקבל שכר על מה שהגיע. לכן השתמשנו ב-`cancelFutureBookings(id)` (מ-`freezeCancel.js`, מוחקת רישומים+צ'ק-אינים **עתידיים בלבד**, שומרת עבר/היום) ב-3 נתיבי מחיקה: `deleteAthlete` (מנהל ישיר), `approveDeletion` (אישור בקשה), ומחיקה מרובה (Promise.all לכל id ב-batch). **לא** ב-נתיב מאמן (רק בקשה) ולא ב-`rejectPending` (אין רישומים). build: `✓ 115 modules`.
+
 ### My last pending task
-**תוקן בקוד, אומת build. דודי בדק על `dev:prod` ואישר "עובד".** טרם נדחף ל-`main` — לוודא אישור דחיפה. **ניקיון אופציונלי שלא בוצע:** מחיקת שורות יתומות `class_registrations`/`checkins`/`member_classes` בעת מחיקת מתאמן (`deleteAthlete`) — כרגע נשארות ב-DB אך לא מוצגות.
+**הכל תוקן. דודי ביקש "דחוף ישר" (bypass בדיקה לוקאלית מאושר).** שני התיקונים נדחפים ל-`main`. אין SQL/מיגרציה. אין משימה פתוחה.
 
 ---
 

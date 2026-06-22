@@ -310,10 +310,12 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
     setClassData(prev => ({ ...prev, [classId]: { ...prev[classId], loading: true } }))
 
     // 1. Members registered to this class via member_classes
+    // INNER JOIN + סינון deleted_at — מתאמנים שנמחקו (soft-delete) לא יוצגו
     const { data: mcRows, error: mcErr } = await supabase
       .from('member_classes')
-      .select('member_id, members(id, full_name, membership_type, subscription_type, group_name)')
+      .select('member_id, members!inner(id, full_name, membership_type, subscription_type, group_name, deleted_at)')
       .eq('class_id', classId)
+      .is('members.deleted_at', null)
 
     if (mcErr) console.error('member_classes error:', mcErr)
     const members = (mcRows || []).map(r => r.members).filter(Boolean)
@@ -363,8 +365,9 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
         .from('members')
         .select('id, full_name, membership_type, subscription_type, group_name')
         .in('id', regMemberIds)
+        .is('deleted_at', null)  // מתאמנים שנמחקו (soft-delete) לא יוצגו כנרשמים שבועיים
       if (rmErr) console.error('weekly reg members error:', rmErr)
-      // רק מתאמנים שקיימים ב-members (מסנן IDs יתומים) — מסמנים אורחי רשת
+      // רק מתאמנים שקיימים ופעילים ב-members (מסנן IDs יתומים/מחוקים) — מסמנים אורחי רשת
       weeklyRegistrants = (regMembers || []).map(m => ({
         ...m,
         isNetworkVisitor: networkVisitorIds.has(m.id),

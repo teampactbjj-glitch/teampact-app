@@ -1,5 +1,20 @@
 # MEMORY - TeamPact App
 
+## ⚠️ סביבות — לקרוא לפני כל בדיקה לוקאלית!
+**`npm run dev` רץ ב-`--mode staging`** → טוען `.env.staging` → באנר צהוב "🟡 סביבת טסט — STAGING" + מתחבר ל-DB staging (`tfrcyntrusfrjcpevotq`) שהוא **ריק/לא מוגדר → אי אפשר להתחבר שם**.
+**לבדיקה לוקאלית מול ה-DB האמיתי משתמשים ב-`npm run dev:prod`** (`--mode production` → `.env.local` → DB פרודקשן `pnicoluujpidguvniwub`, בלי באנר, הכניסה עובדת).
+זה משקף מדויק את הפרודקשן (אותו DB). שלט ה-STAGING עצמו הוא `pointerEvents:none` (לא חוסם קליקים) — מה שחוסם כניסה זה שאין משתמשים ב-DB של staging.
+
+## ✅ Session 22.06.2026 (ערב) — מתאמן מחוק (soft-delete) הופיע כרוח-רפאים בשיעור
+**הבעיה:** מתאמן בדיקה ("בדיקה 19.6") שהמנהל מחק המשיך להופיע בשיעור היום בתל אביב, למרות שלא ברשימת המתאמנים.
+**שורש:** מחיקת מתאמן ע"י מנהל = **soft-delete** (טריגר `tr_soft_delete` הופך DELETE ראשון ל-`UPDATE deleted_at`; `deleteAthlete` מריץ DELETE אחד → השורה נשארת מסומנת מחוקה). `fetchMemberCounts` כבר סינן `deleted_at`, אבל ב-`TodayClasses.jsx` → `fetchClassDetails` שתי שליפות **לא** סיננו: (1) `member_classes`→`members`, (2) הנרשמים השבועיים מ-`members`. לכן הרוח-רפאים הופיעה רק בתצוגה המורחבת של השיעור (בכל 4 הממשקים — אותה פונקציה).
+**מה תוקן (`src/components/trainer/TodayClasses.jsx`, `fetchClassDetails`):** (1) שינוי ל-`members!inner(...)` + `.is('members.deleted_at', null)`; (2) הוספת `.is('deleted_at', null)` בשליפת הנרשמים השבועיים. תיקון קריאה-בלבד (לא כותב/מוחק). build: `✓ 115 modules transformed`.
+**הערה על הספירה:** המספר "תלמידים רשומים" כבר סינן מחוקים (ב-`fetchMemberCounts`), לכן מחוק לא נספר — והסרה ידנית של הרישום היתומה לא משנה את המספר (היה כבר נכון). לפני התיקון, כשפותחים שיעור `fetchClassDetails` היה דורס את הספירה עם המספר שכלל את הרוח-רפאים; אחרי התיקון שניהם עקביים.
+### My last pending task
+**תוקן בקוד, אומת build. דודי בדק על `dev:prod` ואישר "עובד".** טרם נדחף ל-`main` — לוודא אישור דחיפה. **ניקיון אופציונלי שלא בוצע:** מחיקת שורות יתומות `class_registrations`/`checkins`/`member_classes` בעת מחיקת מתאמן (`deleteAthlete`) — כרגע נשארות ב-DB אך לא מוצגות.
+
+---
+
 ## ✅ Session 22.06.2026 — הקפאת מנוי עם תאריכים (פיצ'ר חדש מלא)
 
 **מה נבנה:** מערכת הקפאת מנוי מלאה עם תאריכים, סיבות, זיכוי, וסנכרון בין כל הממשקים.

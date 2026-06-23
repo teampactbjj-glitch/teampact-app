@@ -372,9 +372,9 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       if (!f.end_date) { setFreezeModal(m => ({ ...m, error: 'חובה לבחור תאריך חזרה (או לסמן "הקפאה פתוחה")' })); return }
       if (f.end_date < f.start_date) { setFreezeModal(m => ({ ...m, error: 'תאריך החזרה לפני תאריך ההתחלה' })); return }
     }
-    // חוקי סניף בגין
+    // חוקי סניף בגין — אישור רפואי הוא באחריות המנהל/מזכירה (לא נעילה).
+    // נשמר רק המינימום של 3 שבועות.
     if (f.isBegin) {
-      if (!f.requires_medical) { setFreezeModal(m => ({ ...m, error: 'בסניף בגין חובה אישור רפואי לחזרה' })); return }
       if (!f.open_ended && daysBetween(f.start_date, f.end_date) < 21) {
         setFreezeModal(m => ({ ...m, error: 'בסניף בגין מינימום הקפאה 3 שבועות (21 ימים)' })); return
       }
@@ -1313,7 +1313,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
 
             {freezeModal.isBegin && (
               <div className="mb-3 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2.5">
-                סניף בגין: מינימום הקפאה 3 שבועות, חובת אישור רפואי לחזרה.
+                סניף בגין: מינימום הקפאה 3 שבועות. ודאו אישור רפואי לחזרה (לפי שיקולכם — לא חובה במערכת).
               </div>
             )}
 

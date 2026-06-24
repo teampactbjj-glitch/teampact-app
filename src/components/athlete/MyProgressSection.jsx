@@ -4,6 +4,89 @@ import { fetchAllPaged } from '../../lib/fetchAllPaged'
 import { getBeltMeta, getBeltLabel, formatYearsMonths, formatHebrewMonthYear } from '../../lib/belts'
 
 // ============================================================
+// cache מקומי ל-checkins של המתאמן — חוסך egress (גל א', 24.6.2026)
+// ------------------------------------------------------------
+// במקום למשוך את כל היסטוריית הנוכחות בכל פתיחת "ההתקדמות שלי" (×244 מתאמנים),
+// שומרים cache ב-localStorage ומושכים רק את מה שחדש מאז הביקור האחרון.
+// אסטרטגיה (מתכווצת ל-444+ מתאמנים):
+//  • פתיחה ראשונה / כל 7 ימים (backstop): רענון מלא פעם אחת.
+//  • שאר הפתיחות: שליפה incremental (רק מהתאריך האחרון ואילך) + בדיקת count זולה (head, בלי שורות).
+//    אם ה-count בשרת ≠ מה ששמור (כלומר נמחק/השתנה משהו) → רענון מלא. אחרת — משתמשים ב-cache.
+// כך כמעט שלא נמשכות שורות בכל פתיחה, וזה לא גדל עם ההיסטוריה. ראה EGRESS-FREE-TIER-PLAN.md.
+// ============================================================
+const CHK_CACHE_PREFIX = 'tp_mp_chk_v2_'
+const DATE_FLOOR = '1970-01-01'                       // seed תקין ל-Postgres (לא '0000-00-00')
+const FULL_RESYNC_MS = 7 * 24 * 60 * 60 * 1000        // backstop: רענון מלא כל 7 ימים
+
+function readChkCache(athleteId) {
+  try {
+    const raw = localStorage.getItem(CHK_CACHE_PREFIX + athleteId)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || !Array.isArray(parsed.rows)) return null
+    return parsed // { rows, maxDate, count, syncedAt }
+  } catch { return null }
+}
+
+function writeChkCache(athleteId, payload) {
+  try { localStorage.setItem(CHK_CACHE_PREFIX + athleteId, JSON.stringify(payload)) } catch { /* quota/private mode — מתעלמים */ }
+}
+
+const maxOf = (rows, seed) => rows.reduce((m, r) => (r.checkin_date > m ? r.checkin_date : m), seed)
+
+// רענון מלא — מושכים את כל ההיסטוריה פעם אחת ושומרים cache
+async function fullSyncCheckins(athleteId, now) {
+  const { data, error } = await fetchAllPaged(() => supabase
+    .from('checkins')
+    .select('id, class_id, checked_in_at, checkin_date')
+    .eq('athlete_id', athleteId)
+    .eq('status', 'present')
+    .order('checkin_date', { ascending: true }).order('id', { ascending: true }))
+  if (error) throw error
+  const rows = data || []
+  writeChkCache(athleteId, { rows, maxDate: maxOf(rows, DATE_FLOOR), count: rows.length, syncedAt: now })
+  return rows
+}
+
+// מחזיר את כל ה-checkins (present) של המתאמן, עם cache+incremental.
+// העמודות: { id, class_id, checked_in_at, checkin_date }
+async function fetchCheckinsCached(athleteId) {
+  const cache = readChkCache(athleteId)
+  const now = Date.now()
+
+  // אין cache, או עבר ה-backstop (7 ימים) → רענון מלא
+  if (!cache || !cache.syncedAt || (now - cache.syncedAt) > FULL_RESYNC_MS) {
+    return fullSyncCheckins(athleteId, now)
+  }
+
+  // incremental — רק מהתאריך האחרון ואילך (>= כדי לתפוס תוספות באותו יום), ואז dedupe לפי id
+  const { data, error } = await fetchAllPaged(() => supabase
+    .from('checkins')
+    .select('id, class_id, checked_in_at, checkin_date')
+    .eq('athlete_id', athleteId)
+    .eq('status', 'present')
+    .gte('checkin_date', cache.maxDate || DATE_FLOOR)
+    .order('checkin_date', { ascending: true }).order('id', { ascending: true }))
+  if (error) throw error
+  const byId = new Map(cache.rows.map(r => [r.id, r]))
+  for (const r of (data || [])) byId.set(r.id, r)
+  const rows = [...byId.values()]
+
+  // בדיקת עקביות זולה: count מדויק בלי להעביר שורות (head). אם נמחק משהו → רענון מלא.
+  const { count, error: cErr } = await supabase
+    .from('checkins')
+    .select('id', { count: 'exact', head: true })
+    .eq('athlete_id', athleteId)
+    .eq('status', 'present')
+  if (!cErr && typeof count === 'number' && count !== rows.length) {
+    return fullSyncCheckins(athleteId, now)
+  }
+
+  writeChkCache(athleteId, { rows, maxDate: maxOf(rows, cache.maxDate || DATE_FLOOR), count: rows.length, syncedAt: cache.syncedAt })
+  return rows
+}
+
+// ============================================================
 // MyProgressSection — דוח התקדמות אישי למתאמן
 // ============================================================
 // מציג למתאמן את התמונה החודשית שלו: כמה התאמן החודש, פילוח לפי תחום (BJJ / מואי תאי / וכו'),
@@ -380,16 +463,8 @@ export default function MyProgressSection({ profile, member }) {
       setLoading(true)
       setErr(null)
       try {
-        // 1) כל ה-checkins של המתאמן (נוכחות בלבד) — כל ההיסטוריה לצורך badges של שעות
-        const { data: chk, error: chkErr } = await fetchAllPaged(() => supabase
-          .from('checkins')
-          .select('class_id, checked_in_at, checkin_date')
-          .eq('athlete_id', athleteId)
-          .eq('status', 'present')
-          // מיון ייחודי לדפדוף יציב (אותו מתאמן → checkin_date+class_id ייחודי)
-          .order('checkin_date', { ascending: true }).order('class_id', { ascending: true }))
-        if (chkErr) throw chkErr
-        const checkinsData = chk || []
+        // 1) checkins של המתאמן (נוכחות בלבד) — דרך cache+incremental (חוסך egress; ראה fetchCheckinsCached למעלה)
+        const checkinsData = await fetchCheckinsCached(athleteId)
 
         // 2) classes של ה-class_ids הייחודיים
         const classIds = [...new Set(checkinsData.map(c => c.class_id).filter(Boolean))]

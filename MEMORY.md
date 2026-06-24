@@ -1,5 +1,9 @@
 # MEMORY - TeamPact App
 
+## 📌 PINNED — בדיקת "יעד חינמי / egress" → קרא קודם `EGRESS-FREE-TIER-PLAN.md`
+**כל פעם שדודי שואל אם עומדים בתוכנית החינמית של Supabase — לקרוא תחילה את `EGRESS-FREE-TIER-PLAN.md` בשורש הריפו.** שם האבחנה, המספרים, תוכנית העבודה ולוג הבדיקות. אל תתחיל מאפס.
+**תקציר (24.6.2026):** החסם היחיד = **Cached Egress ~13GB/חודש** (גבול חינמי 5GB) ממשיכת API כבדה בכל פתיחה (`MyProgressSection` ×244, דוחות מאמן). תמונות כבר ב-Cloudinary, פולינג מתאמן כבר בוטל. **גל א' — קוד נכתב (cache+incremental ב-`MyProgressSection.jsx`, `fetchCheckinsCached`), ממתין לבדיקה לוקאלית של דודי + push.** משפיע רק על ממשק המתאמן. אחרי דחיפה: למדוד 3–4 ימים → אם <4GB/חודש להוריד ל-Free. **מחזור מתאפס ב-19 לחודש (הבא: 19.7.2026).** תזכורת אוטומטית נקבעה ל-16.7.2026. אסור להוריד ל-Free לפני מדידת ירידה.
+
 ## ⚠️ סביבות — לקרוא לפני כל בדיקה לוקאלית!
 **`npm run dev` רץ ב-`--mode staging`** → טוען `.env.staging` → באנר צהוב "🟡 סביבת טסט — STAGING" + מתחבר ל-DB staging (`tfrcyntrusfrjcpevotq`) שהוא **ריק/לא מוגדר → אי אפשר להתחבר שם**.
 **לבדיקה לוקאלית מול ה-DB האמיתי משתמשים ב-`npm run dev:prod`** (`--mode production` → `.env.local` → DB פרודקשן `pnicoluujpidguvniwub`, בלי באנר, הכניסה עובדת).

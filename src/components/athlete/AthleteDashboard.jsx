@@ -731,6 +731,21 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
     })
     if (!okReg) return
     setOrderingId(item.id)
+    // הגנה מפני הרשמה כפולה לאותו סמינר: בדיקה טרייה מול ה-DB (תופסת גם הרשמה
+    // ממכשיר/סשן אחר שעדיין לא שוקפה ב-state המקומי). השרת חוסם סופית עם אילוץ ייחודי
+    // על (athlete_id, announcement_id). athlete_id = המתאמן הפעיל, כך שילד שני של אותו
+    // הורה (member נפרד) עדיין יכול להירשם.
+    const { data: existingReg } = await supabase.from('product_requests')
+      .select('id')
+      .eq('athlete_id', athleteId)
+      .eq('announcement_id', item.id)
+      .limit(1)
+    if (existingReg && existingReg.length) {
+      setOrdered(prev => new Set([...prev, item.id]))
+      toast.info('כבר נרשמת לסמינר הזה')
+      setOrderingId(null)
+      return
+    }
     const { error } = await supabase.from('product_requests').insert({
       product_name: item.title,
       announcement_id: item.id,
@@ -740,7 +755,16 @@ function AnnouncementsTab({ announcements, profile, member, lastSeen = '', focus
       notes: `הרשמה לסמינר${pr.earlyActive ? ' · מחיר מוקדם' : ''}`,
       ...(pr.current != null ? { unit_price: pr.current, total_price: pr.current } : {}),
     })
-    if (error) { console.error('order error:', error); toast.error('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
+    if (error) {
+      // 23505 = הפרת אילוץ ייחודי → כבר קיימת הרשמה (מרוץ בין מכשירים). הודעה רכה במקום שגיאה.
+      if (error.code === '23505') {
+        setOrdered(prev => new Set([...prev, item.id]))
+        toast.info('כבר נרשמת לסמינר הזה')
+        setOrderingId(null)
+        return
+      }
+      console.error('order error:', error); toast.error('שגיאה: ' + (error.message || error.code || 'לא ידוע'))
+    }
     else {
       setOrdered(prev => new Set([...prev, item.id]))
       toast.success('נרשמת לסמינר! התשלום יתבצע באקדמיה')
@@ -1220,13 +1244,39 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
         return
       }
     } else {
+      // הגנה מפני הזמנה כפולה בחנות: אם כבר קיימת הזמנה *ממתינה* לאותו מוצר (מרוץ/מכשיר אחר)
+      // — לא יוצרים חדשה. בודקים רק status='pending', כך שרכישה חוזרת אחרי 'done' (שולם)
+      // עדיין מותרת, והזמנות שבוטלו לא חוסמות.
+      const { data: existingPending } = await supabase.from('product_requests')
+        .select('id')
+        .eq('athlete_id', athleteId)
+        .eq('product_id', item.id)
+        .eq('status', 'pending')
+        .limit(1)
+      if (existingPending && existingPending.length) {
+        toast.info('כבר יש לך הזמנה ממתינה למוצר הזה')
+        setOrdered(prev => new Set([...prev, item.id]))
+        setOrderingId(null)
+        setSelectedProductId(null)
+        return
+      }
       const { data: insData, error: insErr } = await supabase.from('product_requests').insert(payload).select('id').single()
       error = insErr
       if (!error && insData?.id) {
         payload._insertedId = insData.id
       }
     }
-    if (error) { console.error('order error:', error); toast.error('שגיאה: ' + (error.message || error.code || 'לא ידוע')) }
+    if (error) {
+      // 23505 = הפרת אילוץ ייחודי → כבר קיימת הזמנה ממתינה (מרוץ בין מכשירים). הודעה רכה.
+      if (error.code === '23505') {
+        toast.info('כבר יש לך הזמנה ממתינה למוצר הזה')
+        setOrdered(prev => new Set([...prev, item.id]))
+        setOrderingId(null)
+        setSelectedProductId(null)
+        return
+      }
+      console.error('order error:', error); toast.error('שגיאה: ' + (error.message || error.code || 'לא ידוע'))
+    }
     else {
       setOrdered(prev => new Set([...prev, item.id]))
       setOrderedRequestsMap(prev => ({ ...prev, [item.id]: { ...payload, id: payload._insertedId || prev[item.id]?.id } }))

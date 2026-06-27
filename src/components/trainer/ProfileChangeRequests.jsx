@@ -44,6 +44,12 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
           const m = mMap[r.athlete_id]
           if (!m) return false
           const bids = Array.isArray(m.branch_ids) && m.branch_ids.length > 0 ? m.branch_ids : (m.branch_id ? [m.branch_id] : [])
+          // מעבר סניף — רק המנהל רואה. אם הבקשה משנה את הסניפים (שונה מהנוכחי) — מסתירים ממזכירה.
+          const reqBids = Array.isArray(r.requested_branch_ids) ? r.requested_branch_ids : []
+          if (reqBids.length > 0) {
+            const sameBranches = reqBids.length === bids.length && reqBids.every(id => bids.includes(id))
+            if (!sameBranches) return false
+          }
           return bids.includes(branchFilter)
         })
       : allRequests

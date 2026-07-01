@@ -1752,6 +1752,12 @@ function SettingsTab({ profile, member }) {
     setSaving(false)
     if (error) { toast.error('שגיאה: ' + error.message); return }
     toast.success('בקשת שינוי השם נשלחה למנהל')
+    nonSecretaryTrainerUserIds().then(ids => notifyPush({
+      userIds: ids,
+      title: 'בקשת שינוי שם',
+      body: `${athleteName} מבקש/ת לשנות שם ל: ${trimmed}`,
+      url: '/#requests', tag: `name-request:${profile.id}`,
+    })).catch(() => {})
     setNewName(''); loadPending()
   }
 
@@ -1803,6 +1809,12 @@ function SettingsTab({ profile, member }) {
     setSaving(false)
     if (error) { toast.error('שגיאה: ' + error.message); return }
     toast.success('בקשת שינוי המנוי נשלחה למנהל')
+    nonSecretaryTrainerUserIds().then(ids => notifyPush({
+      userIds: ids,
+      title: 'בקשת שינוי מנוי/סניף',
+      body: `${athleteName}: ${currentSub} → ${requestedSub}`,
+      url: '/#requests', tag: `sub-request:${profile.id}`,
+    })).catch(() => {})
     setSubNote(''); loadPending()
   }
 
@@ -1833,6 +1845,14 @@ function SettingsTab({ profile, member }) {
     setSaving(false)
     if (error) { toast.error('שגיאה: ' + error.message); return }
     toast.success(membershipAction === 'freeze' ? 'בקשת ההקפאה נשלחה למנהל' : 'בקשת הביטול נשלחה למנהל')
+    nonSecretaryTrainerUserIds().then(ids => notifyPush({
+      userIds: ids,
+      title: membershipAction === 'freeze' ? '❄️ בקשת הקפאת מנוי' : 'בקשת ביטול מנוי',
+      body: membershipAction === 'freeze'
+        ? `${athleteName} מבקש/ת להקפיא מנוי מתאריך ${freezeReqStart}`
+        : `${athleteName} מבקש/ת לבטל מנוי`,
+      url: '/#requests', tag: `membership-request:${profile.id}`,
+    })).catch(() => {})
     setMembershipNote('')
     setMembershipAction(null)
     loadPending()
@@ -1851,6 +1871,12 @@ function SettingsTab({ profile, member }) {
     setSaving(false)
     if (error) { toast.error('שגיאה: ' + error.message); return }
     toast.success('בקשת הפעלת המנוי נשלחה למנהל')
+    nonSecretaryTrainerUserIds().then(ids => notifyPush({
+      userIds: ids,
+      title: 'בקשת הפעלת מנוי',
+      body: `${athleteName} מבקש/ת להפעיל מחדש את המנוי (יציאה מהקפאה)`,
+      url: '/#requests', tag: `unfreeze-request:${profile.id}`,
+    })).catch(() => {})
     loadPending()
   }
 

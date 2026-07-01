@@ -124,8 +124,12 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   useEffect(() => { fetchAthletes() }, [trainerId, isAdmin])
 
   // רענון אוטומטי של הרשימה (הרשמה חדשה / שינוי סטטוס / מחיקה) בלי רענון ידני.
-  // 1) Realtime — מסלול מהיר. 2) Polling כל 30ש' — fallback למקרה ש-Realtime לא מופעל.
-  // 3) חזרה לטאב — רענון מיידי.
+  // 1) Realtime — מסלול מהיר, מתעדכן מיד כשמשהו משתנה בטבלת members.
+  // 2) חזרה לטאב — רענון מיידי (visibilitychange).
+  // (הוסר 01.07.2026: פולינג עיוור כל 60ש' — היה מושך את כל טבלת המתאמנים כל דקה
+  // גם כשכלום לא השתנה, וזה היה ~46% מכל בקשות ה-GET באפליקציה (ראה EGRESS-FREE-TIER-PLAN.md).
+  // כל סוגי הבקשות שהמסך הזה מציג (הרשמה/מחיקה/שינוי שם/מנוי/הקפאה) שולחים כעת גם Push
+  // מיידי, כך שאין תלות עוד ב"בדיקה כל דקה" כרשת ביטחון.)
   useEffect(() => {
     const channel = supabase
       .channel('athlete-mgmt-members')
@@ -133,13 +137,9 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       .subscribe()
     const onVis = () => { if (document.visibilityState === 'visible') fetchAthletes() }
     document.addEventListener('visibilitychange', onVis)
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') fetchAthletes()
-    }, 60000)
     return () => {
       supabase.removeChannel(channel)
       document.removeEventListener('visibilitychange', onVis)
-      clearInterval(interval)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trainerId, isAdmin, branchFilter])
@@ -172,9 +172,18 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       myCoachNames = (coaches || []).map(c => c.name).filter(Boolean)
     }
 
-    const pendingQ     = supabase.from('members').select('*').eq('status', 'pending').is('deleted_at', null).order('created_at', { ascending: false })
-    const deletionReqQ = supabase.from('members').select('*').eq('status', 'pending_deletion').is('deleted_at', null).order('full_name')
-    const activeQ      = supabase.from('members').select('*').neq('status', 'pending').neq('status', 'pending_deletion').is('deleted_at', null).order('full_name')
+    // מזכירה — יש branchFilter קבוע (הסניף שלה). מסננים כבר בשרת (במקום למשוך את כולם
+    // ולסנן בדפדפן) — חוסך את רוב ה-egress עבור מסך שבד"כ נשאר פתוח כל היום בדלפק.
+    // תומך גם ב-branch_id (ישן, יחיד) וגם ב-branch_ids (מערך) — אותו היגיון כמו matchesBranch למטה.
+    const branchOr = branchFilter ? `branch_id.eq.${branchFilter},branch_ids.cs.{${branchFilter}}` : null
+    let pendingQ     = supabase.from('members').select('*').eq('status', 'pending').is('deleted_at', null).order('created_at', { ascending: false })
+    let deletionReqQ = supabase.from('members').select('*').eq('status', 'pending_deletion').is('deleted_at', null).order('full_name')
+    let activeQ      = supabase.from('members').select('*').neq('status', 'pending').neq('status', 'pending_deletion').is('deleted_at', null).order('full_name')
+    if (branchOr) {
+      pendingQ = pendingQ.or(branchOr)
+      deletionReqQ = deletionReqQ.or(branchOr)
+      activeQ = activeQ.or(branchOr)
+    }
 
     const [{ data: pendingData }, { data: deletionData }, { data, error }] = await Promise.all([pendingQ, deletionReqQ, activeQ])
     if (error) console.error('fetchAthletes error:', error)

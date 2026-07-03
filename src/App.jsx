@@ -31,6 +31,20 @@ const HAS_CACHED_SESSION = (() => {
   }
 })()
 
+// באג "מסך לבן תקוע" (דווח ע"י מאמן סהר, 2.7.2026): אם קריאת רשת ל-Supabase
+// (getSession / fetchProfile) נתקעת בלי לחזור (למשל ניתוק רשת רגעי באולם האימונים),
+// המסכים למטה (!sessionChecked / loadingProfile) הם div ריק לגמרי בכוונה (למניעת "פלאש") —
+// אז בלי timeout המשתמש נשאר תקוע על מסך לבן ריק לנצח, בלי שום הודעה או דרך לצאת מזה.
+// הפתרון: race מול טיימר — אם הקריאה לא חוזרת תוך TIMEOUT_MS, ממשיכים הלאה בכל זאת
+// (במקום להמתין לנצח) ומציגים מסך "לוקח יותר מדי זמן" עם כפתור רענון.
+const NETWORK_TIMEOUT_MS = 15000
+function withTimeout(promise, ms = NETWORK_TIMEOUT_MS) {
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve({ __timedOut: true }), ms)),
+  ])
+}
+
 export default function App() {
   const [session, setSession] = useState(null)
   // sessionChecked מתחיל true כשאין session שמור — ואז נראה ישר את מסך הלוגין בלי "פלאש".
@@ -39,6 +53,9 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [memberStatus, setMemberStatus] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
+  // מסומן כשקריאת רשת (getSession/fetchProfile) עברה את NETWORK_TIMEOUT_MS בלי לחזור —
+  // מוצג מסך "לוקח יותר מדי זמן" במקום מסך לבן תקוע לנצח.
+  const [networkStuck, setNetworkStuck] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(IS_RECOVERY)
   // Version counter למניעת race condition: כשהsession מתחלף מהר, fetchProfile ישן לא ידרוס פרופיל חדש
@@ -48,8 +65,15 @@ export default function App() {
   // ה-early-returns של נתיבים מיוחדים (/register, /register-coach, /accessibility)
   // הוזזו לסוף הקומפוננטה — *אחרי* כל קריאות ה-useEffect.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
+    withTimeout(supabase.auth.getSession()).then((result) => {
+      if (result?.__timedOut) {
+        // הרשת תקועה — לא נשאר על splash לבן לנצח. מציגים מסך "לוקח יותר מדי זמן".
+        console.warn('getSession timed out after', NETWORK_TIMEOUT_MS, 'ms')
+        setNetworkStuck(true)
+        setSessionChecked(true)
+        return
+      }
+      setSession(result.data.session)
       setSessionChecked(true)
     }).catch(() => {
       // גם בכשל — מסמנים שבדקנו כדי לא להיתקע על splash לנצח
@@ -132,21 +156,32 @@ export default function App() {
     // לכוד גרסה לפני ה-fetch. אם session התחלף בזמן ש-fetch זה רץ, נדע שזה stale ולא נדרוס.
     const myVersion = ++fetchVersionRef.current
     setLoadingProfile(true)
-    const [{ data, error }, { data: member }] = await Promise.all([
+    setNetworkStuck(false)
+    const result = await withTimeout(Promise.all([
       supabase.from('profiles').select('*, is_admin, is_approved').eq('id', user.id).maybeSingle(),
       supabase.from('members').select('status').eq('id', user.id).maybeSingle(),
-    ])
+    ]))
     // אם בינתיים נשלחה קריאה חדשה ל-fetchProfile — לא נדרוס.
     if (myVersion !== fetchVersionRef.current) {
       console.warn('fetchProfile: stale response ignored (newer fetch in flight)')
       return
     }
+    if (result?.__timedOut) {
+      // הרשת תקועה — זה בדיוק הבאג שדיווח סהר (2.7.2026): מסך לבן תקוע בלי סוף.
+      // עוצרים את הטעינה ומראים למשתמש מסך עם הסבר וכפתור "נסה שוב" / "טען מחדש".
+      console.warn('fetchProfile timed out after', NETWORK_TIMEOUT_MS, 'ms')
+      setLoadingProfile(false)
+      setNetworkStuck(true)
+      return
+    }
+    const [{ data, error }, { data: member }] = result
     if (error) console.error('fetchProfile error:', error)
     // ודא שיש email — לעיתים הוא לא שמור בטבלת profiles, אז ניקח מה-auth
     const merged = { ...(data || { id: user.id }), email: data?.email || user.email }
     setProfile(merged)
     setMemberStatus(member?.status || null)
     setLoadingProfile(false)
+    setNetworkStuck(false)
   }
 
   // (הוסר) פולינג מתאמן ממתין-לאישור: מתאמן ממתין נכנס עכשיו לדשבורד במצב צפייה,
@@ -198,6 +233,40 @@ export default function App() {
   // מצב שחזור סיסמה — מגיע מקישור המייל של Supabase
   if (isPasswordRecovery) return (
     <ResetPasswordPage onDone={() => setIsPasswordRecovery(false)} />
+  )
+
+  // הרשת תקועה (getSession/fetchProfile לא חזרו תוך NETWORK_TIMEOUT_MS) — במקום מסך
+  // לבן ריק תקוע לנצח (הבאג שדיווח סהר, 2.7.2026), מציגים הודעה ברורה + אפשרות לנסות שוב.
+  if (networkStuck) return (
+    <main id="main-content" className="min-h-screen flex items-center justify-center bg-gray-50 p-4" dir="rtl">
+      <div role="alert" aria-live="assertive" className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center space-y-4">
+        <div className="text-5xl" aria-hidden="true">📡</div>
+        <h1 className="text-xl font-bold text-gray-800">הטעינה לוקחת יותר מדי זמן</h1>
+        <p className="text-gray-500 text-sm">
+          נראה שיש בעיית חיבור לרשת. בדוק את החיבור לאינטרנט ונסה שוב.
+        </p>
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setNetworkStuck(false)
+              if (session?.user) fetchProfile(session.user)
+              else window.location.reload()
+            }}
+            className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-semibold hover:bg-blue-700 transition"
+          >
+            נסה שוב
+          </button>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="w-full border-2 border-gray-200 text-gray-600 py-2.5 rounded-xl font-semibold hover:bg-gray-50 transition"
+          >
+            טען מחדש
+          </button>
+        </div>
+      </div>
+    </main>
   )
 
   // נתיבים ציבוריים — אחרי כל ה-hooks כדי לקיים את Rules of Hooks (Bug 1.7).

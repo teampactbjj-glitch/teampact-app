@@ -64,6 +64,23 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
   const selectedBtnRef = useRef(null)
   const sliderContainerRef = useRef(null)
   const didInitialScroll = useRef(false)
+  // דיבאונס ל-fetchClassDetails per classId — כשמאמן מוסיף הרבה מתאמנים ברצף
+  // (למשל 15-20 ילדים לקבוצה), כל הוספה קראה מיד ל-fetchClassDetails (6 שאילתות),
+  // וזה יצר מבול קריאות רשת חופפות שיכול "לתקוע" את הדפדפן/הרשת בג'ים (מסך לבן, 2.7.2026).
+  // עכשיו כל הוספה/הסרה רק "מתזמנת" רענון — אם מגיעה עוד פעולה תוך 600ms, מבטלים
+  // את הטיימר הקודם ומתחילים שוב. כך סבב מהיר של הוספות מפעיל fetch אחד בסוף, לא N.
+  const fetchDetailsDebounceRef = useRef({})
+  function scheduleFetchClassDetails(classId, delay = 600) {
+    if (fetchDetailsDebounceRef.current[classId]) clearTimeout(fetchDetailsDebounceRef.current[classId])
+    fetchDetailsDebounceRef.current[classId] = setTimeout(() => {
+      delete fetchDetailsDebounceRef.current[classId]
+      fetchClassDetails(classId)
+    }, delay)
+  }
+  useEffect(() => () => {
+    // ניקוי כל הטיימרים התלויים כשהקומפוננטה נעלמת (לא לקרוא setState אחרי unmount)
+    Object.values(fetchDetailsDebounceRef.current).forEach(clearTimeout)
+  }, [])
   const [classes, setClasses] = useState([])
   const [expanded, setExpanded] = useState(null)
   // classData[classId] = { members: [...], checkedIds: Set, absentIds: Set, weeklyCount: {memberId: n}, loading: bool }
@@ -134,15 +151,23 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
   }, [trainerId, selectedDate])
 
   // Realtime: עדכון ספירת מתאמנים כשיש שינוי ב-member_classes או class_registrations
-  // במקום polling כל 15 שניות — מקבלים עדכון מיידי רק כשמשהו משתנה
+  // במקום polling כל 15 שניות — מקבלים עדכון מיידי רק כשמשהו משתנה.
+  // דיבאונס (600ms): כשמאמן מוסיף הרבה מתאמנים ברצף, כל הוספה כותבת ל-class_registrations
+  // ומפעילה את האירוע הזה — בלי דיבאונס זה מריץ fetchMemberCounts (שאילתה על כל שיעורי היום)
+  // בנפרד עבור כל הוספה, ויוצר מבול קריאות חופפות (חשד לבאג "מסך לבן", 2.7.2026).
   useEffect(() => {
     if (classes.length === 0) return
     const classIds = classes.map(c => c.id)
+    let debounceTimer = null
+    const scheduleFetchCounts = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => { fetchMemberCounts(classIds) }, 600)
+    }
     const ch = supabase.channel('member-counts-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_classes' }, () => fetchMemberCounts(classIds))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_registrations' }, () => fetchMemberCounts(classIds))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_classes' }, scheduleFetchCounts)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_registrations' }, scheduleFetchCounts)
       .subscribe()
-    return () => { supabase.removeChannel(ch) }
+    return () => { supabase.removeChannel(ch); if (debounceTimer) clearTimeout(debounceTimer) }
   }, [classes, selectedDate])
 
   // גלול אל התאריך הנבחר בסלייד — instantly, ועוצר ברגע שהגעת ליעד.
@@ -478,7 +503,7 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
       // ניקוי החיפוש ורענון כדי להראות את המצב האמיתי
       setVisitorSearch(p => ({ ...p, [classId]: '' }))
       setVisitorResults(p => ({ ...p, [classId]: [] }))
-      fetchClassDetails(classId)
+      scheduleFetchClassDetails(classId)
       return
     }
 
@@ -569,8 +594,9 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
     })
     setRegCountsByClass(prev => ({ ...prev, [classId]: (prev[classId] || 0) + 1 }))
 
-    // fetch ברקע לסנק עם השרת (לא מחכים לו)
-    fetchClassDetails(classId)
+    // רענון מדובאנס ברקע לסנק עם השרת (לא מחכים לו) — לא fetch מיידי, כדי שהוספה
+    // מהירה של הרבה מתאמנים ברצף לא תציף את הרשת (ראו הערה על fetchDetailsDebounceRef למעלה)
+    scheduleFetchClassDetails(classId)
   }
 
   // הסרת מתאמן רשום מהשיעור (מתאמן שהמאמן הוסיף בטעות, או שהוא לא הגיע).
@@ -604,7 +630,7 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
       .eq('status', 'present')
       .gte('checked_in_at', dayStart.toISOString())
       .lte('checked_in_at', dayEnd.toISOString())
-    fetchClassDetails(classId)
+    scheduleFetchClassDetails(classId)
   }
 
   // הוספת מתאמן ניסיון — אנונימי, לא נכנס ל-members. נשמר בטבלת trial_visits
@@ -637,7 +663,7 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
       return
     }
     setTrialForm(p => ({ ...p, [classId]: { name: '', phone: '' } }))
-    fetchClassDetails(classId)
+    scheduleFetchClassDetails(classId)
   }
 
   async function removeTrialVisit(classId, visitId) {
@@ -649,7 +675,7 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
       toast.error('שגיאה: ' + (error.message || ''))
       return
     }
-    fetchClassDetails(classId)
+    scheduleFetchClassDetails(classId)
   }
 
   async function searchVisitor(classId, query, classBranchId) {

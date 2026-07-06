@@ -4296,3 +4296,104 @@ Build ✓ (vite, 111 מודולים, ל-outDir זמני — מחיקת dist חס
 
 ## My last pending task
 **באג "מסך לבן תקוע" (סהר, 2.7.2026) — התיקון בפרודקשן, ממתין לאישור שדה בפועל.** אין עוד פעולה נדרשת מיידית; אם הבאג יחזור שוב אצל מאמן — כדאי לבקש ממנו לצלם מסך/לספר בדיוק מתי (כמה מתאמנים, כמה זמן נמשך) כדי לוודא שהתיקון אכן פותר את זה. לא נבדק עדיין תרחיש הצפה אמיתי (הרבה מתאמנים ברצף מהיר) — הבדיקה שבוצעה הייתה סניטי-בדיקה של מתאמן בודד, לא שחזור מלא של התקיעות.
+
+## 2026-07-06 — תיקון: בקשת הצטרפות חוזרת (איתי דביר) + מייל דחייה אוטומטי
+
+**מה קרה:** דודי דיווח שאיתי דביר "קופץ כל הזמן" כבקשת הצטרפות למרות דחיות חוזרות.
+אבחון דרך audit_log אישר: זה **אותו אדם אמיתי** (טלפון 0502428777, itai.dvir2013@gmail.com) —
+18 הגשות הרשמה בין 25.6–6.7.2026, כל כמה שעות. כל פעם: המזכירות דוחה תוך זמן קצר
+(רואים UPDATE ואז DELETE כמעט באותה שנייה — רצף ה-soft-delete+purge של rejectPending),
+הרשומה נמחקת לגמרי, והוא מגיש שוב. **סיבת הדחייה האמיתית:** הפרטים שלו לא מסונכרנים עם
+מערכת התשלומים (כנראה נרשם ע"י הורה, וחסרים פרטי הורה). המזכירות לא ידעה איך "לסגור" את
+זה כי אין דרך ליצור קשר איתו (התקשרנו — לא עונה), ומעולם לא קיבל פידבק על הדחייה
+מהאפליקציה — לכן פשוט המשיך לנסות.
+
+**Root cause בקוד:** דף ההרשמה החי (`src/components/RegisterPage.jsx`, מונטד ב-`/register`)
+לא בדק כפילות בכלל לפני יצירת auth+member. בדיקה כזו (RPC `check_member_registration_exists`,
+כולל תיקון deleted_at מ-2026-06-15) הייתה מחוברת רק לדף הרשמה ישן שלא בשימוש
+(`src/components/auth/RegisterPage.jsx` — dead code, לא מרוט ב-App.jsx).
+
+**מה תוקן (commit 9ebcc1e, נדחף ל-main ב-6.7.2026):**
+1. `src/components/RegisterPage.jsx` — לפני signUp+insert, קורא ל-`check_member_registration_exists`
+   (לכל מתאמן-עצמי ולכל ילד). אם יש כבר בקשה pending לאותו שם+טלפון — חוסם עם הודעה ברורה,
+   במקום ליצור רשומה נוספת.
+2. `src/components/trainer/AthleteManagement.jsx` (`rejectPending`) — עכשיו:
+   - שולף `lead` לפני המחיקה (לצורך המייל).
+   - `PendingLeadCard.handleReject` פותח `window.prompt` אופציונלי לסיבת הדחייה.
+   - שולח `send-rejection-email` (אם יש email ל-lead) עם `full_name` + `reason` אופציונלי.
+   משפיע על מאמן/מזכירה/מנהל (כולם משתמשים באותו קומפוננט). מתאמן — לא רלוונטי.
+3. `supabase/functions/send-rejection-email/index.ts` — פונקציית Edge חדשה (Resend, אותו
+   RESEND_API_KEY כמו send-approval-email), כוללת בלוק "מה חסר/מה צריך לתקן" אם ניתנה סיבה.
+
+**⚠️ פעולות פתוחות (לא בוצעו עדיין):**
+- **דודי ביקש "בוא נריץ בלי בדיקה" — דילגנו על בדיקה לוקאלית (npm run dev) לפי בקשתו המפורשת.**
+  ה-build המקומי (vite build) כן רץ ועבר נקי (עם outDir חלופי, כי ל-dist הרגיל יש בעיית
+  הרשאות unlink בסביבת ה-sandbox — לא קשור לקוד).
+- **הפונקציה `send-rejection-email` עדיין לא נפרסה ל-Supabase!** בלי דיפלוי, המייל האוטומטי
+  בדחייה *לא יעבוד בפרודקשן* למרות שהקוד רץ. צריך:
+  `cd /Users/dudibenzaken/teampact-app && npx supabase functions deploy send-rejection-email`
+- כדאי לוודא RESEND_API_KEY מוגדר ב-secrets (כנראה כן, כי send-approval-email כבר עובד).
+- הצעה שלא מומשה: מישהו מהצוות יכול פשוט להתקשר/לשלוח וואטסאפ ל-0502428777 כדי לסגור
+  את המקרה הספציפי הזה מיד, בלי לחכות לדיפלוי.
+- קבצים תלויים באוויר לא קשורים לתיקון הזה (לא נגעתי בהם, לתשומת לב): `EGRESS-FREE-TIER-PLAN.md`
+  (modified, לא ממני), `supabase/migrations/2026-06-15-purge-soft-deleted-members-and-rpc-fix.sql`
+  (untracked, תיעוד SQL שכבר רץ ידנית), כמה תיקיות `backup_*`/`dist-*`/`staging-schema*.sql` untracked.
+
+**My last pending task:** לוודא עם דודי שהוא פרס את `send-rejection-email` ל-Supabase,
+ולוודא ב-Vercel שה-build של commit 9ebcc1e עלה בהצלחה לפרודקשן. לא בוצעה בדיקה לוקאלית
+בפועל (על פי בקשת דודי לדלג) — אם יעלו תקלות ב-/register או בדחיית מתאמנים, זו הנקודה
+הראשונה לבדוק.
+
+**עדכון 6.7.2026 (המשך):** דודی פרס בהצלחה את `send-rejection-email` ל-Supabase
+(`npx supabase functions deploy send-rejection-email` — Deployed Functions on project
+pnicoluujpidguvniwub). כרגע: הקוד ב-main + הפונקציה פרוסה — הפיצ'ר אמור לעבוד מקצה לקצה.
+עדיין לא נבדק בפועל עם דחייה אמיתית (דודי ביקש לדלג על בדיקה לוקאלית). "My last pending task"
+מתעדכן: אין משימה פתוחה כרגע מעבר לניטור שהמייל באמת מגיע בפעם הראשונה שדוחים מישהו.
+
+## 2026-07-06 (המשך) — ניקוי: מאמן רגיל לא רואה/מטפל בבקשות הצטרפות + מחיקת קוד מת
+
+**הקשר:** דודי בדק בפועל (נכנס כמאמן סהר ואולגה) ולא ראה את בקשת ההצטרפות שבדק — וגילה
+שהוא לא ידע שמאמן רגיל בכלל לא אמור לראות בקשות שלא מתויגות אליו כ"מאמן מבוקש". בבדיקה
+עמוקה יותר התברר שמנגנון התיוג הזה מת לגמרי:
+
+- **אין בשום מקום בקוד החי מסלול שכותב `coach_id`/`requested_coach_name`/`requested_coach_names`
+  על `members`** — לא `src/components/RegisterPage.jsx` (הטופס הפעיל, אין בו בכלל שדה
+  "בחר מאמן"), לא `ImportAthletes.jsx`, לא ההוספה הידנית ב-`AthleteManagement.jsx`.
+  הפיצ'ר "בחירת מאמן בהרשמה" הוסר מהאפליקציה בשלב מוקדם ואף אחד לא ניקה את הקוד שהיה
+  תלוי בו.
+- **`LeadsManager.jsx`** (קומפוננטה שהציגה בקשות מסוננות-לפי-מאמן) **הייתה מיובאת ב-
+  `TrainerDashboard.jsx` אבל אף פעם לא הוצגה בפועל** (`<LeadsManager` לא מופיע בשום JSX
+  בכל הריפו) — קוד מת מלא, שריד.
+
+**מה נמחק/שונה (עדיין לא נדחף — ממתין לאישור סופי):**
+1. `src/components/trainer/AthleteManagement.jsx`:
+   - `matchesPendingCoach` (שהייתה מסננת בקשות pending לפי `coach_id`/`requested_coach_name`
+     עבור מאמן רגיל) הוחלפה בשורה אחת: `() => isAdmin`. מאמן רגיל לא רואה/מטפל בבקשות
+     הצטרפות בכלל יותר — לא בגלל שהמנגנון "ריק", אלא כי הוא הוסר לגמרי.
+   - הוסרו המשתנים המתים `myCoachIds`/`myCoachNames` והשאילתה שמילאה אותם (`coaches`
+     query עדיין קיימת, אבל רק לצורך `allowedBranchIds` — עדיין בשימוש לסינון "אילו
+     מתאמנים פעילים מאמן רגיל רואה", לא קשור לבקשות pending).
+   - הוסרה שורת תצוגה מתה "👤 מאמן מבוקש" ב-`PendingLeadCard` (המשתנה `coachName` תמיד
+     היה ריק בפועל).
+2. `src/components/trainer/TrainerDashboard.jsx` — הוסר `import LeadsManager from
+   './LeadsManager'` (import מת, הקומפוננטה לא נרנדרה בשום מקום).
+3. **`src/components/trainer/LeadsManager.jsx` נמחק לגמרי** (דודי אישר מפורשות אחרי
+   שווידאתי `grep` בכל הריפו: אפס הפניות חיצוניות, רק ההגדרה העצמית של הקובץ).
+
+**וידוא שבוצע לפני המחיקה (לא ניחוש):** `grep -rn "coach_id|requested_coach_name"` על כל
+`src/` — לפני המחיקה נמצאו רק קריאות (select/read) ב-`AthleteManagement.jsx` (הוסר),
+`LeadsManager.jsx` (נמחק), `notifyTargets.js` (יש fallback בטוח ל-`allTrainerUserIds()`
+כשאין coach מתויג — **לא נגעתי בזה**, זה עדיין תקין ומשמש להתראות push), ו-`ReportsManager.jsx`
+(select בלבד לצורך דוחות — **לא נגעתי**, קריאה תמימה של עמודה שקיימת בסכמה גם אם תמיד NULL).
+Build מקומי רץ 3 פעמים תוך כדי (115→114 מודולים אחרי הסרת ה-import, ואז זהה אחרי מחיקת
+הקובץ עצמו) — נקי בלי שגיאות בכל פעם.
+
+**המשך יחד עם SQL מהיום (2026-07-06-restrict-approve-reject-admin-secretary-same-branch.sql,
+עדיין לא רץ ב-Supabase ע"י דודי):** שתי השכבות ביחד = "רק מנהל + מזכירת-הסניף" — ה-DB
+חוסם בפועל (RLS+טריגר), וה-UI לא מציג למאמן רגיל שום דבר לטפל בו (במקום להציג טאב ריק
+שבכל מקרה לא עובד).
+
+**My last pending task:** לחכות לאישור דודי לדחוף את שינויי ה-2.7.2026 (RegisterPage
+duplicate-check, rejection email, SQL migration doc) **וגם** את הניקוי הזה (AthleteManagement
++ TrainerDashboard + מחיקת LeadsManager.jsx) ב-commit אחד או כמה, ולוודא שהוא בעצמו הריץ
+את ה-SQL ב-Supabase SQL Editor (עדיין לא רץ נכון לרגע זה).

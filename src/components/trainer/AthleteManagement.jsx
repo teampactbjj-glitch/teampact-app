@@ -161,15 +161,12 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   async function fetchAthletes() {
     setLoading(true)
 
-    // מאמן רגיל — סנן לסניפים שהוא מאמן בהם; admin רואה הכל
+    // מאמן רגיל — סנן לסניפים שהוא מאמן בהם; admin (וגם מזכירה, שנכנסת כ-isAdmin
+    // מה-Dashboard) רואה הכל
     let allowedBranchIds = null
-    let myCoachIds = []
-    let myCoachNames = []
     if (!isAdmin && trainerId) {
-      const { data: coaches } = await supabase.from('coaches').select('id, branch_id, name').eq('user_id', trainerId)
+      const { data: coaches } = await supabase.from('coaches').select('branch_id').eq('user_id', trainerId)
       allowedBranchIds = [...new Set((coaches || []).map(c => c.branch_id).filter(Boolean))]
-      myCoachIds   = (coaches || []).map(c => c.id).filter(Boolean)
-      myCoachNames = (coaches || []).map(c => c.name).filter(Boolean)
     }
 
     // מזכירה — יש branchFilter קבוע (הסניף שלה). מסננים כבר בשרת (במקום למשוך את כולם
@@ -203,15 +200,11 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       return bids.some(b => allowedBranchIds.includes(b))
     }
 
-    // למאמן רגיל — pending רק של מי שבחר אותו כמאמן. unlimited למנהל בלבד
-    const matchesPendingCoach = (m) => {
-      if (isAdmin) return true
-      if (m.subscription_type === 'unlimited') return false
-      if (m.coach_id && myCoachIds.includes(m.coach_id)) return true
-      if (m.requested_coach_name && myCoachNames.includes(m.requested_coach_name)) return true
-      if (Array.isArray(m.requested_coach_names) && m.requested_coach_names.some(n => myCoachNames.includes(n))) return true
-      return false
-    }
+    // בקשות הצטרפות — רק מנהל/מזכירה (isAdmin כאן כולל מזכירה, ר' TrainerDashboard).
+    // מאמן רגיל לא רואה/מטפל בבקשות הצטרפות כלל: (1) בטופס ההרשמה הנוכחי אין
+    // בחירת מאמן, אז אין דרך שבקשה תתויג למאמן ספציפי; (2) גם ב-DB (RLS + טריגר,
+    // ר' מיגרציית 2026-07-06) מאמן רגיל חסום מלאשר/לדחות בכל מקרה.
+    const matchesPendingCoach = () => isAdmin
 
     // matchesBranch — מסנן לפי branchFilter (למזכירה: רק מתאמנים מסניפה)
     const matchesBranch = (m) => {
@@ -1436,8 +1429,6 @@ function PendingLeadCard({ lead, branches, onApprove, onReject, showBranch = tru
   const [busy, setBusy] = useState(null)
   const bids = lead.branch_ids?.length ? lead.branch_ids : (lead.branch_id ? [lead.branch_id] : [])
   const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
-  const coachName = lead.requested_coach_name
-    || (Array.isArray(lead.requested_coach_names) ? lead.requested_coach_names.filter(Boolean).join(', ') : '')
   const original = lead.subscription_type || lead.membership_type
 
   async function handleApprove() {
@@ -1463,7 +1454,6 @@ function PendingLeadCard({ lead, branches, onApprove, onReject, showBranch = tru
           {lead.phone && <span> · {lead.phone}</span>}
         </p>
         {bnames && showBranch && <p className="text-xs text-blue-600 mt-0.5">📍 {bnames}</p>}
-        {coachName && <p className="text-xs text-purple-600 mt-0.5">👤 מאמן מבוקש: {coachName}</p>}
         {original && (
           <p className="text-xs text-emerald-700 mt-0.5">
             🏋️ נרשם ל-: {MEMBERSHIP_LABELS[original] || original}

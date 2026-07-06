@@ -648,7 +648,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     onPendingChange?.()
   }
 
-  async function rejectPending(id) {
+  async function rejectPending(id, reason) {
     // דחיית מתאמן ממתין → מחיקה מלאה ושחרור המייל להרשמה חוזרת.
     // על members יש טריגר tr_soft_delete (soft_delete.sql):
     //   • DELETE ראשון על רשומה פעילה → הופך ל-UPDATE deleted_at (soft-delete),
@@ -656,6 +656,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     //   • DELETE שני על רשומה שכבר מסומנת deleted_at → עובר באמת (purge),
     //     ומפעיל את הטריגר שמוחק את חשבון ה-auth ומשחרר את המייל.
     // לכן מוחקים פעמיים: שלב 1 = soft-delete, שלב 2 = purge אמיתי.
+    const lead = pendingAthletes.find(a => a.id === id)
     const step1 = await supabase.from('members').delete().eq('id', id)
     if (step1.error) {
       console.error('rejectPending soft-delete error:', step1.error)
@@ -667,6 +668,13 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     if (purgeErr) {
       // ה-soft-delete הצליח (המתאמן נעלם) — רק שחרור המייל נכשל. לא חוסם.
       console.warn('rejectPending purge warning (member removed, email not freed):', purgeErr)
+    }
+    // הודעה אוטומטית למתאמן שנדחה — מפנה אותו למזכירות/מנהל.
+    // רק אם יש מייל (למתאמנים-ילדים שנרשמו ע"י הורה אין email משלהם).
+    if (lead?.email) {
+      supabase.functions.invoke('send-rejection-email', {
+        body: { email: lead.email, full_name: lead.full_name, reason: reason || null },
+      }).catch(err => console.warn('send-rejection-email skipped:', err?.message || err))
     }
     fetchAthletes()
     onPendingChange?.()
@@ -1023,7 +1031,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                 branches={branches}
                 showBranch={!isSecretary}
                 onApprove={(sub) => approvePending(a.id, sub)}
-                onReject={() => rejectPending(a.id)}
+                onReject={(reason) => rejectPending(a.id, reason)}
               />
             ))}
           </ul>
@@ -1439,8 +1447,11 @@ function PendingLeadCard({ lead, branches, onApprove, onReject, showBranch = tru
   async function handleReject() {
     const ok = await confirm({ title: 'מחיקת בקשה', message: 'למחוק את הבקשה?', confirmText: 'מחק', danger: true })
     if (!ok) return
+    // סיבת דחייה (אופציונלי) — נכנסת למייל האוטומטי שנשלח למתאמן, כדי
+    // שיידע בדיוק מה חסר (למשל "יש להירשם עם פרטי ההורה") במקום הודעה גנרית.
+    const reason = (window.prompt('סיבת הדחייה (אופציונלי — תישלח למתאמן במייל):', '') || '').trim()
     setBusy('reject')
-    try { await onReject() } finally { setBusy(null) }
+    try { await onReject(reason || null) } finally { setBusy(null) }
   }
 
   return (

@@ -215,6 +215,33 @@ export default function RegisterPage() {
     setError(null)
     const email = form.email.trim().toLowerCase()
     const parentName = form.account_name.trim()
+    const phoneTrim = form.phone.trim()
+
+    // 0. מניעת בקשות כפולות — לפני שיוצרים auth+member, בודקים אם כבר קיימת
+    //    בקשת pending פעילה לאותו שם+טלפון (RPC כבר מסנן deleted_at, ראה
+    //    2026-06-15-purge-soft-deleted-members-and-rpc-fix.sql).
+    //    בלי הבדיקה הזו, הגשה כפולה (לחיצה נוספת מרוב חוסר סבלנות בזמן
+    //    שהמזכירות עוד בודקת את הבקשה הקודמת) יוצרת רשומת pending נוספת
+    //    לאותו אדם — זה מה שגרם ל"איתי דביר קופץ כל הזמן" למרות דחיות.
+    const namesToCheck = []
+    if (selfIsAthlete) namesToCheck.push(parentName)
+    if (form.is_guardian) for (const c of children) namesToCheck.push(c.full_name.trim())
+
+    for (const name of namesToCheck) {
+      const { data: existing, error: dupErr } = await supabase.rpc('check_member_registration_exists', {
+        p_phone: phoneTrim,
+        p_full_name: name,
+      })
+      if (dupErr) {
+        console.warn('check_member_registration_exists error:', dupErr)
+        continue // לא חוסמים על שגיאת בדיקה — רק על ממצא ודאי
+      }
+      if (existing?.exists && existing.status === 'pending') {
+        setLoading(false)
+        setError(`כבר קיימת בקשת הרשמה ממתינה לאישור עבור "${name}" ומספר טלפון זה. אין צורך להירשם שוב — יש להמתין לאישור הצוות.`)
+        return
+      }
+    }
 
     // 1. signUp אחד בלבד (חשבון ההורה/הבוגר) — זה מה שמונע אימייל כפול
     const { data: authData, error: authErr } = await supabase.auth.signUp({

@@ -129,7 +129,18 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   }
 
   // מחפש מוצר לפי שם רכיב — התאמה מדויקת לשם מוצר בודד
-  function getCompProductData(compName) {
+  // אם compProductId ניתן (רכיב מקושר למוצר קיים) — מתעדף התאמה מדויקת ב-id על פני שם
+  function getCompProductData(compName, compProductId = null) {
+    if (compProductId && allProducts.length) {
+      const linked = allProducts.find(p => p.id === compProductId)
+      if (linked) {
+        return {
+          sizes: Array.isArray(linked.available_sizes) ? linked.available_sizes.filter(Boolean) : [],
+          colors: Array.isArray(linked.available_colors) ? linked.available_colors.filter(Boolean) : [],
+          lengths: Array.isArray(linked.available_lengths) ? linked.available_lengths.filter(Boolean) : [],
+        }
+      }
+    }
     if (!compName || !allProducts.length) return { sizes: [], colors: [], lengths: [] }
     const normalize = s => (s || '').replace(/['''׳]/g, "'").trim()
     const normComp = normalize(compName)
@@ -145,13 +156,16 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   // פונקציות עזר לבדיקת מלאי — מודעות לפריט (component_name)
   // אם אין וריאנטים לאותו פריט → מציגים הכל כזמין (אין נתון מלאי)
 
-  function getCompVars(compName) {
+  // compProductId - רכיב מקושר למוצר קיים (למשל "הוסף חגורה" מקושר למוצר "חגורות")
+  // → שואב את אותו מלאי בדיוק שמוצג כשקונים את המוצר הזה בנפרד (מ-compVariantsMap שנטען לפי product_id)
+  function getCompVars(compName, compProductId = null) {
+    if (compProductId && compVariantsMap[compProductId]?.length) return compVariantsMap[compProductId]
     if (compName === null) {
       // מחזיר את כל הוריאנטים של המוצר לבדיקת מלאי —
       // מלאי יכול לשבת תחת component_name שונה (למשל 'חליפה') ולא בהכרח null
       return variants.length > 0 ? variants : []
     }
-    // חיפוש קודם ב-compVariantsMap (וריאנטים של מוצר רכיב נפרד בחבילה)
+    // חיפוש קודם ב-compVariantsMap (וריאנטים של מוצר רכיב נפרד בחבילה/מקושר)
     if (compVariantsMap[compName]?.length) return compVariantsMap[compName]
     return variants.filter(v => (v.component_name || null) === compName)
   }
@@ -160,15 +174,15 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   const colorsMatch = (a, b) => normalizeColorName(a) === normalizeColorName(b)
 
   // בדיקת זמינות צבע (ללא סינון מידה — צבע הוא הבחירה הראשונה)
-  const colorHasStock = (color, compName = null) => {
-    const cv = getCompVars(compName)
+  const colorHasStock = (color, compName = null, compProductId = null) => {
+    const cv = getCompVars(compName, compProductId)
     if (cv.length === 0) return true
     return cv.some(v => colorsMatch(v.color, color) && (v.stock || 0) > 0)
   }
 
   // בדיקת זמינות אורך — מסונן לפי צבע שנבחר
-  const lengthHasStock = (len, forColor = null, compName = null) => {
-    const cv = getCompVars(compName)
+  const lengthHasStock = (len, forColor = null, compName = null, compProductId = null) => {
+    const cv = getCompVars(compName, compProductId)
     if (cv.length === 0) return true
     return cv.some(v =>
       v.length === len &&
@@ -178,8 +192,8 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   }
 
   // בדיקת זמינות מידה — מסוננת לפי צבע + אורך שנבחרו
-  const sizeHasStock = (size, forColor = null, forLength = null, compName = null) => {
-    const cv = getCompVars(compName)
+  const sizeHasStock = (size, forColor = null, forLength = null, compName = null, compProductId = null) => {
+    const cv = getCompVars(compName, compProductId)
     if (cv.length === 0) return true
     return cv.some(v =>
       v.size === size &&
@@ -383,12 +397,22 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
       for (let i = 0; i < optionComponents.length; i++) {
         const comp = optionComponents[i]
         const sel = componentSelections[i] || {}
-        const compSizes = Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
-        const compColors = Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
         // ולידציה: סמוך על DB (כמו הrender) ולא על JSON — מכנס עם length=null לא יחייב בחירת אורך
-        const cVarsForVal = getCompVars(comp.name || null)
-        const compLengths = cVarsForVal.length > 0
+        // רכיב מקושר למוצר קיים (comp.product_id) → המידות/צבעים/אורכים נשאבים מהמלאי האמיתי שלו
+        const cVarsForVal = getCompVars(comp.name || null, comp.product_id || null)
+        const hasCVForVal = cVarsForVal.length > 0
+        const compDataForVal = !hasCVForVal ? getCompProductData(comp.name, comp.product_id || null) : { sizes: [], colors: [], lengths: [] }
+        const compSizes = hasCVForVal
+          ? [...new Set(cVarsForVal.map(v => v.size).filter(Boolean))]
+          : compDataForVal.sizes.length > 0 ? compDataForVal.sizes
+          : Array.isArray(comp.sizes) ? comp.sizes.filter(Boolean) : []
+        const compColors = hasCVForVal
+          ? [...new Set(cVarsForVal.map(v => v.color).filter(Boolean))]
+          : compDataForVal.colors.length > 0 ? compDataForVal.colors
+          : Array.isArray(comp.colors) ? comp.colors.filter(Boolean) : []
+        const compLengths = hasCVForVal
           ? [...new Set(cVarsForVal.map(v => v.length).filter(Boolean))]
+          : compDataForVal.lengths.length > 0 ? compDataForVal.lengths
           : Array.isArray(comp.lengths) ? comp.lengths.filter(Boolean) : []
         if (compSizes.length && !sel.size) { setValidationError(`יש לבחור מידה עבור "${comp.name}"`); return }
         if (compColors.length && !sel.color) { setValidationError(`יש לבחור צבע עבור "${comp.name}"`); return }
@@ -777,12 +801,12 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
         <div className="space-y-4">
           {optionComponents.map((comp, idx) => {
             const cName = comp.name || null
-            const cVars = getCompVars(cName)
+            const cVars = getCompVars(cName, comp.product_id || null)
             const hasCV = cVars.length > 0
             const sel = componentSelections[idx] || {}
 
-            // fallback ממוצר מתאים (אם אין variants לרכיב)
-            const compProductData = !hasCV ? getCompProductData(comp.name) : { sizes: [], colors: [], lengths: [] }
+            // fallback ממוצר מתאים (אם אין variants לרכיב) — עדיפות לקישור מפורש (comp.product_id)
+            const compProductData = !hasCV ? getCompProductData(comp.name, comp.product_id || null) : { sizes: [], colors: [], lengths: [] }
 
             // צבעים — מ-variants → מוצר מתאים → JSON
             let compColors = hasCV
@@ -834,7 +858,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                   const isBelt = (comp.name || '').includes('חגורה')
                   const renderColorBtn = (color) => {
                     const isSelected = sel.color === color
-                    const inStock = colorHasStock(color, cName)
+                    const inStock = colorHasStock(color, cName, comp.product_id || null)
                     return (
                       <button
                         key={color}
@@ -903,7 +927,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                       <div className="flex flex-wrap gap-1.5">
                         {compLengths.map(len => {
                           const isSelected = sel.length === len
-                          const inStock = lengthHasStock(len, sel.color, cName)
+                          const inStock = lengthHasStock(len, sel.color, cName, comp.product_id || null)
                           return (
                             <button
                               key={len}
@@ -945,7 +969,7 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
                       <div className="flex flex-wrap gap-1.5">
                         {compSizes.map(size => {
                           const isSelected = sel.size === size
-                          const inStock = sizeHasStock(size, sel.color, sel.length, cName)
+                          const inStock = sizeHasStock(size, sel.color, sel.length, cName, comp.product_id || null)
                           return (
                             <button
                               key={size}

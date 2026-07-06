@@ -635,6 +635,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                     .filter(c => c && c.name)
                     .map(c => ({
                       name: c.name || '',
+                      product_id: c.product_id || null, // קישור למוצר קיים - שיתוף אותו מלאי בדיוק (למשל רכיב "חגורה")
                       sizes: Array.isArray(c.sizes) ? c.sizes.filter(Boolean) : [],
                       colors: Array.isArray(c.colors) ? c.colors.filter(Boolean) : [],
                       lengths: Array.isArray(c.lengths) ? c.lengths.filter(Boolean) : [],
@@ -741,11 +742,14 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
         // חבילה עם רכיבים — מנכים לכל רכיב בנפרד
         if (Array.isArray(order.component_selections) && order.component_selections.length > 0) {
           for (const comp of order.component_selections) {
-            if (!comp.component_name) continue
+            if (!comp.component_name && !comp.product_id) continue
+            // רכיב מקושר למוצר קיים (למשל "הוסף חגורה") — מנכים מהמלאי האמיתי של אותו מוצר,
+            // בדיוק כמו רכישה בודדת שלו (product_id משלו, component_name=null)
+            const linkedProductId = comp.product_id || null
             let q = supabase.from('product_variants')
               .select('id, stock')
-              .eq('product_id', order.product_id)
-              .eq('component_name', comp.component_name)
+              .eq('product_id', linkedProductId || order.product_id)
+            q = linkedProductId ? q.is('component_name', null) : q.eq('component_name', comp.component_name)
             if (comp.size)   q = q.eq('size', comp.size)
             else             q = q.is('size', null)
             if (comp.color)  q = q.eq('color', comp.color)
@@ -758,7 +762,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
               const newStock = Math.max(0, (parseInt(v.stock) || 0) - (order.quantity || 1))
               await supabase.from('product_variants').update({ stock: newStock }).eq('id', v.id)
               setInventoryData(prev => {
-                const pid = order.product_id
+                const pid = linkedProductId || order.product_id
                 if (!prev[pid]) return prev
                 return { ...prev, [pid]: prev[pid].map(x => x.id === v.id ? { ...x, stock: newStock } : x) }
               })
@@ -1606,7 +1610,39 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                                   : o),
                               }))}>✕</button>
                           </div>
-                          {/* מידות של הרכיב - tags עם Enter */}
+
+                          {/* קישור למוצר קיים - שיתוף אותו מלאי בדיוק (למשל: רכיב "חגורה" מקושר למוצר "חגורות") */}
+                          <select
+                            className="w-full border rounded px-2 py-1 text-[10px] bg-white"
+                            value={comp.product_id || ''}
+                            onChange={e => {
+                              const pid = e.target.value || null
+                              const linkedProduct = products.find(pr => pr.id === pid)
+                              setForm(p => ({
+                                ...p,
+                                purchase_options: p.purchase_options.map((o, i) => i === idx
+                                  ? { ...o, components: o.components.map((c, ci) => ci === compIdx
+                                      ? { ...c, product_id: pid, name: c.name || linkedProduct?.title || c.name }
+                                      : c) }
+                                  : o),
+                              }))
+                            }}>
+                            <option value="">— בלי קישור (מידות/צבעים ידניים) —</option>
+                            {products.filter(p => p.type === 'product').map(p => (
+                              <option key={p.id} value={p.id}>
+                                {p.id === editingId ? `🔗 קשר למלאי של המוצר הזה עצמו (${p.title})` : `🔗 קשר למלאי של: ${p.title}`}
+                              </option>
+                            ))}
+                          </select>
+                          {comp.product_id && (
+                            <p className="text-[10px] text-emerald-700 bg-emerald-100 rounded px-2 py-1">
+                              ✅ המידות/צבעים/מלאי יימשכו אוטומטית מהמוצר המקושר — אותו מלאי בדיוק כמו קנייה בנפרד שלו.
+                            </p>
+                          )}
+
+                          {/* מידות של הרכיב - tags עם Enter (רק אם אין קישור למוצר קיים) */}
+                          {!comp.product_id && (
+                          <>
                           <div>
                             <label className="text-[10px] text-gray-600 block mb-0.5">
                               📏 מידות - הקלד מידה ולחץ Enter
@@ -1779,6 +1815,8 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                               })}
                             </div>
                           </div>
+                          </>
+                          )}
                         </div>
                       ))}
                     </div>

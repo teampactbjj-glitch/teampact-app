@@ -1090,6 +1090,22 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
             if (data?.length) map[item.product_id] = data
           }
         }
+
+        // רכיבים בתוך "אפשרויות רכישה" שמקושרים למוצר קיים (למשל "הוסף חגורה" מקושר למוצר "חגורות")
+        // — טוענים את המלאי האמיתי של המוצר המקושר, כדי שישתמש באותו מלאי בדיוק כמו רכישה בודדת שלו
+        const linkedProductIds = new Set()
+        for (const opt of (prod?.purchase_options || [])) {
+          for (const comp of (opt.components || [])) {
+            if (comp?.product_id) linkedProductIds.add(comp.product_id)
+          }
+        }
+        for (const pid of linkedProductIds) {
+          if (map[pid]) continue
+          const { data } = await supabase.from('product_variants')
+            .select('id, size, color, length, component_name, stock, active')
+            .eq('product_id', pid).eq('active', true)
+          if (data?.length) map[pid] = data
+        }
       }
 
       setCompVariantsMap(map)

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import InstallBanner from './InstallBanner'
 import { notifyPush } from '../lib/notifyPush'
@@ -116,6 +116,15 @@ export default function RegisterPage() {
   const [error, setError] = useState(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
+  // גלילה אוטומטית להודעת שגיאה כשהיא מופיעה — הטופס ארוך, וההודעה (כולל
+  // "הטלפון כבר קיים") הייתה יכולה להישאר מחוץ לתצוגה בלי שהמשתמש ישים לב
+  // שמשהו בכלל קרה בלחיצה על שליחה.
+  const errorRef = useRef(null)
+  useEffect(() => {
+    if (error && errorRef.current) {
+      errorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [error])
 
   useEffect(() => {
     supabase.from('branches').select('id, name').eq('hidden', false).then(({ data }) => setBranches(data || []))
@@ -543,7 +552,15 @@ export default function RegisterPage() {
         </div>
 
         {error && (
-          <p role="alert" aria-live="assertive" className="text-red-600 text-sm text-center font-medium">{error}</p>
+          <div
+            ref={errorRef}
+            role="alert"
+            aria-live="assertive"
+            className="bg-red-50 border-2 border-red-400 rounded-xl px-4 py-3 flex items-start gap-2"
+          >
+            <span className="text-xl leading-none" aria-hidden="true">⚠️</span>
+            <p className="text-red-700 text-sm font-bold text-right leading-relaxed">{error}</p>
+          </div>
         )}
 
         <button type="button" onClick={handleSubmit} disabled={loading} aria-busy={loading || undefined}

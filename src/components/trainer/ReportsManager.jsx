@@ -289,7 +289,10 @@ export default function ReportsManager({ isAdmin, profile }) {
           .order('id', { ascending: true })),
         supabase.from('coaches').select('id, name, branch_id, user_id').range(0, ROW_LIMIT - 1),
         supabase.from('classes').select('id, name, class_type, coach_id, coach_name, branch_id, day_of_week, start_time, duration_minutes').range(0, ROW_LIMIT - 1),
-        supabase.from('branches').select('id, name').range(0, ROW_LIMIT - 1),
+        // hidden נוסף (08.07.2026): PromotionEvents מקבל את הסניפים האלה כ-props
+        // (במקום למשוך שוב בעצמו) וצריך את hidden כדי לשחזר בזיכרון את הסינון
+        // hidden=false שהיה לו קודם בשאילתה העצמאית שלו.
+        supabase.from('branches').select('id, name, hidden').range(0, ROW_LIMIT - 1),
         // checkins: מסנן בצד השרת לפי 180 יום. דפדוף (>1000 שורות) עם order יציב.
         fetchAllPaged(() => supabase
           .from('checkins')
@@ -2544,6 +2547,8 @@ export default function ReportsManager({ isAdmin, profile }) {
           profile={profile}
           isAdmin={isAdmin}
           initialCandidateMemberIds={initialEventCandidates}
+          members={members}
+          branches={branches}
         />
       </div>
       </>}

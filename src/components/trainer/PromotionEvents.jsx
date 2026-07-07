@@ -102,12 +102,13 @@ function nextBeltDefault(currentBelt) {
 }
 
 // ============================================================
-export default function PromotionEvents({ profile, isAdmin, onClose, initialCandidateMemberIds }) {
+// egress fix (08.07.2026): members/branches מגיעים כ-props מ-ReportsManager (שכבר טוען
+// אותם) במקום ששני הרכיבים ימשכו את אותו מידע בנפרד מהשרת בכל פתיחת "דוחות". ראו הערה
+// מלאה ליד ה-useMemo של members/branches למטה. יחיד-שימוש בכל הריפו — בדוק לפני שינוי.
+export default function PromotionEvents({ profile, isAdmin, onClose, initialCandidateMemberIds, members: allMembersFromParent = [], branches: allBranchesFromParent = [] }) {
   const [loading, setLoading]   = useState(true)
   const [events, setEvents]     = useState([])
   const [candidates, setCandidates] = useState([]) // כל ה-candidates של כל האירועים שנטענו
-  const [members, setMembers]   = useState([])     // כל המתאמנים הפעילים (לבחירה)
-  const [branches, setBranches] = useState([])
   const [err, setErr]           = useState('')
   const [editingEvent, setEditingEvent] = useState(null) // null | { id?, name, event_date, branch_ids, notes }
   const [pendingNewEvent, setPendingNewEvent] = useState(null) // אם נכנסנו עם initialCandidateMemberIds
@@ -134,30 +135,46 @@ export default function PromotionEvents({ profile, isAdmin, onClose, initialCand
     setLoading(true)
     setErr('')
     try {
-      const [eventsRes, candsRes, memsRes, branchesRes] = await Promise.all([
+      // egress fix (08.07.2026): members/branches הוסרו מכאן — ראו הערה ליד ה-useMemo
+      // למטה. נשארו רק שתי השאילתות שבאמת ייחודיות למסך הזה (לא נשלפות ע"י ReportsManager
+      // באותו סינון/scope): promotion_events (כל הסוגים, לא רק kids) ו-promotion_candidates.
+      const [eventsRes, candsRes] = await Promise.all([
         supabase.from('promotion_events')
           .select('*').is('deleted_at', null)
           .order('event_date', { ascending: false }),
         supabase.from('promotion_candidates').select('*'),
-        supabase.from('members')
-          .select('id, full_name, belt, belt_stripes, belt_category, belt_received_at, branch_id, branch_ids, trains_gi, trains_nogi, status, deleted_at')
-          .neq('status', 'pending').neq('status', 'pending_deletion').is('deleted_at', null)
-          .order('full_name'),
-        supabase.from('branches').select('id, name').eq('hidden', false).order('name'),
       ])
       if (eventsRes.error) throw eventsRes.error
       if (candsRes.error) throw candsRes.error
-      if (memsRes.error) throw memsRes.error
       setEvents(eventsRes.data || [])
       setCandidates(candsRes.data || [])
-      setMembers(memsRes.data || [])
-      setBranches(branchesRes.data || [])
     } catch (e) {
       setErr(e?.message || String(e))
     } finally {
       setLoading(false)
     }
   }
+
+  // egress fix (08.07.2026): לפני התיקון, המסך הזה משך בעצמו members+branches מהשרת —
+  // בדיוק אותו מידע ש-ReportsManager (ההורה היחיד שמארח את הרכיב הזה בכל הריפו) כבר
+  // טען שניות קודם. כלומר כל פתיחה של "דוחות" הייתה מושכת members פעמיים ו-branches
+  // פעמיים מהשרת. עכשיו מקבלים אותם כ-props מההורה, ומשחזרים כאן (בזיכרון, בלי רשת)
+  // בדיוק את אותו הסינון שהיה בשאילתות המקוריות:
+  //   members: לא pending / pending_deletion, לא נמחק, ממוין לפי שם (כמו .order('full_name'))
+  //   branches: לא מוסתר (hidden=false) — ReportsManager נדרש להוסיף עמודת hidden ל-select שלו
+  const members = useMemo(() => {
+    return allMembersFromParent
+      .filter(m => m.status !== 'pending' && m.status !== 'pending_deletion' && !m.deleted_at)
+      .slice()
+      .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '', 'he'))
+  }, [allMembersFromParent])
+
+  const branches = useMemo(() => {
+    return allBranchesFromParent
+      .filter(b => !b.hidden)
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'))
+  }, [allBranchesFromParent])
 
   // ── pivots ──────────────────────────────────────────────────
   const candByEvent = useMemo(() => {

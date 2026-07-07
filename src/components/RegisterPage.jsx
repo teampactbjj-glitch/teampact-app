@@ -243,6 +243,23 @@ export default function RegisterPage() {
       }
     }
 
+    // 0.5 בדיקה רחבה יותר — לפי טלפון בלבד, בלי קשר לשם ובלי קשר לסטטוס (גם אם
+    // כבר approved/active, לא רק pending). מונעת רישום כפול כשמישהו שכבר יש לו
+    // חשבון ממלא את הטופס הציבורי שוב (בטעות, או כי שכח שנרשם). לא חוסמת הורים
+    // שרושמים כמה ילדים באותה הגשה — זה כבר נתמך בטופס הזה עצמו (checkbox
+    // "אני הורה"), לא דרך הגשה חוזרת. מחזירה רק true/false, בלי שם — כדי לא
+    // לחשוף מי רשום איזה טלפון למי שממלא את הטופס הציבורי.
+    const { data: phoneCheck, error: phoneErr } = await supabase.rpc('check_phone_registrations', {
+      p_phone: phoneTrim,
+    })
+    if (phoneErr) {
+      console.warn('check_phone_registrations error:', phoneErr)
+    } else if (phoneCheck?.exists) {
+      setLoading(false)
+      setError('מספר הטלפון הזה כבר רשום במערכת. כבר יש לך גישה לאפליקציה? היכנס והוסף ילד/ה נוסף/ת מהפרופיל שלך. אחרת — פנה למאמן או למזכירות.')
+      return
+    }
+
     // 1. signUp אחד בלבד (חשבון ההורה/הבוגר) — זה מה שמונע אימייל כפול
     const { data: authData, error: authErr } = await supabase.auth.signUp({
       email,

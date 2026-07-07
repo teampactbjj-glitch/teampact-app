@@ -24,6 +24,10 @@ const DAYS_HE_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 // (חייב להיות זהה לערך ב-ClassSchedule.jsx.)
 const LATE_REGISTER_GRACE_MIN = 30
 
+// egress fix (07.07.2026): cache+cooldown ל-fetchAnnouncements — ראו הערה מלאה ליד הפונקציה.
+const ANN_CACHE_KEY = 'tp_announcements_cache_v1'
+const ANN_COOLDOWN_MS = 45000
+
 // עזר בדיקה — עובד רק במצב פיתוח (npm run dev). בפרודקשן import.meta.env.DEV
 // הוא false ו-getNow() מתנהג בדיוק כמו new Date(). מאפשר ?fakeNow=2026-05-03T18:10
 function getNow() {
@@ -2532,6 +2536,8 @@ export default function AthleteDashboard({ profile }) {
   const confirm = useConfirm()
   const [activeTab, setActiveTab]           = useState('schedule')
   const [announcements, setAnnouncements]   = useState([])
+  // egress fix (07.07.2026): cooldown+cache ל-fetchAnnouncements — ראו הערה ליד הפונקציה.
+  const annFetchAtRef = useRef(0)
   const [loading, setLoading]               = useState(true)
   const [cartCount, setCartCount]           = useState(0)
   const [member, setMember]                 = useState(null)
@@ -2578,6 +2584,13 @@ export default function AthleteDashboard({ profile }) {
         const focus = qIdx > -1 ? new URLSearchParams(raw.slice(qIdx + 1)).get('focus') : null
         setFocusAnnouncementId(focus || null)
         setActiveTab('announcements')
+        // חשוב: הגעה מהתראת push חייבת תמיד למשוך גרסה טרייה, בלי קשר ל-cooldown.
+        // בלי זה — אם האפליקציה כבר משכה הודעות ב-45 השניות האחרונות (למשל הייתה
+        // פתוחה ברקע), ה-fetch יידלג, ההודעה החדשה שה-push מדבר עליה לא תהיה עדיין
+        // ב-state, אפקט הגלילה ב-AnnouncementsTab ירוץ פעם אחת (תלוי ב-focusId),
+        // לא ימצא את האלמנט, ו-onFocusConsumed ינקה את ה-focusId — כך שגם כשה-fetch
+        // הרגיל בסוף יביא את ההודעה, אין יותר מי שיגלול אליה. לכן — force תמיד כאן.
+        if (focus) fetchAnnouncements(true)
         return
       }
       const h = raw.replace('#', '')
@@ -2621,7 +2634,20 @@ export default function AthleteDashboard({ profile }) {
   }, [activeTab, announcements, lastSeenKey])
 
   useEffect(() => {
-    if (profile?.id) { fetchMyClasses(); fetchAnnouncements(); fetchBranches() }
+    if (profile?.id) {
+      fetchMyClasses()
+      // בעלייה ראשונית: לצייר מיד מה-cache (אם קיים) כדי שהמסך לא יהיה ריק,
+      // ואז למשוך גרסה טרייה מהשרת (force=true, בלי cooldown — זו הפעם הראשונה בסשן).
+      try {
+        const cached = window.localStorage.getItem(ANN_CACHE_KEY)
+        if (cached) {
+          const parsed = JSON.parse(cached)
+          if (Array.isArray(parsed?.data)) setAnnouncements(parsed.data)
+        }
+      } catch { /* cache פגום — מתעלמים, ה-fetch הרגיל ימלא */ }
+      fetchAnnouncements(true)
+      fetchBranches()
+    }
   }, [profile])
 
   // רישומי השיעורים תלויים במתאמן הפעיל — מתרעננים בבחירה הראשונית ובכל החלפת ילד.
@@ -2632,6 +2658,8 @@ export default function AthleteDashboard({ profile }) {
   useEffect(() => {
     if (!profile?.id) return
     const ch = supabase.channel('announcements-athlete')
+      // בלי force — אם כבר משכנו לאחרונה (תוך ANN_COOLDOWN_MS), מדלגים.
+      // מונע "מבול" שבו כל עריכה בודדת של מנהל מרעננת בבת אחת את כל 244 הלקוחות.
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => fetchAnnouncements())
       .subscribe()
     const onVis = () => {
@@ -2701,13 +2729,26 @@ export default function AthleteDashboard({ profile }) {
     }
   }
 
-  async function fetchAnnouncements() {
+  // egress: fetchAnnouncements רץ על מאונט + כל visibilitychange + כל Realtime event
+  // (על ×244 לקוחות), עם 2 שאילתות כבדות (עמודות טקסט/JSON ארוכות: content,
+  // description_long, features, bundle_items, color_images, purchase_options).
+  // נמצא ב-01.07.2026 כחשוד המרכזי ב-Cached Egress; אומת ב-07.07.2026 מול
+  // Logs Explorer בפועל — זה ה-endpoint עם הכי הרבה קריאות/שעה מכל האפליקציה,
+  // ואף גדל מאז (כי מעולם לא טופל). התיקון: cooldown של ANN_COOLDOWN_MS —
+  // לא למשוך שוב אם כבר משכנו לאחרונה (חוסך את המבול מ-focus חוזר/Realtime
+  // burst), plus cache ב-localStorage לציור מיידי במאונט לפני שהרשת עונה.
+  // force=true (רק בעליה הראשונית לסשן) מדלג על ה-cooldown ומושך תמיד טרי.
+  async function fetchAnnouncements(force = false) {
+    if (!force && Date.now() - annFetchAtRef.current < ANN_COOLDOWN_MS) return
     const statusFilter = 'status.eq.approved,status.is.null'
     const [itemsRes, generalRes] = await Promise.all([
       supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, event_start_time, event_end_time, event_location, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items, links, allow_app_registration').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
       supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids, links').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
     ])
-    setAnnouncements([...(itemsRes.data || []), ...(generalRes.data || [])])
+    annFetchAtRef.current = Date.now()
+    const merged = [...(itemsRes.data || []), ...(generalRes.data || [])]
+    setAnnouncements(merged)
+    try { window.localStorage.setItem(ANN_CACHE_KEY, JSON.stringify({ data: merged, at: Date.now() })) } catch { /* localStorage מלא/חסום — לא קריטי */ }
   }
 
   // החלפת המתאמן הפעיל (מתג ההורה) — מעדכן member, שומר ב-localStorage,

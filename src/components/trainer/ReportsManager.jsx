@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../../lib/supabase'
 import { fetchAllPaged } from '../../lib/fetchAllPaged'
@@ -222,7 +222,12 @@ function SectionCard({ title, icon, children, footer }) {
 
 // ===== Main Component =====
 export default function ReportsManager({ isAdmin, profile }) {
-  const [loading, setLoading] = useState(true)
+  // 08.07.2026 ("גל ב' אמיתי"): לא מושכים כלום אוטומטית בכניסה לטאב "דוחות" —
+  // המשתמש צריך ללחוץ מפורשות "טען דוחות". hasLoaded=false = עדיין לא נלחץ.
+  // (הטאב ממילא unmount/remount בכל מעבר טאב ב-TrainerDashboard, אז זה גם אומר
+  // שבכל כניסה מחדש לטאב תידרש לחיצה מחדש — בדיוק מה שדודי ביקש.)
+  const [loading, setLoading] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [err, setErr] = useState('')
   // סלייד אחד מאוחד שמשפיע על כל הדוחות (נרשמים חדשים + נטישה + נוכחות)
   const [periodDays, setPeriodDays] = useState(30)
@@ -236,6 +241,11 @@ export default function ReportsManager({ isAdmin, profile }) {
   // 08.07.2026: יחידות אימון אמיתיות (checkins) לכל ילד מאז קבלת החגורה הנוכחית —
   // Map<member_id, units>, ממולא מ-RPC kids_units_since_belt(). ראו kidsReadyForPromotion.
   const [kidsUnitsMap, setKidsUnitsMap] = useState(() => new Map())
+  // 08.07.2026: אותו רעיון עבור "מועמדים לקידום" (כולל בוגרים) — הישן ספר checkins
+  // מתוך מערך שמוגבל ל-180 יום, מה שיישבר בשקט ברגע שההיסטוריה תעבור 180 יום.
+  // Map<member_id, {observedUnits, firstCheckinMs, calibUnits}>, ממולא מ-RPC
+  // bjj_units_since_belt() שמחשב בשרת בלי הגבלת טווח. ראו promotionSuggestions.
+  const [bjjUnitsMap, setBjjUnitsMap] = useState(() => new Map())
   const [coaches, setCoaches] = useState([])
   const [classes, setClasses] = useState([]) // משמש גם כקבוצות (לפי המודל הקיים)
   const [branches, setBranches] = useState([])
@@ -272,8 +282,9 @@ export default function ReportsManager({ isAdmin, profile }) {
   // editingHistoryMember: כשהמנהל/מאמן לוחץ ✏️ ליד שורה בדוח → modal של BeltHistoryEditor
   const [editingHistoryMember, setEditingHistoryMember] = useState(null)
 
-  // טעינה: מנהל רואה הכל. מאמן רגיל גם — אבל הסינון לקואצ' שלו נעשה ב-useMemo (filteredMembers).
-  useEffect(() => { if (isAdmin || profile?.id) fetchAll() }, [isAdmin, profile?.id])
+  // 08.07.2026: הוסרה הטעינה האוטומטית שהייתה כאן (useEffect שמריץ fetchAll() בכל
+  // מאונט). עכשיו הטעינה קורית רק בלחיצה מפורשת על "טען דוחות" (ראו מסך השער למטה,
+  // לפני ה-return הראשי, וכפתור "רענן דוחות" בכותרת אחרי טעינה ראשונה).
 
   async function fetchAll() {
     setLoading(true)
@@ -390,6 +401,30 @@ export default function ReportsManager({ isAdmin, profile }) {
         setKidsUnitsMap(new Map((kidsUnitsRpcRes.data || []).map(r => [r.member_id, Number(r.units) || 0])))
       }
 
+      // 08.07.2026: RPC נפרד ל"מועמדים לקידום" (כולל בוגרים) — מחשב בשרת בלי
+      // הגבלת 180 יום. חייב לרוץ אחרי ש-classes נטען (צריך את bjj_class_ids),
+      // ולכן קריאה נפרדת (לא בתוך ה-Promise.all הראשי). קלט: מערך class_id-ים
+      // שסווגו BJJ ע"י detectDiscipline (אותה לוגיקה בדיוק שמשמשת גם היום ב-
+      // promotionSuggestions) — כדי לא לשכפל את לוגיקת הסיווג בתוך ה-SQL.
+      const bjjClassIdsArr = (clsRes.data || [])
+        .filter(c => {
+          const explicit = (c.class_type || '').toLowerCase()
+          const disc = explicit && explicit !== 'regular' ? detectDiscipline(explicit) : detectDiscipline(c.name || '')
+          return disc === 'BJJ'
+        })
+        .map(c => c.id)
+      const bjjUnitsRpcRes = await supabase.rpc('bjj_units_since_belt', { p_class_ids: bjjClassIdsArr })
+      if (bjjUnitsRpcRes.error) {
+        console.error('bjj_units_since_belt RPC error (ייתכן שהמיגרציה טרם רצה):', bjjUnitsRpcRes.error)
+        setBjjUnitsMap(new Map())
+      } else {
+        setBjjUnitsMap(new Map((bjjUnitsRpcRes.data || []).map(r => [r.member_id, {
+          observedUnits: Number(r.observed_units) || 0,
+          firstCheckinMs: r.first_checkin_ms != null ? Number(r.first_checkin_ms) : null,
+          calibUnits: Number(r.calib_units) || 0,
+        }])))
+      }
+
       // לוג אבחון: מאפשר לוודא בקונסול של הדפדפן (Safari → Develop → Show Web Inspector)
       // שכל הצ'ק-אינים נטענו ולא נחתכו.
       // אם מספר ה-checkins מתקרב ל-100000 — צריך להגדיל את ROW_LIMIT או לעבור לדפדוף.
@@ -423,6 +458,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       setErr(e.message || 'שגיאה בטעינת הדוחות')
     } finally {
       setLoading(false)
+      setHasLoaded(true) // גם בשגיאה — כדי לא לחזור למסך השער, אלא להציג את הודעת השגיאה
     }
   }
 
@@ -1017,28 +1053,12 @@ export default function ReportsManager({ isAdmin, profile }) {
         earliestByMemberBelt.set(key, h.received_at)
       }
     }
-    // מספרת checkins לכל athlete_id, רק שיעורי BJJ שהסתיימו
-    const bjjClassIds = new Set(
-      classes.filter(c => {
-        const explicit = (c.class_type || '').toLowerCase()
-        const disc = explicit && explicit !== 'regular' ? detectDiscipline(explicit) : detectDiscipline(c.name || '')
-        return disc === 'BJJ'
-      }).map(c => c.id)
-    )
-    // אגירת checkins לפי athlete_id (רק BJJ + השיעור הסתיים בפועל)
+    // 08.07.2026: המספירה עברה מ-checkins המוגבל ל-180 יום ל-RPC ייעודי
+    // (bjj_units_since_belt) שמחשב בשרת בלי הגבלת טווח — ראו bjjUnitsMap.
+    // כך זה לא נשבר בשקט ברגע שההיסטוריה תעבור 180 יום (ראו הערה ב-MEMORY.md
+    // 08.07.2026). הנוסחה עצמה (backfill/הקרנה אחורה) נשארה זהה, רק המקור
+    // לנתונים הגולמיים השתנה.
     const nowMs = Date.now()
-    const unitsByMember = new Map() // member_id → { totalUnits, unitsSinceBelt }
-    for (const c of checkins) {
-      if (!bjjClassIds.has(c.class_id)) continue
-      const cls = classById.get(c.class_id)
-      if (!cls) continue
-      const endMs = classEndMs(c.checkin_date, cls.start_time, cls.duration_minutes)
-      if (endMs == null || endMs > nowMs) continue
-      const cur = unitsByMember.get(c.athlete_id) || { totalUnits: 0, unitsSinceBelt: 0, _endMs: [] }
-      cur.totalUnits++
-      cur._endMs.push(endMs)
-      unitsByMember.set(c.athlete_id, cur)
-    }
 
     // עבור כל מתאמן Gi עם חגורה — מחשבים years_on_belt + units_since_belt + score
     // **חשוב:** מציגים את כולם, גם בלי threshold (כמו אדומה/red) — recommendation='no_threshold'
@@ -1057,12 +1077,10 @@ export default function ReportsManager({ isAdmin, profile }) {
       const effectiveBeltReceivedAt = historyDate || m.belt_received_at
       const beltReceivedMs = effectiveBeltReceivedAt ? new Date(effectiveBeltReceivedAt).getTime() : null
       const yearsOnBelt = beltReceivedMs ? (nowMs - beltReceivedMs) / (365.25 * 24 * 3600 * 1000) : 0
-      const stats = unitsByMember.get(m.id) || { totalUnits: 0, _endMs: [] }
+      const bjjStats = bjjUnitsMap.get(m.id) || null // { observedUnits, firstCheckinMs, calibUnits } | null (אין checkins בכלל)
 
-      // ===== חישוב יחידות נצפות (observed) — מ-checkins של ה-DB =====
-      const observedUnits = beltReceivedMs
-        ? stats._endMs.filter(e => e >= beltReceivedMs).length
-        : stats.totalUnits
+      // ===== חישוב יחידות נצפות (observed) — מה-RPC (בלי הגבלת 180 יום) =====
+      const observedUnits = bjjStats ? bjjStats.observedUnits : 0
 
       // ===== חישוב יחידות BJJ משוערות (estimated) למילוי הפער ההיסטורי =====
       // לוגיקה: ממוצע מחושב לפי **3 החודשים הראשונים מה-BJJ checkin הראשון** של
@@ -1072,11 +1090,11 @@ export default function ReportsManager({ isAdmin, profile }) {
       let estimateBasis = null   // 'observed_first_3mo' | 'no_bjj_yet' | 'no_data' | null
 
       if (beltReceivedMs) {
-        if (stats._endMs.length === 0) {
+        if (!bjjStats || bjjStats.firstCheckinMs == null) {
           // אין BJJ checkin אחד אפילו → לא יודעים שהוא בכלל מתאמן BJJ
           estimateBasis = 'no_bjj_yet'
         } else {
-          const firstBjjCheckinMs = Math.min.apply(null, stats._endMs)
+          const firstBjjCheckinMs = bjjStats.firstCheckinMs
           // הקרנה אחורה רק עד first_bjj_checkin (לא לפני). אם החגורה ניתנה
           // אחרי ה-first_bjj_checkin → אין פער היסטורי
           if (firstBjjCheckinMs > beltReceivedMs) {
@@ -1086,9 +1104,7 @@ export default function ReportsManager({ isAdmin, profile }) {
             const calibWindowEndMs = firstBjjCheckinMs + (MIN_OBSERVATION_DAYS * 24 * 3600 * 1000)
             // נדרשים 3 חודשים מלאים: ה-window הסתיים לפני היום
             if (calibWindowEndMs <= nowMs) {
-              const checkinsInWindow = stats._endMs.filter(e =>
-                e >= firstBjjCheckinMs && e <= calibWindowEndMs
-              ).length
+              const checkinsInWindow = bjjStats.calibUnits
               if (checkinsInWindow >= MIN_OBSERVED_UNITS) {
                 const windowWeeks = MIN_OBSERVATION_DAYS / 7
                 const frequencyPerWeek = checkinsInWindow / windowWeeks
@@ -1146,7 +1162,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       return b.score - a.score
     })
     return rows
-  }, [members, checkins, classes, classById, beltHistory])
+  }, [members, beltHistory, bjjUnitsMap])
 
   // ===== סינון לפי תפקיד =====
   // מנהל: רואה את כל המתאמנים בכל הסטטיסטיקות.
@@ -1523,6 +1539,27 @@ export default function ReportsManager({ isAdmin, profile }) {
     }
     return opts
   }, [])
+
+  // מסך שער (08.07.2026): שום קריאת רשת לא יוצאת עד שלוחצים כאן. מציג את זה
+  // גם אם loading=true (בזמן הלחיצה הראשונה) כדי שהכפתור עצמו יעבור ל"טוען…".
+  if (!hasLoaded) {
+    return (
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
+        <div className="text-3xl mb-2">📊</div>
+        <div className="font-bold text-gray-800 mb-1">הדוחות עדיין לא נטענו</div>
+        <p className="text-sm text-gray-500 mb-4">
+          כדי לחסוך תעבורה — הדוחות לא נטענים אוטומטית. לחץ לטעינה.
+        </p>
+        <button
+          onClick={fetchAll}
+          disabled={loading}
+          className="px-5 py-2.5 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {loading ? 'טוען דוחות…' : '📥 טען דוחות'}
+        </button>
+      </div>
+    )
+  }
 
   if (loading) {
     return <div className="text-center text-gray-500 py-8">טוען דוחות…</div>

@@ -59,6 +59,13 @@ export const KIDS_BELT_MIN_AGE = {
 }
 export const KIDS_MIN_MONTHS_AT_BELT = 6
 
+// עודכן 08.07.2026 (סוכם עם דודי): קריטריון "מוכן למבחן דרגות" לילדים עבר
+// ממדד לוח-שנה (חודשים מאז החגורה) למדד יחידות אימון אמיתיות (checkins
+// בפועל, status='present', מאז קבלת החגורה הנוכחית) — כי לוח שנה לא בודק
+// אם הילד באמת הגיע לאימונים. ראו kidsReadyForPromotion ב-ReportsManager.jsx
+// + הפונקציה kids_units_since_belt() ב-Supabase (מיגרציה 2026-07-08).
+export const KIDS_MIN_TRAINING_UNITS = 50
+
 export function getBeltMeta(beltValue) {
   if (!beltValue) return null
   return ALL_BELTS_MAP[beltValue] || null

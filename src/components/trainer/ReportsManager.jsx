@@ -9,7 +9,7 @@ import BeltHistoryEditor from './BeltHistoryEditor'
 import { getBeltMeta, getBeltLabel, ADULT_BELTS, KIDS_BELTS,
   getBeltFamily, getBeltLevelPosition, getBeltFamilyLabel, getBeltFamilyColor,
   getSyllabusKeyForTarget, getLevelLabel,
-  KIDS_BELT_MIN_AGE, KIDS_MIN_MONTHS_AT_BELT } from '../../lib/belts'
+  KIDS_BELT_MIN_AGE, KIDS_MIN_TRAINING_UNITS } from '../../lib/belts'
 
 // ===== Helpers =====
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
@@ -233,6 +233,9 @@ export default function ReportsManager({ isAdmin, profile }) {
   const [exportMonth, setExportMonth] = useState('current')
 
   const [members, setMembers] = useState([])
+  // 08.07.2026: יחידות אימון אמיתיות (checkins) לכל ילד מאז קבלת החגורה הנוכחית —
+  // Map<member_id, units>, ממולא מ-RPC kids_units_since_belt(). ראו kidsReadyForPromotion.
+  const [kidsUnitsMap, setKidsUnitsMap] = useState(() => new Map())
   const [coaches, setCoaches] = useState([])
   const [classes, setClasses] = useState([]) // משמש גם כקבוצות (לפי המודל הקיים)
   const [branches, setBranches] = useState([])
@@ -282,7 +285,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       const ROW_LIMIT = 100000
       const sinceMaxISO = new Date(Date.now() - 180 * DAY_MS).toISOString()
 
-      const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes, bhRes, kidsEvRes, kidsCandRes, sylRes] = await Promise.all([
+      const [mRes, cRes, clsRes, bRes, chkRes, tvRes, regRes, bhRes, kidsEvRes, kidsCandRes, sylRes, kidsUnitsRpcRes] = await Promise.all([
         fetchAllPaged(() => supabase
           .from('members')
           .select('id, full_name, phone, email, status, active, subscription_type, coach_id, requested_coach_name, requested_coach_names, branch_id, branch_ids, group_id, group_ids, created_at, deleted_at, belt, belt_received_at, belt_stripes, belt_category, trains_gi, trains_nogi, bjj_start_date, birth_date')
@@ -338,6 +341,11 @@ export default function ReportsManager({ isAdmin, profile }) {
           .from('belt_test_syllabus')
           .select('belt_family, age_range_label, content, level_notes, display_order')
           .order('display_order', { ascending: true }),
+        // 08.07.2026: יחידות אימון אמיתיות לכל ילד מאז קבלת החגורה הנוכחית —
+        // מחושב בשרת (RPC), לא נמשך כל היסטוריית ה-checkins ללקוח. ראו migration
+        // 2026-07-08-kids-units-since-belt-rpc.sql. אם ה-RPC עוד לא רץ ב-Supabase —
+        // נכשל בשקט (מטופל למטה) כדי לא לשבור את שאר הדוחות.
+        supabase.rpc('kids_units_since_belt'),
       ])
       if (mRes.error)   throw mRes.error
       if (cRes.error)   throw cRes.error
@@ -373,6 +381,14 @@ export default function ReportsManager({ isAdmin, profile }) {
       const kidsEvIds = new Set((kidsEvRes.data || []).map(e => e.id))
       setKidsCandidates((kidsCandRes.data || []).filter(c => kidsEvIds.has(c.event_id)))
       setSyllabus(sylRes.data || [])
+      // אם ה-migration של kids_units_since_belt() עוד לא רץ ב-Supabase — נכשל בשקט
+      // (הפונקציה לא קיימת עדיין). kidsReadyForPromotion יתייחס למפה ריקה = unitsOk=null.
+      if (kidsUnitsRpcRes.error) {
+        console.error('kids_units_since_belt RPC error (ייתכן שהמיגרציה טרם רצה):', kidsUnitsRpcRes.error)
+        setKidsUnitsMap(new Map())
+      } else {
+        setKidsUnitsMap(new Map((kidsUnitsRpcRes.data || []).map(r => [r.member_id, Number(r.units) || 0])))
+      }
 
       // לוג אבחון: מאפשר לוודא בקונסול של הדפדפן (Safari → Develop → Show Web Inspector)
       // שכל הצ'ק-אינים נטענו ולא נחתכו.
@@ -1348,22 +1364,16 @@ export default function ReportsManager({ isAdmin, profile }) {
       }
       const minAge = KIDS_BELT_MIN_AGE[nextBelt.value] ?? null
       const ageOk = age != null && minAge != null ? age >= minAge : null
-      // זמן בחגורה — fallback ל-bjj_start_date אם belt_received_at חסר (לבנה חדשה)
-      let monthsAtBelt = null
-      let timeSource = null // 'belt' | 'bjj_start'
-      const beltDateRef = m.belt_received_at || m.bjj_start_date || null
-      if (beltDateRef) {
-        const br = new Date(beltDateRef)
-        if (!isNaN(br.getTime())) {
-          monthsAtBelt = (today.getTime() - br.getTime()) / (1000 * 60 * 60 * 24 * 30.5)
-          timeSource = m.belt_received_at ? 'belt' : 'bjj_start'
-        }
-      }
-      const timeOk = monthsAtBelt != null ? monthsAtBelt >= KIDS_MIN_MONTHS_AT_BELT : null
-      // ready: גיל OK + זמן OK; almostReady: גיל OK + זמן לא מספיק
-      const ready = ageOk === true && timeOk === true
-      const almostReady = ageOk === true && timeOk === false
-      results.push({ m, age, nextBelt, minAge, ageOk, monthsAtBelt, timeOk, timeSource, ready, almostReady })
+      // 08.07.2026: יחידות אימון אמיתיות מאז קבלת החגורה הנוכחית — לא זמן בלוח שנה.
+      // מקור: kidsUnitsMap (מ-RPC kids_units_since_belt(), נספר מ-checkins בפועל).
+      // אם המפה ריקה (ה-migration טרם רץ) — units=null → unitsOk=null (לא ✅ ולא ❌,
+      // "אין נתונים", כדי לא להציג "לא מוכן" באופן שגוי לפני שהפיצ'ר פעיל).
+      const units = kidsUnitsMap.has(m.id) ? kidsUnitsMap.get(m.id) : null
+      const unitsOk = units != null ? units >= KIDS_MIN_TRAINING_UNITS : null
+      // ready: גיל OK + יחידות OK; almostReady: גיל OK + יחידות לא מספיקות (אבל יש נתון)
+      const ready = ageOk === true && unitsOk === true
+      const almostReady = ageOk === true && unitsOk === false
+      results.push({ m, age, nextBelt, minAge, ageOk, units, unitsOk, ready, almostReady })
     }
     // מיון: מוכנים → כמעט מוכנים → שאר
     results.sort((a, b) => {
@@ -1371,7 +1381,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       return score(a) - score(b) || (a.nextBelt?.order ?? 99) - (b.nextBelt?.order ?? 99) || (a.m.full_name || '').localeCompare(b.m.full_name || '', 'he')
     })
     return results
-  }, [activeMembers, isAdmin, myAthleteIds])
+  }, [activeMembers, isAdmin, myAthleteIds, kidsUnitsMap])
 
   // קיבוץ לפי חגורת יעד (לסיכום הזמנת חגורות)
   const kidsReadyByTarget = useMemo(() => {
@@ -2208,12 +2218,11 @@ export default function ReportsManager({ isAdmin, profile }) {
           }
         >
           <div className="space-y-1">
-            {kidsReadyForPromotion.map(({ m, age, nextBelt, minAge, ageOk, monthsAtBelt, timeOk, timeSource, ready, almostReady }) => {
+            {kidsReadyForPromotion.map(({ m, age, nextBelt, minAge, ageOk, units, unitsOk, ready, almostReady }) => {
               const nextMeta = getBeltMeta(nextBelt.value)
-              const months = monthsAtBelt != null ? Math.floor(monthsAtBelt) : null
-              const timeLabel = months != null
-                ? `${months} חודשים${timeSource === 'bjj_start' ? ' (מתחילת אימונים)' : ''}`
-                : 'אין תאריך'
+              const unitsLabel = units != null
+                ? `${units}/${KIDS_MIN_TRAINING_UNITS} אימונים`
+                : 'אין נתונים עדיין'
               return (
                 <div
                   key={m.id}
@@ -2234,9 +2243,9 @@ export default function ReportsManager({ isAdmin, profile }) {
                     {age != null ? `גיל ${age}` : 'גיל ?'}
                     {minAge != null && ageOk === false && <span className="text-gray-400"> (צריך {minAge})</span>}
                   </span>
-                  {/* זמן בחגורה / מתחילת אימונים */}
-                  <span className={`shrink-0 ${timeOk ? 'text-emerald-700' : timeOk === false ? 'text-amber-600' : 'text-gray-400'}`}>
-                    {timeLabel}
+                  {/* יחידות אימון מאז החגורה הנוכחית */}
+                  <span className={`shrink-0 ${unitsOk ? 'text-emerald-700' : unitsOk === false ? 'text-amber-600' : 'text-gray-400'}`}>
+                    {unitsLabel}
                   </span>
                   {/* חגורה נוכחית → יעד */}
                   <span className="shrink-0 flex items-center gap-1">

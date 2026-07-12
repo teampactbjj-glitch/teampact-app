@@ -740,9 +740,12 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   const limit = SESSION_LIMITS[form.membership_type] ?? 2
   const limitLabel = limit === Infinity ? 'בחר כמה שיעורים שתרצה' : `בחר עד ${limit} שיעורים`
 
+  // חיפוש: trim + lowercase — בלי זה חיפוש לפי שם משפחה (שנמצא בסוף המחרוזת) נכשל אם
+  // המשתמש הקליד רווח מיותר בסוף (נפוץ במקלדת מובייל), כי אין עוד תווים אחרי שם המשפחה להשוות אליהם.
+  const searchQuery = search.trim().toLowerCase()
   const filtered = athletes.filter(a =>
     (!branchFilter || (a.branch_ids || []).includes(branchFilter) || a.branch_id === branchFilter) &&
-    (a.full_name?.includes(search) || a.email?.includes(search) || a.group_name?.includes(search))
+    (!searchQuery || a.full_name?.toLowerCase().includes(searchQuery) || a.email?.toLowerCase().includes(searchQuery) || a.group_name?.toLowerCase().includes(searchQuery))
   )
 
   return (
@@ -1080,9 +1083,11 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
 
       {(stackedLayout || subTab === 'active') && (() => {
         // ספירה לכל סניף (לפני פילטר הסניף אבל אחרי חיפוש)
+        // trim + lowercase — ראו הערה למעלה למה זה חיוני לחיפוש לפי שם משפחה
+        const q2 = search.trim().toLowerCase()
         const bySearch = athletes.filter(a =>
-          !search.trim() ||
-          a.full_name?.includes(search) || a.email?.includes(search) || a.group_name?.includes(search) || a.phone?.includes(search)
+          !q2 ||
+          a.full_name?.toLowerCase().includes(q2) || a.email?.toLowerCase().includes(q2) || a.group_name?.toLowerCase().includes(q2) || a.phone?.includes(q2)
         )
         const branchCount = {}
         let noBranchCount = 0

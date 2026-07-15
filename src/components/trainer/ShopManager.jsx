@@ -108,6 +108,14 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
   // סינון פעיל בממשק מלאי: { [productId]: { comp, color, length } }
   const [invFilter, setInvFilter] = useState({})
 
+  // עריכת הזמנה לפני אישור (למשל: תלמיד הזמין מידה לא נכונה)
+  const [editingOrderId, setEditingOrderId] = useState(null)
+  const [editForm, setEditForm] = useState({ product_id: '', selected_size: '', selected_color: '', selected_length: '', quantity: 1 })
+  const [editVariants, setEditVariants] = useState([])   // וריאנטים (מידה/צבע/מלאי) של המוצר הנבחר בעריכה - מוצר פשוט
+  const [editComponents, setEditComponents] = useState([])          // בעריכת הזמנת חבילה: [{component_name, product_id, size, color, length}]
+  const [editComponentVariants, setEditComponentVariants] = useState({}) // { [idx]: variants[] } - מלאי לכל רכיב בעריכה
+  const [editSaving, setEditSaving] = useState(false)
+
   // בדיקה בעת טעינה ראשונית - האם יש טיוטה לא שמורה של מוצר חדש?
   useEffect(() => {
     const draft = readDraft()
@@ -732,6 +740,193 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     setVariants(newVariants)
   }
 
+  // בונה מחדש את שדה ה-notes אחרי עריכת מידה/צבע/אורך (מוצר פשוט), תוך שמירה על חלקים אחרים (כמו "אפשרות: ...")
+  function rebuildOrderNotes(existingNotes, size, color, length) {
+    const parts = (existingNotes || '').split(' · ').map(s => s.trim()).filter(Boolean)
+    const kept = parts.filter(p => !p.startsWith('מידה:') && !p.startsWith('צבע:') && !p.startsWith('אורך:'))
+    const optionParts = kept.filter(p => p.startsWith('אפשרות:'))
+    const restParts = kept.filter(p => !p.startsWith('אפשרות:'))
+    const newParts = []
+    if (size) newParts.push(`מידה: ${size}`)
+    if (color) newParts.push(`צבע: ${color}`)
+    if (length) newParts.push(`אורך: ${length}`)
+    return [...optionParts, ...newParts, ...restParts].join(' · ')
+  }
+
+  // בונה מחדש את ה-notes להזמנת חבילה - שורה לכל רכיב (בדיוק כמו הפורמט שנוצר בהזמנה המקורית)
+  function rebuildComponentNotes(existingNotes, components) {
+    const parts = (existingNotes || '').split(' · ').map(s => s.trim()).filter(Boolean)
+    const optionParts = parts.filter(p => p.startsWith('אפשרות:'))
+    const compNames = new Set(components.map(c => c.component_name).filter(Boolean))
+    const restParts = parts.filter(p => !p.startsWith('אפשרות:') && ![...compNames].some(name => p.startsWith(name)))
+    const compParts = components.map(c => {
+      const pieces = [c.component_name].filter(Boolean)
+      if (c.size) pieces.push(`מידה ${c.size}`)
+      if (c.color) pieces.push(`צבע ${c.color}`)
+      if (c.length) pieces.push(c.length)
+      return pieces.length > 1 ? pieces.join(' ') : null
+    }).filter(Boolean)
+    return [...optionParts, ...compParts, ...restParts].join(' · ')
+  }
+
+  // מוצא באיזה מלאי (stock) נמצא וריאנט תואם מתוך רשימת וריאנטים
+  function stockForVariant(variants, size, color, length) {
+    const v = (variants || []).find(x =>
+      (x.size || null) === (size || null) &&
+      (x.color || null) === (color || null) &&
+      (x.length || null) === (length || null)
+    )
+    return v ? (parseInt(v.stock) || 0) : null
+  }
+
+  // מחזיר את אפשרויות המידה/צבע/אורך הזמינות לרכיב מסוים בתוך הזמנת חבילה
+  // - אם הרכיב מקושר למוצר קיים (product_id) → לוקח את האפשרויות מהמוצר המקושר
+  // - אחרת → לוקח מהגדרת הרכיב בתוך purchase_options של המוצר הראשי
+  function getComponentOptions(order, comp) {
+    if (comp.product_id) {
+      const linked = products.find(p => p.id === comp.product_id)
+      return { sizes: linked?.available_sizes || [], colors: linked?.available_colors || [], lengths: linked?.available_lengths || [] }
+    }
+    const mainProduct = products.find(p => p.id === order.product_id)
+    if (!mainProduct) return { sizes: [], colors: [], lengths: [] }
+    const def = getCompDef(mainProduct, comp.component_name)
+    return { sizes: def.sizes || [], colors: def.colors || [], lengths: def.lengths || [] }
+  }
+
+  // טוען וריאנטים (מידה/צבע/מלאי) של מוצר פשוט - לתצוגת מלאי בטופס העריכה
+  async function loadEditVariants(productId) {
+    if (!productId) { setEditVariants([]); return }
+    const { data } = await supabase
+      .from('product_variants').select('*')
+      .eq('product_id', productId).is('component_name', null)
+    setEditVariants(data || [])
+  }
+
+  // פותח מצב עריכה להזמנה ממתינה - טוען את הבחירות הנוכחיות + וריאנטים זמינים
+  // תומך גם בהזמנות "חבילה" (עם component_selections) - עריכה בנפרד לכל רכיב
+  async function startEditOrder(order) {
+    if (order.status !== 'pending') return
+    setEditingOrderId(order.id)
+    setEditForm({
+      product_id: order.product_id || '',
+      selected_size: order.selected_size || '',
+      selected_color: order.selected_color || '',
+      selected_length: order.selected_length || '',
+      quantity: order.quantity || 1,
+    })
+
+    const isComp = Array.isArray(order.component_selections) && order.component_selections.length > 0
+    if (isComp) {
+      const comps = order.component_selections.map(c => ({
+        component_name: c.component_name || null,
+        product_id: c.product_id || null,
+        size: c.size || null,
+        color: c.color || null,
+        length: c.length || null,
+      }))
+      setEditComponents(comps)
+      setEditVariants([])
+      const variantsByIdx = {}
+      await Promise.all(comps.map(async (c, i) => {
+        let q = supabase.from('product_variants').select('*')
+        q = c.product_id
+          ? q.eq('product_id', c.product_id).is('component_name', null)
+          : q.eq('product_id', order.product_id).eq('component_name', c.component_name)
+        const { data } = await q
+        variantsByIdx[i] = data || []
+      }))
+      setEditComponentVariants(variantsByIdx)
+    } else {
+      setEditComponents([])
+      setEditComponentVariants({})
+      if (order.product_id) await loadEditVariants(order.product_id)
+      else setEditVariants([])
+    }
+  }
+
+  function cancelEditOrder() {
+    setEditingOrderId(null)
+    setEditVariants([])
+    setEditComponents([])
+    setEditComponentVariants({})
+  }
+
+  // מנהל בחר מוצר אחר (למשל: התלמיד רצה בכלל פריט אחר) - מאפס מידה/צבע/אורך וטוען וריאנטים חדשים
+  async function changeEditProduct(productId) {
+    setEditForm(prev => ({ ...prev, product_id: productId, selected_size: '', selected_color: '', selected_length: '' }))
+    await loadEditVariants(productId)
+  }
+
+  // עדכון בחירה (מידה/צבע/אורך) לרכיב מסוים בתוך הזמנת חבילה
+  function updateEditComponent(idx, patch) {
+    setEditComponents(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } : c))
+  }
+
+  async function saveOrderEdit(order) {
+    setEditSaving(true)
+    const table = order._source === 'request' ? 'product_requests' : 'product_orders'
+    const isComp = Array.isArray(order.component_selections) && order.component_selections.length > 0
+    const qty = Math.max(1, parseInt(editForm.quantity) || 1)
+
+    let payload
+    if (isComp) {
+      const cleanComponents = editComponents.map(c => ({
+        component_name: c.component_name || null,
+        product_id: c.product_id || null,
+        size: c.size || null,
+        color: c.color || null,
+        length: c.length || null,
+      }))
+      const first = cleanComponents[0] || {}
+      payload = {
+        component_selections: cleanComponents,
+        selected_size: first.size || null,
+        selected_color: first.color || null,
+        selected_length: first.length || null,
+        quantity: qty,
+        // המחיר בחבילה נקבע לפי אפשרות הרכישה, לא לפי מידה בודדת - נשאר כפי שהיה
+        unit_price: order.unit_price,
+        total_price: order.total_price,
+        notes: rebuildComponentNotes(order.notes, cleanComponents),
+      }
+    } else {
+      const selectedProduct = products.find(p => p.id === editForm.product_id) || null
+      // מחיר: קודם לפי price_override של הוריאנט התואם, אחרת מחיר המוצר, אחרת המחיר שהיה קיים בהזמנה
+      let unitPrice = order.unit_price ?? null
+      if (selectedProduct) {
+        const matchVariant = editVariants.find(v =>
+          (v.size || null) === (editForm.selected_size || null) &&
+          (v.color || null) === (editForm.selected_color || null) &&
+          (v.length || null) === (editForm.selected_length || null)
+        )
+        unitPrice = matchVariant?.price_override != null
+          ? parseFloat(matchVariant.price_override)
+          : (selectedProduct.price != null ? parseFloat(selectedProduct.price) : unitPrice)
+      }
+      payload = {
+        product_id: editForm.product_id || null,
+        product_name: selectedProduct?.title || order.product_name,
+        selected_size: editForm.selected_size || null,
+        selected_color: editForm.selected_color || null,
+        selected_length: editForm.selected_length || null,
+        quantity: qty,
+        unit_price: unitPrice,
+        total_price: unitPrice != null ? Math.round(unitPrice * qty * 100) / 100 : order.total_price,
+        notes: rebuildOrderNotes(order.notes, editForm.selected_size, editForm.selected_color, editForm.selected_length),
+      }
+    }
+
+    const { error } = await supabase.from(table).update(payload).eq('id', order.id)
+    setEditSaving(false)
+    if (error) { toast.error('שגיאה בעדכון ההזמנה: ' + error.message); return }
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...payload } : o))
+    setEditingOrderId(null)
+    setEditVariants([])
+    setEditComponents([])
+    setEditComponentVariants({})
+    toast.success('ההזמנה עודכנה')
+  }
+
   async function markDone(order) {
     const table = order._source === 'request' ? 'product_requests' : 'product_orders'
     await supabase.from(table).update({ status: 'done' }).eq('id', order.id)
@@ -850,7 +1045,22 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
           {productOrders.length === 0 ? (
             <div className="text-center py-12 text-gray-400"><div className="text-4xl mb-2">📭</div><p>אין הזמנות עדיין</p></div>
           ) : (
-            productOrders.map(order => (
+            productOrders.map(order => {
+              const isEditing = editingOrderId === order.id
+              const isComponentOrder = Array.isArray(order.component_selections) && order.component_selections.length > 0
+              const editSelectedProduct = products.find(p => p.id === editForm.product_id) || null
+              const editSizes = editSelectedProduct?.available_sizes || []
+              const editColors = editSelectedProduct?.available_colors || []
+              const editLengths = editSelectedProduct?.available_lengths || []
+              const stockFor = (size, color, length) => {
+                const v = editVariants.find(x =>
+                  (x.size || null) === (size || null) &&
+                  (x.color || null) === (color || null) &&
+                  (x.length || null) === (length || null)
+                )
+                return v ? (parseInt(v.stock) || 0) : null
+              }
+              return (
               <div key={order.id} className="bg-white border rounded-xl p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
@@ -866,55 +1076,212 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                       <span className="font-medium">{order.members?.full_name || order.member_name || 'לא ידוע'}</span>
                       {order.members?.phone && <span className="text-gray-400"> · {order.members.phone}</span>}
                     </p>
-                    {/* באדג'ים של מידה/צבע/אורך/כמות */}
-                    {(order.selected_size || order.selected_color || order.selected_length || (order.quantity && order.quantity > 1)) && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {order.selected_size && (
-                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">
-                            📏 מידה: {order.selected_size}
-                          </span>
+
+                    {!isEditing && (
+                      <>
+                        {/* באדג'ים של מידה/צבע/אורך/כמות */}
+                        {(order.selected_size || order.selected_color || order.selected_length || (order.quantity && order.quantity > 1)) && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {order.selected_size && (
+                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">
+                                📏 מידה: {order.selected_size}
+                              </span>
+                            )}
+                            {order.selected_color && (
+                              <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-medium">
+                                🎨 צבע: {order.selected_color}
+                              </span>
+                            )}
+                            {order.selected_length && (
+                              <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-medium">
+                                📐 אורך: {order.selected_length}
+                              </span>
+                            )}
+                            {order.quantity > 1 && (
+                              <span className="text-xs bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full font-medium">
+                                × {order.quantity}
+                              </span>
+                            )}
+                          </div>
                         )}
-                        {order.selected_color && (
-                          <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-medium">
-                            🎨 צבע: {order.selected_color}
-                          </span>
+                        {/* הערות (אפשרות רכישה + פרטים נוספים) */}
+                        {order.notes && (
+                          <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded-lg px-2 py-1 leading-relaxed">
+                            💬 {order.notes}
+                          </p>
                         )}
-                        {order.selected_length && (
-                          <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-medium">
-                            📐 אורך: {order.selected_length}
-                          </span>
+                        {/* מחיר */}
+                        {(order.total_price != null || order.unit_price != null) && (
+                          <p className="text-sm font-bold text-emerald-600 mt-2">
+                            💰 ₪{order.total_price ?? order.unit_price}
+                            {order.quantity > 1 && order.unit_price && (
+                              <span className="text-xs text-gray-400 font-normal mr-1">
+                                (₪{order.unit_price} × {order.quantity})
+                              </span>
+                            )}
+                          </p>
                         )}
-                        {order.quantity > 1 && (
-                          <span className="text-xs bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full font-medium">
-                            × {order.quantity}
-                          </span>
+                      </>
+                    )}
+
+                    {/* ─── טופס עריכה: מנהל יכול לתקן מוצר/מידה/צבע/אורך/כמות לפני אישור ─── */}
+                    {isEditing && (
+                      <div className="mt-2 space-y-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        {isComponentOrder && (
+                          <div className="space-y-2">
+                            <p className="text-xs text-amber-700 bg-amber-100 rounded px-2 py-1">
+                              📦 הזמנת חבילה — ניתן לערוך מידה/צבע/אורך לכל פריט בנפרד.
+                            </p>
+                            {editComponents.map((c, i) => {
+                              const opts = getComponentOptions(order, c)
+                              const variants = editComponentVariants[i] || []
+                              return (
+                                <div key={i} className="border rounded-lg p-2 bg-white space-y-1.5">
+                                  <p className="text-xs font-bold text-gray-700">{c.component_name || `פריט ${i + 1}`}</p>
+                                  {opts.sizes.length > 0 && (
+                                    <div>
+                                      <label className="text-[10px] text-gray-500 block mb-0.5">מידה</label>
+                                      <select
+                                        className="w-full border rounded px-2 py-1 text-xs"
+                                        value={c.size || ''}
+                                        onChange={e => updateEditComponent(i, { size: e.target.value || null })}>
+                                        <option value="">— ללא —</option>
+                                        {opts.sizes.map(sz => {
+                                          const stock = stockForVariant(variants, sz, c.color, c.length)
+                                          return (
+                                            <option key={sz} value={sz}>
+                                              {sz}{stock != null ? ` (מלאי: ${stock})` : ''}
+                                            </option>
+                                          )
+                                        })}
+                                      </select>
+                                    </div>
+                                  )}
+                                  {opts.colors.length > 0 && (
+                                    <div>
+                                      <label className="text-[10px] text-gray-500 block mb-0.5">צבע</label>
+                                      <select
+                                        className="w-full border rounded px-2 py-1 text-xs"
+                                        value={c.color || ''}
+                                        onChange={e => updateEditComponent(i, { color: e.target.value || null })}>
+                                        <option value="">— ללא —</option>
+                                        {opts.colors.map(col => <option key={col} value={col}>{col}</option>)}
+                                      </select>
+                                    </div>
+                                  )}
+                                  {opts.lengths.length > 0 && (
+                                    <div>
+                                      <label className="text-[10px] text-gray-500 block mb-0.5">אורך</label>
+                                      <select
+                                        className="w-full border rounded px-2 py-1 text-xs"
+                                        value={c.length || ''}
+                                        onChange={e => updateEditComponent(i, { length: e.target.value || null })}>
+                                        <option value="">— ללא —</option>
+                                        {opts.lengths.map(l => <option key={l} value={l}>{l}</option>)}
+                                      </select>
+                                    </div>
+                                  )}
+                                  {opts.sizes.length === 0 && opts.colors.length === 0 && opts.lengths.length === 0 && (
+                                    <p className="text-[10px] text-gray-400">אין מידות/צבעים מוגדרים לפריט הזה</p>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
                         )}
+                        {!isComponentOrder && (
+                          <>
+                            <div>
+                              <label className="text-xs text-gray-500 block mb-1">מוצר</label>
+                              <select
+                                className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                                value={editForm.product_id}
+                                onChange={e => changeEditProduct(e.target.value)}>
+                                <option value="">— בחר מוצר —</option>
+                                {products.map(p => (
+                                  <option key={p.id} value={p.id}>{p.title}</option>
+                                ))}
+                              </select>
+                            </div>
+                            {editSizes.length > 0 && (
+                              <div>
+                                <label className="text-xs text-gray-500 block mb-1">מידה</label>
+                                <select
+                                  className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                                  value={editForm.selected_size}
+                                  onChange={e => setEditForm(prev => ({ ...prev, selected_size: e.target.value }))}>
+                                  <option value="">— ללא —</option>
+                                  {editSizes.map(sz => {
+                                    const stock = stockFor(sz, editForm.selected_color, editForm.selected_length)
+                                    return (
+                                      <option key={sz} value={sz}>
+                                        {sz}{stock != null ? ` (מלאי: ${stock})` : ''}
+                                      </option>
+                                    )
+                                  })}
+                                </select>
+                              </div>
+                            )}
+                            {editColors.length > 0 && (
+                              <div>
+                                <label className="text-xs text-gray-500 block mb-1">צבע</label>
+                                <select
+                                  className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                                  value={editForm.selected_color}
+                                  onChange={e => setEditForm(prev => ({ ...prev, selected_color: e.target.value }))}>
+                                  <option value="">— ללא —</option>
+                                  {editColors.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                              </div>
+                            )}
+                            {editLengths.length > 0 && (
+                              <div>
+                                <label className="text-xs text-gray-500 block mb-1">אורך</label>
+                                <select
+                                  className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                                  value={editForm.selected_length}
+                                  onChange={e => setEditForm(prev => ({ ...prev, selected_length: e.target.value }))}>
+                                  <option value="">— ללא —</option>
+                                  {editLengths.map(l => <option key={l} value={l}>{l}</option>)}
+                                </select>
+                              </div>
+                            )}
+                          </>
+                        )}
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">כמות</label>
+                          <input type="number" min={1}
+                            className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                            value={editForm.quantity}
+                            onChange={e => setEditForm(prev => ({ ...prev, quantity: e.target.value }))} />
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <button type="button" disabled={editSaving}
+                            onClick={() => saveOrderEdit(order)}
+                            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50">
+                            {editSaving ? 'שומר...' : '💾 שמור שינויים'}
+                          </button>
+                          <button type="button" disabled={editSaving}
+                            onClick={cancelEditOrder}
+                            className="text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 px-3 py-1.5 rounded-lg">
+                            ביטול
+                          </button>
+                        </div>
                       </div>
                     )}
-                    {/* הערות (אפשרות רכישה + פרטים נוספים) */}
-                    {order.notes && (
-                      <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded-lg px-2 py-1 leading-relaxed">
-                        💬 {order.notes}
-                      </p>
-                    )}
-                    {/* מחיר */}
-                    {(order.total_price != null || order.unit_price != null) && (
-                      <p className="text-sm font-bold text-emerald-600 mt-2">
-                        💰 ₪{order.total_price ?? order.unit_price}
-                        {order.quantity > 1 && order.unit_price && (
-                          <span className="text-xs text-gray-400 font-normal mr-1">
-                            (₪{order.unit_price} × {order.quantity})
-                          </span>
-                        )}
-                      </p>
-                    )}
                   </div>
-                  {isAdmin && (
+                  {isAdmin && !isEditing && (
                     <div className="flex gap-2 flex-shrink-0 items-center">
                       {order.status === 'pending' && (
                         <button onClick={() => markDone(order)}
                           className="text-xs bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg">
                           סמן כטופל ✓
+                        </button>
+                      )}
+                      {order.status === 'pending' && (
+                        <button onClick={() => startEditOrder(order)}
+                          className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg">
+                          ✏️ ערוך
                         </button>
                       )}
                       <button
@@ -930,7 +1297,8 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                   )}
                 </div>
               </div>
-            ))
+              )
+            })
           )}
         </div>
       )}

@@ -60,6 +60,14 @@ export default function App() {
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(IS_RECOVERY)
   // Version counter למניעת race condition: כשהsession מתחלף מהר, fetchProfile ישן לא ידרוס פרופיל חדש
   const fetchVersionRef = useRef(0)
+  // egress fix (15.07.2026): מונע קריאה כפולה ל-fetchProfile כשאותו משתמש בדיוק מזוהה
+  // כמה פעמים ברצף. getSession() ו-onAuthStateChange (שיורה 'INITIAL_SESSION' ולעיתים
+  // גם 'SIGNED_IN'/'TOKEN_REFRESHED' מיד עם הטעינה) כל אחד קורא ל-setSession עם אובייקט
+  // session חדש — גם כשמדובר באותו user.id בדיוק. בלי השמירה הזו, ה-useEffect למטה
+  // (התלוי ב-session) רץ 2-4 פעמים ברצף בכל טעינת אפליקציה, וכל הרצה מולידה סבב fetch
+  // מלא לכל הדשבורד (members/profiles/classes/announcements/branches).
+  // אומת בפועל 15.07.2026 דרך Network tab חי: אותה קריאה בדיוק חזרה 2-4 פעמים בטעינה אחת.
+  const lastFetchedUserIdRef = useRef(null)
 
   // Rules of Hooks fix (Bug 1.7): כל ה-hooks חייבים לרוץ באותו סדר בכל render.
   // ה-early-returns של נתיבים מיוחדים (/register, /register-coach, /accessibility)
@@ -148,8 +156,15 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (session?.user) fetchProfile(session.user)
-    else { setProfile(null); setMemberStatus(null) }
+    if (session?.user) {
+      // כבר טענו את המשתמש הזה בדיוק (למשל TOKEN_REFRESHED / אירוע auth כפול) — לא לטעון שוב.
+      if (lastFetchedUserIdRef.current === session.user.id) return
+      lastFetchedUserIdRef.current = session.user.id
+      fetchProfile(session.user)
+    } else {
+      lastFetchedUserIdRef.current = null
+      setProfile(null); setMemberStatus(null)
+    }
   }, [session])
 
   async function fetchProfile(user) {

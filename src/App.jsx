@@ -4,6 +4,8 @@ import AthleteLogin from './components/auth/AthleteLogin'
 import TrainerDashboard from './components/trainer/TrainerDashboard'
 import AthleteDashboard from './components/athlete/AthleteDashboard'
 import RegisterPage from './components/RegisterPage'
+import TrialFormPage from './components/TrialFormPage'
+import TermsOfServicePage from './components/TermsOfServicePage'
 import RegisterCoachPage from './components/auth/RegisterCoachPage'
 import PendingApprovalScreen from './components/PendingApprovalScreen'
 import AccessibilityPage from './components/AccessibilityPage'
@@ -286,6 +288,8 @@ export default function App() {
 
   // נתיבים ציבוריים — אחרי כל ה-hooks כדי לקיים את Rules of Hooks (Bug 1.7).
   if (window.location.pathname === '/register') return (<><RegisterPage /><AccessibilityWidget /></>)
+  if (window.location.pathname === '/trial') return (<><TrialFormPage /><AccessibilityWidget /></>)
+  if (window.location.pathname === '/terms') return (<><TermsOfServicePage /><AccessibilityWidget /></>)
   if (window.location.pathname === '/register-coach') return (<><RegisterCoachPage /><AccessibilityWidget /></>)
   if (window.location.pathname === '/accessibility') return <AccessibilityPage />
 

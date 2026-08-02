@@ -4,8 +4,24 @@ import InstallBanner from './InstallBanner'
 import { notifyPush } from '../lib/notifyPush'
 import { trainerUserIdsForMember } from '../lib/notifyTargets'
 import { Field } from './a11y'
+import CountryClubWaiver, { WAIVER_VERSION, validateWaiver } from './CountryClubWaiver'
+import TermsAgreement, { TERMS_VERSION } from './TermsAgreement'
 
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
+
+// מחירון נספח א' (הסכם השכירות מול הקאנטרי, 26.07.2026) — עמודת "לקוח חיצוני" (מחיר מלא) בלבד.
+// ספציפי לסניף חולון קאנטרי. זהו המחיר היחיד שמוצג/נגבה בטופס הציבורי — כל הרשמה
+// משלמת מחיר מלא ומאושרת אוטומטית (תואם גם את branch_subscription_prices, לאימות ה-webhook).
+// זכאות להנחה (מנוי/עובד קאנטרי) אינה מוצגת כאן בכלל מטעמי פרטיות עסקית — מטופלת בנפרד,
+// ראו הערה ליד ה-WhatsApp note למטה.
+const COUNTRY_CLUB_PRICES = {
+  '1x_week': 300,
+  '2x_week': 400,
+  '4x_week': 500,
+  unlimited: 600,
+}
+// למי לפנות אחרי הרשמה לגבי הנחה — מספר דודי מהחוזה מול הקאנטרי (0542250993)
+const DUDI_WHATSAPP_URL = 'https://wa.me/972542250993'
 
 const HEBREW = /[֐-׿]/ // אות עברית כלשהי
 // ולידציית שם מלא בעברית — דורש שם פרטי + שם משפחה (לפחות שתי מילים)
@@ -113,9 +129,14 @@ export default function RegisterPage() {
   const [children, setChildren] = useState([emptyChild()])
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
+  const [paymentPending, setPaymentPending] = useState(false) // נרשם בהצלחה אך תשלום מקוון עדיין לא זמין
   const [error, setError] = useState(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
+  // הצהרת קאנטרי — חתימה אחת (של ההורה/המתאמן הבוגר) שמכסה את כל מי שנרשם בהגשה הזו
+  const [waiver, setWaiver] = useState({})
+  // אישור תנאי שימוש — נדרש רק כשיש תשלום אמיתי בהגשה (כרגע: חולון קאנטרי בלבד)
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
   // גלילה אוטומטית להודעת שגיאה כשהיא מופיעה — הטופס ארוך, וההודעה (כולל
   // "הטלפון כבר קיים") הייתה יכולה להישאר מחוץ לתצוגה בלי שהמשתמש ישים לב
   // שמשהו בכלל קרה בלחיצה על שליחה.
@@ -127,7 +148,7 @@ export default function RegisterPage() {
   }, [error])
 
   useEffect(() => {
-    supabase.from('branches').select('id, name').eq('hidden', false).then(({ data }) => setBranches(data || []))
+    supabase.from('branches').select('id, name, requires_facility_waiver').eq('hidden', false).then(({ data }) => setBranches(data || []))
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) return
       const { data: member } = await supabase.from('members').select('status').eq('id', session.user.id).maybeSingle()
@@ -175,6 +196,13 @@ export default function RegisterPage() {
   function addChild() { setChildren(list => [...list, emptyChild()]) }
   function removeChild(i) { setChildren(list => list.length <= 1 ? list : list.filter((_, idx) => idx !== i)) }
 
+  // סניפים שדורשים הצהרת קאנטרי (כרגע רק חולון קאנטרי) — נטען מה-DB, לא מקודד קשיח
+  const countryClubBranchIds = branches.filter(b => b.requires_facility_waiver).map(b => b.id)
+  const isCountryClub = (ids) => (ids || []).some(id => countryClubBranchIds.includes(id))
+  const selfIsCountryClub = isCountryClub(form.self_branch_ids)
+  const anyChildCountryClub = children.some(c => isCountryClub(c.branch_ids))
+  const anyCountryClub = selfIsCountryClub || anyChildCountryClub
+
   async function handleSubmit() {
     // --- ולידציה: פרטי חשבון ---
     if (!form.account_name.trim() || !form.email.trim()) {
@@ -218,6 +246,13 @@ export default function RegisterPage() {
         if (!c.birth_date) { setError(`ילד ${i + 1} — נא למלא תאריך לידה`); return }
         if (c.branch_ids.length === 0) { setError(`ילד ${i + 1} — נא לבחור לפחות סניף אחד`); return }
       }
+    }
+
+    // --- ולידציה: הצהרת קאנטרי + אישור תנאי שימוש (רק אם נבחר סניף חולון קאנטרי עבור מישהו — יש תשלום אמיתי) ---
+    if (anyCountryClub) {
+      const waiverErr = validateWaiver(waiver)
+      if (waiverErr) { setError(waiverErr); return }
+      if (!agreedToTerms) { setError('יש לאשר את תנאי השימוש לפני המשך לתשלום'); return }
     }
 
     setLoading(true)
@@ -282,9 +317,14 @@ export default function RegisterPage() {
     }
     const userId = authData?.user?.id
 
+    // מזהה משותף לכל רשומות ההגשה הזו שדורשות תשלום קאנטרי — כדי שה-webhook
+    // יוכל לאשר יחד הורה+ילדים ששולמו בתשלום אחד מרוכז.
+    const registrationPaymentRef = anyCountryClub ? crypto.randomUUID() : null
+
     // 2. בניית רשומות member
     const memberRows = []
     if (selfIsAthlete) {
+      const isCC = selfIsCountryClub
       memberRows.push({
         id: userId || undefined,
         full_name: parentName,
@@ -297,10 +337,12 @@ export default function RegisterPage() {
         status: 'pending',
         birth_date: form.self_birth_date || null,
         parent_name: null,
+        ...(isCC ? { registration_payment_ref: registrationPaymentRef } : {}),
       })
     }
     if (form.is_guardian) {
       for (const c of children) {
+        const isCC = isCountryClub(c.branch_ids)
         memberRows.push({
           // אין id (gen_random_uuid) ואין email — email NULL כדי לא להתנגש ב-unique של מייל ההורה
           full_name: c.full_name.trim(),
@@ -314,6 +356,7 @@ export default function RegisterPage() {
           birth_date: c.birth_date || null,
           guardian_id: userId || null,
           parent_name: parentName,
+          ...(isCC ? { registration_payment_ref: registrationPaymentRef } : {}),
         })
       }
     }
@@ -321,12 +364,14 @@ export default function RegisterPage() {
     // 3. הכנסה ל-DB. רשומת ה-self (id=userId) חייבת להיכנס ראשונה (policy self_register_auth);
     //    הילדים נכנסים עם guardian_id (policy members_insert_guardian_child).
     let insertErr = null
+    const insertedRows = []
     for (const row of memberRows) {
-      const { error } = await supabase.from('members').insert(row)
+      const { data: insertedRow, error } = await supabase.from('members').insert(row).select('id, full_name, branch_id, subscription_type').single()
       if (error) { insertErr = error; break }
+      insertedRows.push(insertedRow)
     }
-    setLoading(false)
     if (insertErr) {
+      setLoading(false)
       setError('נרשמת אך הייתה בעיה בשמירת הפרטים - פנה למאמן')
       console.error('member insert error:', insertErr)
       return
@@ -347,9 +392,80 @@ export default function RegisterPage() {
         .catch(() => {})
     }
 
+    // 5. חולון קאנטרי: הצהרת קאנטרי חתומה + תשלום מרוכז
+    if (anyCountryClub) {
+      // אינדקסים של שורות memberRows/insertedRows ששייכות לחולון קאנטרי (יש להן registration_payment_ref)
+      const ccIndexes = memberRows.map((m, i) => m.registration_payment_ref ? i : -1).filter(i => i >= 0)
+      const ccInsertedRows = ccIndexes.map(i => insertedRows[i])
+
+      const waiverInserts = ccInsertedRows.map(r => ({
+        branch_id: r.branch_id,
+        member_id: r.id,
+        full_name: r.full_name,
+        id_number: waiver.idNumber,
+        address: waiver.address || null,
+        phone: form.phone.trim() || null,
+        signature_typed_name: waiver.signatureName.trim(),
+        waiver_version: WAIVER_VERSION,
+        user_agent: navigator.userAgent,
+      }))
+      const { error: waiverErr } = await supabase.from('club_waivers').insert(waiverInserts)
+      if (waiverErr) console.error('club_waivers insert error (ממשיכים בכל זאת):', waiverErr)
+
+      // סכום לתשלום: תמיד מחיר מלא — הנחות (קאנטרי/עובד) לא מוצגות בטופס הציבורי,
+      // ומטופלות בנפרד ע"י דודי אחרי פנייה ישירה (ראו הערת WhatsApp בטופס למטה)
+      let totalAmount = 0
+      for (let k = 0; k < ccIndexes.length; k++) {
+        const origRow = memberRows[ccIndexes[k]]
+        totalAmount += COUNTRY_CLUB_PRICES[origRow.subscription_type] || 0
+      }
+
+      const registrationPaymentRef = memberRows[ccIndexes[0]]?.registration_payment_ref
+
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('green-invoice-create-payment-link', {
+        body: {
+          type: 'subscription',
+          reference_id: registrationPaymentRef,
+          amount: totalAmount,
+          description: `הרשמה למנוי — TeamPact חולון קאנטרי (${ccInsertedRows.map(r => r.full_name).join(', ')})`,
+          customer_name: parentName,
+          customer_phone: form.phone.trim(),
+        },
+      })
+
+      setLoading(false)
+
+      if (fnErr || !fnData?.payment_url) {
+        console.warn('green-invoice payment link unavailable yet:', fnErr, fnData)
+        setPaymentPending(true)
+        return
+      }
+      window.location.href = fnData.payment_url
+      return
+    }
+
+    setLoading(false)
     if (authData?.session) window.location.replace('/')
     else setDone(true)
   }
+
+  if (paymentPending) return (
+    <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="max-w-sm w-full space-y-3">
+        <main id="main-content" className="bg-white rounded-2xl shadow p-8 text-center space-y-4" role="status" aria-live="polite">
+          <div className="text-5xl" aria-hidden="true">🥋</div>
+          <h2 className="font-bold text-xl text-gray-800">הבקשה נשלחה!</h2>
+          <p className="text-gray-700 text-sm leading-relaxed">
+            הפרטים וההצהרה נשמרו בהצלחה. התשלום המקוון עדיין לא הופעל אצלנו —
+            נציג של TeamPact ייצור איתך קשר להשלמת התשלום והפעלת המנוי.
+          </p>
+          <a href="/" className="block w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3.5 rounded-xl text-base no-underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-300">
+            פתח את האפליקציה עכשיו ←
+          </a>
+        </main>
+      </div>
+    </div>
+  )
 
   if (done) return (
     <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4" dir="rtl">
@@ -549,6 +665,21 @@ export default function RegisterPage() {
               </button>
             </div>
           )}
+
+          {anyCountryClub && (
+            <div className="border-t border-gray-100 pt-3 space-y-3">
+              <CountryClubWaiver value={waiver} onChange={setWaiver} prefilledName={form.account_name} />
+              <TermsAgreement checked={agreedToTerms} onChange={setAgreedToTerms} />
+              <a
+                href={DUDI_WHATSAPP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-xs text-gray-600 hover:border-emerald-400 hover:text-emerald-700 transition no-underline"
+              >
+                💬 מנוי מרכז הספורט (קאנטרי), עובד/ת שלו או בן/בת משפחה? יכול להיות שמגיע לך מחיר מותאם — צור/י קשר בוואטסאפ אחרי ההרשמה ונבדוק יחד.
+              </a>
+            </div>
+          )}
         </div>
 
         {error && (
@@ -565,7 +696,7 @@ export default function RegisterPage() {
 
         <button type="button" onClick={handleSubmit} disabled={loading} aria-busy={loading || undefined}
           className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition disabled:opacity-50 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-300">
-          {loading ? 'שולח...' : 'שלח בקשת הצטרפות'}
+          {loading ? 'שולח...' : (anyCountryClub ? 'המשך לתשלום' : 'שלח בקשת הצטרפות')}
         </button>
 
         <div className="text-center pt-2 border-t border-gray-100">

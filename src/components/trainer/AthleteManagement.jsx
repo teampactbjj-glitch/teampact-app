@@ -1464,6 +1464,21 @@ function PendingLeadCard({ lead, branches, onApprove, onReject, showBranch = tru
             🏋️ נרשם ל-: {MEMBERSHIP_LABELS[original] || original}
           </p>
         )}
+        {/* חולון קאנטרי: סטטוס תשלום + הנחה — למה זה עדיין ממתין לאישור למרות ששולם */}
+        {lead.payment_status === 'paid' && (
+          <p className="text-xs font-semibold mt-1">
+            <span className="text-emerald-700">💳 שולם {lead.paid_amount != null ? `— ${lead.paid_amount}₪` : ''}</span>
+            {lead.green_invoice_doc_url && (
+              <a href={lead.green_invoice_doc_url} target="_blank" rel="noopener noreferrer"
+                className="text-blue-600 underline mr-1">לחשבונית</a>
+            )}
+          </p>
+        )}
+        {lead.wants_discount && (
+          <p className="text-xs font-semibold text-amber-700 mt-0.5">
+            ⚠️ ביקש/ה הנחת {lead.discount_type === 'employee_family' ? 'עובד/משפחה (50%)' : 'מנוי קאנטרי (20%)'} — לאמת זכאות ידנית לפני אישור
+          </p>
+        )}
       </div>
 
       <div>

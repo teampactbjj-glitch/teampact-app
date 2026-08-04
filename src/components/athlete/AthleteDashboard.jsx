@@ -1602,6 +1602,8 @@ function SettingsTab({ profile, member }) {
   const [branchSessions, setBranchSessions] = useState(member?.branch_sessions || {})
   // דרגה
   const [beltCategory, setBeltCategory] = useState(member?.belt_category || 'adult')
+  // גילאי 16-17: מותר לבחור ידנית קטגוריית "ילדים" (מוגבל למשפחת חגורות ירוקות) במקום בוגרים
+  const [teenCategoryOverride, setTeenCategoryOverride] = useState(null)
   const [beltVal, setBeltVal] = useState(member?.belt || '')
   const [beltStripes, setBeltStripes] = useState(member?.belt_stripes || 0)
   const [beltReceivedAt, setBeltReceivedAt] = useState(member?.belt_received_at || '')
@@ -1655,7 +1657,18 @@ function SettingsTab({ profile, member }) {
     if (mo < 0 || (mo === 0 && today.getDate() < bd.getDate())) age--
     return age
   })()
-  const autoCategory = autoAge === null ? null : (autoAge >= 16 ? 'adult' : 'kids')
+  const ageBasedCategory = autoAge === null ? null : (autoAge >= 16 ? 'adult' : 'kids')
+  // בני 16-17 יכולים עדיין להיות בחגורות ילדים (משפחת הירוקות) — נותנים להם לבחור ידנית
+  const isTeenAge = autoAge !== null && autoAge >= 16 && autoAge <= 17
+  const autoCategory = isTeenAge && teenCategoryOverride ? teenCategoryOverride : ageBasedCategory
+  // מגיל 16 ומעלה, קטגוריית "ילדים" מוגבלת למשפחת החגורות הירוקות (ירוקה-לבנה/ירוקה/ירוקה-שחורה)
+  const kidsBeltOptions = autoAge !== null && autoAge >= 16
+    ? KIDS_BELTS.filter(b => b.value.startsWith('kids_green'))
+    : KIDS_BELTS
+
+  useEffect(() => {
+    if (!isTeenAge) setTeenCategoryOverride(null)
+  }, [isTeenAge])
 
   useEffect(() => {
     if (!autoCategory) return
@@ -2308,6 +2321,18 @@ function SettingsTab({ profile, member }) {
                       {autoCategory === 'kids' ? `גיל ${autoAge} — קטגוריית ילדים` : `גיל ${autoAge} — קטגוריית בוגרים`}
                     </p>
                   )}
+                  {isTeenAge && (
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" onClick={() => setTeenCategoryOverride('adult')}
+                        className={`flex-1 px-3 py-1.5 rounded-lg text-xs border transition ${
+                          autoCategory === 'adult' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-300'
+                        }`}>מבוגרים</button>
+                      <button type="button" onClick={() => setTeenCategoryOverride('kids')}
+                        className={`flex-1 px-3 py-1.5 rounded-lg text-xs border transition ${
+                          autoCategory === 'kids' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-300'
+                        }`}>ילדים (ירוקות)</button>
+                    </div>
+                  )}
                 </div>
                 {autoCategory && (
                   <div>
@@ -2315,7 +2340,7 @@ function SettingsTab({ profile, member }) {
                     <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white" value={beltVal}
                       onChange={e => { const v = e.target.value; setBeltVal(v); setBeltStripes(s => Math.min(s || 0, getMaxStripes(v))) }}>
                       <option value="">— בחר חגורה —</option>
-                      {(autoCategory === 'kids' ? KIDS_BELTS : ADULT_BELTS).map(b => (
+                      {(autoCategory === 'kids' ? kidsBeltOptions : ADULT_BELTS).map(b => (
                         <option key={b.value} value={b.value}>{b.label}</option>
                       ))}
                     </select>

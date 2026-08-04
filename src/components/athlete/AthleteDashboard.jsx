@@ -1665,6 +1665,10 @@ function SettingsTab({ profile, member }) {
   const kidsBeltOptions = autoAge !== null && autoAge >= 16
     ? KIDS_BELTS.filter(b => b.value.startsWith('kids_green'))
     : KIDS_BELTS
+  // בני 16-17: הירוקות מוצגות גם ברשימת "בוגרים", כדי שלא יהיה תלוי באיזה מתג נבחר
+  const adultBeltOptions = isTeenAge
+    ? [ADULT_BELTS[0], ...KIDS_BELTS.filter(b => b.value.startsWith('kids_green')), ...ADULT_BELTS.slice(1)]
+    : ADULT_BELTS
 
   useEffect(() => {
     if (!isTeenAge) setTeenCategoryOverride(null)
@@ -2340,7 +2344,7 @@ function SettingsTab({ profile, member }) {
                     <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white" value={beltVal}
                       onChange={e => { const v = e.target.value; setBeltVal(v); setBeltStripes(s => Math.min(s || 0, getMaxStripes(v))) }}>
                       <option value="">— בחר חגורה —</option>
-                      {(autoCategory === 'kids' ? kidsBeltOptions : ADULT_BELTS).map(b => (
+                      {(autoCategory === 'kids' ? kidsBeltOptions : adultBeltOptions).map(b => (
                         <option key={b.value} value={b.value}>{b.label}</option>
                       ))}
                     </select>

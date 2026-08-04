@@ -953,6 +953,8 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                         ...p,
                         belt: val,
                         belt_stripes: Math.min(p.belt_stripes || 0, max),
+                        // חגורה חדשה שונה מהקודמת → תאריך קבלה מתעדכן להיום (אפשר לשנות ידנית)
+                        belt_received_at: (val && val !== p.belt) ? todayStr() : p.belt_received_at,
                       }))
                     }}>
                     <option value="">— בחר חגורה —</option>

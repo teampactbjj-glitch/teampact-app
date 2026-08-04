@@ -2342,7 +2342,13 @@ function SettingsTab({ profile, member }) {
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">חגורה נוכחית <span className="text-red-500">*</span></label>
                     <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white" value={beltVal}
-                      onChange={e => { const v = e.target.value; setBeltVal(v); setBeltStripes(s => Math.min(s || 0, getMaxStripes(v))) }}>
+                      onChange={e => {
+                        const v = e.target.value
+                        // חגורה חדשה שונה מהקודמת → תאריך קבלה מתעדכן להיום (אפשר לשנות ידנית)
+                        if (v && v !== beltVal) setBeltReceivedAt(new Date().toISOString().split('T')[0])
+                        setBeltVal(v)
+                        setBeltStripes(s => Math.min(s || 0, getMaxStripes(v)))
+                      }}>
                       <option value="">— בחר חגורה —</option>
                       {(autoCategory === 'kids' ? kidsBeltOptions : adultBeltOptions).map(b => (
                         <option key={b.value} value={b.value}>{b.label}</option>

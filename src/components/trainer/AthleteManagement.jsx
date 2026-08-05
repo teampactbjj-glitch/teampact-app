@@ -958,10 +958,10 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                       }))
                     }}>
                     <option value="">— בחר חגורה —</option>
-                    {/* מגיל 16-17 חגורות ירוקות תקפות — מוצגות בשני המתגים (ילדים/מבוגרים) */}
+                    {/* מגיל 16-17 חגורות כתום/ירוק תקפות — מוצגות בשני המתגים (ילדים/מבוגרים) */}
                     {(form.belt_category === 'kids'
                       ? KIDS_BELTS
-                      : [ADULT_BELTS[0], ...KIDS_BELTS.filter(b => b.value.startsWith('kids_green')), ...ADULT_BELTS.slice(1)]
+                      : [ADULT_BELTS[0], ...KIDS_BELTS.filter(b => b.value.startsWith('kids_orange') || b.value.startsWith('kids_green')), ...ADULT_BELTS.slice(1)]
                     ).map(b => (
                       <option key={b.value} value={b.value}>{b.label}</option>
                     ))}

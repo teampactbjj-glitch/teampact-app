@@ -1661,13 +1661,13 @@ function SettingsTab({ profile, member }) {
   // בני 16-17 יכולים עדיין להיות בחגורות ילדים (משפחת הירוקות) — נותנים להם לבחור ידנית
   const isTeenAge = autoAge !== null && autoAge >= 16 && autoAge <= 17
   const autoCategory = isTeenAge && teenCategoryOverride ? teenCategoryOverride : ageBasedCategory
-  // מגיל 16 ומעלה, קטגוריית "ילדים" מוגבלת למשפחת החגורות הירוקות (ירוקה-לבנה/ירוקה/ירוקה-שחורה)
+  // מגיל 16 ומעלה, קטגוריית "ילדים" מוגבלת למשפחות הכתומות + הירוקות
   const kidsBeltOptions = autoAge !== null && autoAge >= 16
-    ? KIDS_BELTS.filter(b => b.value.startsWith('kids_green'))
+    ? KIDS_BELTS.filter(b => b.value.startsWith('kids_orange') || b.value.startsWith('kids_green'))
     : KIDS_BELTS
-  // בני 16-17: הירוקות מוצגות גם ברשימת "בוגרים", כדי שלא יהיה תלוי באיזה מתג נבחר
+  // בני 16-17: הכתומות/ירוקות מוצגות גם ברשימת "בוגרים", כדי שלא יהיה תלוי באיזה מתג נבחר
   const adultBeltOptions = isTeenAge
-    ? [ADULT_BELTS[0], ...KIDS_BELTS.filter(b => b.value.startsWith('kids_green')), ...ADULT_BELTS.slice(1)]
+    ? [ADULT_BELTS[0], ...KIDS_BELTS.filter(b => b.value.startsWith('kids_orange') || b.value.startsWith('kids_green')), ...ADULT_BELTS.slice(1)]
     : ADULT_BELTS
 
   useEffect(() => {
@@ -2334,7 +2334,7 @@ function SettingsTab({ profile, member }) {
                       <button type="button" onClick={() => setTeenCategoryOverride('kids')}
                         className={`flex-1 px-3 py-1.5 rounded-lg text-xs border transition ${
                           autoCategory === 'kids' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-300'
-                        }`}>ילדים (ירוקות)</button>
+                        }`}>ילדים (כתום/ירוק)</button>
                     </div>
                   )}
                 </div>

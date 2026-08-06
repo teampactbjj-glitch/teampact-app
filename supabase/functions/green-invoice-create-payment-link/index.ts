@@ -71,14 +71,39 @@ serve(async (req) => {
 
     const token = await getAccessToken(baseUrl, apiId, apiSecret)
 
-    // ⚠️ מבנה בקשה משוער — לאמת מול Sandbox. reference משמש כדי שה-webhook יוכל לשייך
+    // ✅ אומת מול קריאה אמיתית ב-02.08.2026 (Supabase "Test function", לא ניחוש): בלי שדה
+    // "type" (סוג מסמך) חוזרת שגיאה 2403 "סוג מסמך לא נשלח או נתמך עבור סוג עסק זה".
+    // 320 = חשבונית מס/קבלה — תואם להגדרה בעמוד "תשלומים דיגיטליים" בחשבונית ירוקה
+    // (סוג המסמך שיופק: חשבונית מס / קבלה). reference משמש כדי שה-webhook יוכל לשייך
     // את התשלום בחזרה ל-trial_visits / members (registration_payment_ref).
+    //
+    // ✅ אחרי התיקון (02.08.2026, נבדק שוב מול השרת): השגיאה השתנתה מ-2403 ל-2600
+    // "לא נמצא מסוף סליקה פעיל" — כלומר שדות הבקשה עכשיו תקינים.
+    //
+    // ✅ 05.08.2026 — Grow אישרו את האתר ושלחו pluginId (מסוף הסליקה שלנו). לפי התיעוד
+    // הרשמי העדכני (developers.morning.co, לא ה-Apiary הישן שכבר לא קיים): שדה "group"
+    // (אמצעי תשלום מוצע בטופס — 100=כרטיס אשראי) נדרש כשמשתמשים בתוסף Digital Payments
+    // (Grow), ו-pluginId מזהה איזה מסוף סליקה להשתמש בו (אם לא מוגדר — ברירת המחדל
+    // של העסק תיבחר). ה-pluginId שהתקבל מ-Grow בפועל עבור TeamPact:
+    //   7d87d438-0029-4124-9c26-1987ebff954c
+    const GREEN_INVOICE_PLUGIN_ID = Deno.env.get('GREEN_INVOICE_PLUGIN_ID') || '7d87d438-0029-4124-9c26-1987ebff954c'
+
+    // ✅ 05.08.2026 — לפי אותו תיעוד רשמי: notifyUrl הוא המנגנון האמיתי שגורם לחשבונית
+    // ירוקה לקרוא ל-webhook שלנו (POST) אחרי שהתשלום הצליח והמסמך נוצר — זו לא הגדרה
+    // נפרדת בדשבורד, אלא שדה בבקשה עצמה. מצביע לפונקציה שכבר פרוסה: green-invoice-webhook.
+    const supabaseProjectUrl = 'https://pnicoluujpidguvniwub.supabase.co'
+    const webhookUrl = `${supabaseProjectUrl}/functions/v1/green-invoice-webhook`
+
     const payload = {
+      type: 320, // חשבונית מס + קבלה (Tax Invoice + Receipt) — קוד מסמך רשמי של חשבונית ירוקה
       description: description || (type === 'trial' ? 'אימון ניסיון — TeamPact חולון קאנטרי' : 'הרשמה למנוי — TeamPact חולון קאנטרי'),
       amount,
       currency: 'ILS',
+      pluginId: GREEN_INVOICE_PLUGIN_ID,
+      group: 100, // 100 = כרטיס אשראי (PaymentFormGroup, לפי תיעוד רשמי)
       client: { name: customer_name || '', phone: customer_phone || '' },
       reference: `${type}:${reference_id}`,
+      notifyUrl: webhookUrl,
       successUrl: Deno.env.get('APP_URL') ? `${Deno.env.get('APP_URL')}/#payment-success` : undefined,
     }
 

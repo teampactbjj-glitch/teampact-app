@@ -94,7 +94,11 @@ function BranchPicker({ branches, selectedIds, onToggle, label = 'סניף' }) {
   )
 }
 
-function SubscriptionSelect({ value, onChange }) {
+// showPrices=true (רק כשנבחר סניף חולון קאנטרי לאותו אדם) — מציג את מחירון נספח א'
+// (מחיר מלא, לא כולל הנחות — הנחות קאנטרי/עובד לא מוצגות כאן בכלל, מטעמי פרטיות עסקית,
+// ראו הערה למעלה ליד COUNTRY_CLUB_PRICES). מטרה: לחסוך שאלות חוזרות "כמה עולה מנוי X".
+function SubscriptionSelect({ value, onChange, showPrices }) {
+  const priceLabel = (type, base) => showPrices ? `${base} — ₪${COUNTRY_CLUB_PRICES[type]}` : base
   return (
     <Field label="סוג מנוי מבוקש">
       {(props) => (
@@ -104,10 +108,10 @@ function SubscriptionSelect({ value, onChange }) {
           value={value}
           onChange={e => onChange(e.target.value)}
         >
-          <option value="1x_week">1× שבוע (באישור מנהל בלבד)</option>
-          <option value="2x_week">2× שבוע</option>
-          <option value="4x_week">4× שבוע</option>
-          <option value="unlimited">ללא הגבלה</option>
+          <option value="1x_week">{priceLabel('1x_week', '1× שבוע (באישור מנהל בלבד)')}</option>
+          <option value="2x_week">{priceLabel('2x_week', '2× שבוע')}</option>
+          <option value="4x_week">{priceLabel('4x_week', '4× שבוע')}</option>
+          <option value="unlimited">{priceLabel('unlimited', 'ללא הגבלה')}</option>
         </select>
       )}
     </Field>
@@ -506,6 +510,12 @@ export default function RegisterPage() {
 
   const selfIsAthlete = !form.is_guardian || form.parent_also_trains
 
+  // סה"כ לתשלום לתצוגה בלבד — מחיר מלא (בלי הנחות, ראו הערה ליד COUNTRY_CLUB_PRICES).
+  // מחושב רק על אנשים שנרשמים לחולון קאנטרי ספציפית.
+  const countryClubTotal =
+    (selfIsAthlete && selfIsCountryClub ? COUNTRY_CLUB_PRICES[form.self_subscription_type] || 0 : 0) +
+    children.reduce((sum, c) => sum + (isCountryClub(c.branch_ids) ? COUNTRY_CLUB_PRICES[c.subscription_type] || 0 : 0), 0)
+
   return (
     <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4" dir="rtl">
       <div className="max-w-sm w-full space-y-3">
@@ -620,7 +630,7 @@ export default function RegisterPage() {
                 )}
               </Field>
               <BranchPicker branches={branches} selectedIds={form.self_branch_ids} onToggle={toggleSelfBranch} />
-              <SubscriptionSelect value={form.self_subscription_type} onChange={v => setForm(p => ({ ...p, self_subscription_type: v }))} />
+              <SubscriptionSelect value={form.self_subscription_type} onChange={v => setForm(p => ({ ...p, self_subscription_type: v }))} showPrices={selfIsCountryClub} />
             </div>
           )}
 
@@ -656,7 +666,7 @@ export default function RegisterPage() {
                     )}
                   </Field>
                   <BranchPicker branches={branches} selectedIds={c.branch_ids} onToggle={id => toggleChildBranch(i, id)} />
-                  <SubscriptionSelect value={c.subscription_type} onChange={v => updateChild(i, { subscription_type: v })} />
+                  <SubscriptionSelect value={c.subscription_type} onChange={v => updateChild(i, { subscription_type: v })} showPrices={isCountryClub(c.branch_ids)} />
                 </div>
               ))}
               <button type="button" onClick={addChild}
@@ -668,6 +678,10 @@ export default function RegisterPage() {
 
           {anyCountryClub && (
             <div className="border-t border-gray-100 pt-3 space-y-3">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5 flex items-center justify-between">
+                <span className="text-sm font-bold text-gray-700">סה״כ לתשלום</span>
+                <span className="text-lg font-black text-emerald-700">₪{countryClubTotal}</span>
+              </div>
               <CountryClubWaiver value={waiver} onChange={setWaiver} prefilledName={form.account_name} />
               <TermsAgreement checked={agreedToTerms} onChange={setAgreedToTerms} />
               <a

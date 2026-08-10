@@ -1,4 +1,5 @@
 import { Field } from './a11y'
+import SignaturePad from './SignaturePad'
 
 // גרסת הנוסח — לשמירה יחד עם כל חתימה (club_waivers.waiver_version), כדי שאם הנוסח
 // ישתנה בעתיד יהיה ברור על איזו גרסה בדיוק חתם כל אדם.
@@ -73,7 +74,14 @@ export default function CountryClubWaiver({ value, onChange, prefilledName }) {
         </span>
       </label>
 
-      <Field label="חתימה — הקלד/י שם מלא כאישור" required hint={prefilledName ? `לדוגמה: ${prefilledName}` : undefined}>
+      <div className="space-y-2">
+        <span className="text-xs font-semibold text-gray-700 block">
+          חתימה <span aria-hidden="true">*</span><span className="sr-only"> (חובה)</span>
+        </span>
+        <SignaturePad value={v.signatureImage} onChange={img => set({ signatureImage: img })} />
+      </div>
+
+      <Field label="שם מלא (חלופה נגישה — אם לא ניתן לצייר חתימה)" hint={prefilledName ? `לדוגמה: ${prefilledName}` : undefined}>
         {(props) => (
           <input {...props} type="text"
             className="w-full border rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -85,10 +93,11 @@ export default function CountryClubWaiver({ value, onChange, prefilledName }) {
   )
 }
 
-// ולידציה משותפת — מחזירה הודעת שגיאה או null
+// ולידציה משותפת — מחזירה הודעת שגיאה או null. חתימה = ציור על ה-SignaturePad, או חלופה
+// נגישה של שם מוקלד (למי שלא יכול/ה לצייר) — אחד משניהם מספיק.
 export function validateWaiver(v) {
   if (!v?.idNumber || v.idNumber.length < 5) return 'נא למלא מספר ת"ז תקין'
   if (!v?.agreed) return 'יש לאשר את הצהרת ההתחייבות מול הקאנטרי'
-  if (!v?.signatureName?.trim()) return 'נא להקליד שם מלא כחתימה'
+  if (!v?.signatureImage && !v?.signatureName?.trim()) return 'נא לחתום — לצייר חתימה או להקליד שם מלא כחלופה'
   return null
 }

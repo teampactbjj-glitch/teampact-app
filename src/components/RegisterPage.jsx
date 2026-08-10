@@ -5,15 +5,16 @@ import { notifyPush } from '../lib/notifyPush'
 import { trainerUserIdsForMember } from '../lib/notifyTargets'
 import { Field } from './a11y'
 import CountryClubWaiver, { WAIVER_VERSION, validateWaiver } from './CountryClubWaiver'
+import InjuryRiskWaiver, { INJURY_WAIVER_VERSION, validateInjuryWaiver } from './InjuryRiskWaiver'
 import TermsAgreement, { TERMS_VERSION } from './TermsAgreement'
 
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
-// מחירון נספח א' (הסכם השכירות מול הקאנטרי, 26.07.2026) — עמודת "לקוח חיצוני" (מחיר מלא) בלבד.
-// ספציפי לסניף חולון קאנטרי. זהו המחיר היחיד שמוצג/נגבה בטופס הציבורי — כל הרשמה
-// משלמת מחיר מלא ומאושרת אוטומטית (תואם גם את branch_subscription_prices, לאימות ה-webhook).
-// זכאות להנחה (מנוי/עובד קאנטרי) אינה מוצגת כאן בכלל מטעמי פרטיות עסקית — מטופלת בנפרד,
-// ראו הערה ליד ה-WhatsApp note למטה.
+// מחירון נספח א' (הסכם השכירות מול הקאנטרי, 26.07.2026) — עמודת "לקוח חיצוני" (מחיר מלא).
+// ספציפי לסניף חולון קאנטרי. זה המחיר הבסיסי שמוצג/נגבה בטופס הציבורי הרגיל — הנחות
+// (מנוי/עובד קאנטרי) לא נחשפות שם בכלל מטעמי פרטיות עסקית. ✅ 06.08.2026 — הנחות כן קיימות,
+// אך רק דרך לינק נסתר (DISCOUNT_LINKS למטה) שדודי שולח פרטית: ?discount=member/employee
+// מפעיל הנחה קבועה (20%/50%) על אותו מחירון בסיס, בלי לחשוף זאת בטופס הרגיל.
 const COUNTRY_CLUB_PRICES = {
   '1x_week': 300,
   '2x_week': 400,
@@ -22,6 +23,16 @@ const COUNTRY_CLUB_PRICES = {
 }
 // למי לפנות אחרי הרשמה לגבי הנחה — מספר דודי מהחוזה מול הקאנטרי (0542250993)
 const DUDI_WHATSAPP_URL = 'https://wa.me/972542250993'
+
+// ✅ 06.08.2026 — לינקים קבועים ונסתרים (לא מקושרים משום מקום פומבי באתר/באפליקציה)
+// לשליחה פרטית של דודי בווטסאפ בלבד: ?discount=member (מנוי קאנטרי, 20%) או
+// ?discount=employee (עובד/ת קאנטרי + בני משפחה, 50%). מי שנכנס דרך לינק כזה ממלא
+// את פרטיו בעצמו כרגיל — הסניף וההנחה נקבעים אוטומטית לפי הלינק, בלי שדודי יזין
+// שום פרט של המתאמן בעצמו. לא חושף לציבור הרחב ששני המסלולים קיימים בכלל.
+const DISCOUNT_LINKS = {
+  member:   { pct: 20, type: 'country_club_member', label: 'מנוי קאנטרי' },
+  employee: { pct: 50, type: 'employee_family',      label: 'עובד/ת קאנטרי ובני משפחה' },
+}
 
 const HEBREW = /[֐-׿]/ // אות עברית כלשהי
 // ולידציית שם מלא בעברית — דורש שם פרטי + שם משפחה (לפחות שתי מילים)
@@ -34,6 +45,18 @@ function validateHebrewFullName(raw) {
 }
 
 const TODAY = new Date().toISOString().split('T')[0]
+
+// גיל מדויק לפי תאריך לידה — משמש לחסימת קטין שמנסה להירשם עצמאית (בלי הורה)
+// ולסימון is_minor הנכון בכל הצהרת סיכון שנשמרת.
+function calcAge(birthDateStr) {
+  if (!birthDateStr) return null
+  const b = new Date(birthDateStr)
+  const t = new Date()
+  let age = t.getFullYear() - b.getFullYear()
+  const m = t.getMonth() - b.getMonth()
+  if (m < 0 || (m === 0 && t.getDate() < b.getDate())) age--
+  return age
+}
 
 // טופס ילד/מתאמן בודד (שם, תאריך לידה, סניפים, מנוי)
 function emptyChild() {
@@ -97,8 +120,13 @@ function BranchPicker({ branches, selectedIds, onToggle, label = 'סניף' }) {
 // showPrices=true (רק כשנבחר סניף חולון קאנטרי לאותו אדם) — מציג את מחירון נספח א'
 // (מחיר מלא, לא כולל הנחות — הנחות קאנטרי/עובד לא מוצגות כאן בכלל, מטעמי פרטיות עסקית,
 // ראו הערה למעלה ליד COUNTRY_CLUB_PRICES). מטרה: לחסוך שאלות חוזרות "כמה עולה מנוי X".
-function SubscriptionSelect({ value, onChange, showPrices }) {
-  const priceLabel = (type, base) => showPrices ? `${base} — ₪${COUNTRY_CLUB_PRICES[type]}` : base
+function SubscriptionSelect({ value, onChange, showPrices, discountPct = 0 }) {
+  const priceLabel = (type, base) => {
+    if (!showPrices) return base
+    const full = COUNTRY_CLUB_PRICES[type]
+    if (discountPct > 0) return `${base} — ₪${Math.round(full * (1 - discountPct / 100))}`
+    return `${base} — ₪${full}`
+  }
   return (
     <Field label="סוג מנוי מבוקש">
       {(props) => (
@@ -129,6 +157,11 @@ export default function RegisterPage() {
     parent_also_trains: false,
     // פרטי המתאמן-עצמו (כשלא הורה, או הורה שגם מתאמן)
     self_birth_date: '', self_branch_ids: [], self_subscription_type: '2x_week',
+    // ✅ 10.08.2026 — מתאמן שנרשם עם חשבון (login) משלו, אבל הוא עצמו קטין (לדוגמה בן/בת 14
+    // שמנהלים לבד את ההרשמה לאימונים בקאנטרי). לחשבון יש email/סיסמה של הקטין עצמו — אבל
+    // את הצהרות ההסכמה (למטה) חייב למלא ולחתום עליהן הורה/אפוטרופוס, לא הקטין. השם כאן הוא
+    // שם ההורה החותם, נפרד לגמרי משם החשבון (שם הקטין) ומהתשלום.
+    self_guardian_name: '',
   })
   const [children, setChildren] = useState([emptyChild()])
   const [loading, setLoading] = useState(false)
@@ -139,6 +172,9 @@ export default function RegisterPage() {
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
   // הצהרת קאנטרי — חתימה אחת (של ההורה/המתאמן הבוגר) שמכסה את כל מי שנרשם בהגשה הזו
   const [waiver, setWaiver] = useState({})
+  // הצהרת סיכון בענף לחימה — חתימה אחת שמכסה את כל מי שנרשם בהגשה הזו, בחולון קאנטרי בלבד
+  // (אותו תנאי הצגה כמו CountryClubWaiver — anyCountryClub). ראו InjuryRiskWaiver.jsx.
+  const [injuryWaiver, setInjuryWaiver] = useState({})
   // אישור תנאי שימוש — נדרש רק כשיש תשלום אמיתי בהגשה (כרגע: חולון קאנטרי בלבד)
   const [agreedToTerms, setAgreedToTerms] = useState(false)
   // גלילה אוטומטית להודעת שגיאה כשהיא מופיעה — הטופס ארוך, וההודעה (כולל
@@ -150,6 +186,11 @@ export default function RegisterPage() {
       errorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   }, [error])
+
+  // לינק הנחה נסתר (?discount=member / ?discount=employee) — נקרא פעם אחת מה-URL.
+  // אין UI ציבורי שמצביע על הפרמטר הזה; מי שמגיע לכאן קיבל את הלינק ישירות מדודי.
+  const discountParam = new URLSearchParams(window.location.search).get('discount')
+  const activeDiscount = DISCOUNT_LINKS[discountParam] || null
 
   useEffect(() => {
     supabase.from('branches').select('id, name, requires_facility_waiver').eq('hidden', false).then(({ data }) => setBranches(data || []))
@@ -197,7 +238,11 @@ export default function RegisterPage() {
       ? { ...c, branch_ids: c.branch_ids.includes(id) ? c.branch_ids.filter(x => x !== id) : [...c.branch_ids, id] }
       : c))
   }
-  function addChild() { setChildren(list => [...list, emptyChild()]) }
+  function addChild() {
+    setChildren(list => [...list, activeDiscount && countryClubBranchIds[0]
+      ? { ...emptyChild(), branch_ids: [countryClubBranchIds[0]] }
+      : emptyChild()])
+  }
   function removeChild(i) { setChildren(list => list.length <= 1 ? list : list.filter((_, idx) => idx !== i)) }
 
   // סניפים שדורשים הצהרת קאנטרי (כרגע רק חולון קאנטרי) — נטען מה-DB, לא מקודד קשיח
@@ -206,6 +251,20 @@ export default function RegisterPage() {
   const selfIsCountryClub = isCountryClub(form.self_branch_ids)
   const anyChildCountryClub = children.some(c => isCountryClub(c.branch_ids))
   const anyCountryClub = selfIsCountryClub || anyChildCountryClub
+
+  // לינק הנחה פעיל: אוכפים אוטומטית את סניף חולון קאנטרי (עצמי + כל ילד שעדיין
+  // בלי סניף) ברגע שהסניפים נטענים — כדי שדודי לא יצטרך להסביר "תבחר קאנטרי".
+  useEffect(() => {
+    if (!activeDiscount || countryClubBranchIds.length === 0) return
+    const ccId = countryClubBranchIds[0]
+    setForm(p => p.self_branch_ids.includes(ccId) ? p : { ...p, self_branch_ids: [ccId] })
+    setChildren(list => list.map(c => c.branch_ids.includes(ccId) ? c : { ...c, branch_ids: [ccId] }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branches, activeDiscount])
+
+  // מחיר אפקטיבי (אחרי הנחה, אם הלינק הנוכחי כולל אחת) — לתצוגה ולסכום התשלום בפועל
+  const discPct = activeDiscount?.pct || 0
+  const effectivePrice = (type) => Math.round((COUNTRY_CLUB_PRICES[type] || 0) * (1 - discPct / 100))
 
   async function handleSubmit() {
     // --- ולידציה: פרטי חשבון ---
@@ -235,10 +294,17 @@ export default function RegisterPage() {
     const selfIsAthlete = !form.is_guardian || form.parent_also_trains
 
     // --- ולידציה: המתאמן-עצמו ---
+    // ✅ 10.08.2026 — דודי הבהיר: קטין כן יכול (וצריך) להירשם עם חשבון/login עצמאי משלו
+    // (למשל בן/בת 14 שמנהלים לבד את ההרשמה לאימונים) — "אני הורה" זה רק למי שרושם כמה
+    // ילדים במקום אחד. מה שחייב להיות של הורה זה החתימה על ההצהרות בקאנטרי (למטה),
+    // לא בעלות החשבון עצמו. לכן אין כאן חסימה — רק, אם המתאמן-עצמו קטין ובחר קאנטרי,
+    // נדרש בנוסף שם הורה/אפוטרופוס לצורך החתימה (ולידציה בהמשך, ליד anyCountryClub).
     if (selfIsAthlete) {
       if (!form.self_birth_date) { setError('נא למלא תאריך לידה'); return }
       if (form.self_branch_ids.length === 0) { setError('נא לבחור לפחות סניף אחד'); return }
     }
+    const selfAge = selfIsAthlete ? calcAge(form.self_birth_date) : null
+    const selfIsMinor = selfAge != null && selfAge < 18
 
     // --- ולידציה: ילדים ---
     if (form.is_guardian) {
@@ -252,10 +318,21 @@ export default function RegisterPage() {
       }
     }
 
-    // --- ולידציה: הצהרת קאנטרי + אישור תנאי שימוש (רק אם נבחר סניף חולון קאנטרי עבור מישהו — יש תשלום אמיתי) ---
+    // --- ולידציה: הצהרת קאנטרי + הצהרת סיכון + אישור תנאי שימוש ---
+    // רק אם נבחר סניף חולון קאנטרי עבור מישהו — זה הסניף היחיד שדורש את כל זה (יש תשלום
+    // ישיר וחשיפה דרך החוזה מול הקאנטרי). סניפים אחרים (חולון רגיל, תל אביב) — לא רלוונטי,
+    // יש שם מזכירות ותהליך נפרד.
     if (anyCountryClub) {
+      // אם המתאמן-עצמו קטין (חשבון משלו, לא במסלול "אני הורה") — צריך שם הורה/אפוטרופוס
+      // נפרד לצורך החתימה על ההצהרות, כי שם החשבון (form.account_name) הוא שם הקטין עצמו.
+      if (selfIsAthlete && !form.is_guardian && selfIsCountryClub && selfIsMinor) {
+        const gErr = validateHebrewFullName(form.self_guardian_name)
+        if (gErr) { setError('שם ההורה/אפוטרופוס (לצורך החתימה): ' + gErr); return }
+      }
       const waiverErr = validateWaiver(waiver)
       if (waiverErr) { setError(waiverErr); return }
+      const injuryErr = validateInjuryWaiver(injuryWaiver)
+      if (injuryErr) { setError(injuryErr); return }
       if (!agreedToTerms) { setError('יש לאשר את תנאי השימוש לפני המשך לתשלום'); return }
     }
 
@@ -263,6 +340,11 @@ export default function RegisterPage() {
     setError(null)
     const email = form.email.trim().toLowerCase()
     const parentName = form.account_name.trim()
+    // שם החותם בפועל על הצהרות הקאנטרי: אם המתאמן-עצמו קטין עם חשבון משלו — ההורה שמולא
+    // בשדה הנפרד; אחרת — בעל/ת החשבון עצמו/ה (הורה במסלול "אני הורה", או מתאמן/ת בוגר/ה).
+    const waiverSignerName = (selfIsAthlete && !form.is_guardian && selfIsMinor)
+      ? (form.self_guardian_name.trim() || parentName)
+      : parentName
     const phoneTrim = form.phone.trim()
 
     // 0. מניעת בקשות כפולות — לפני שיוצרים auth+member, בודקים אם כבר קיימת
@@ -340,8 +422,14 @@ export default function RegisterPage() {
         membership_type: form.self_subscription_type,
         status: 'pending',
         birth_date: form.self_birth_date || null,
-        parent_name: null,
-        ...(isCC ? { registration_payment_ref: registrationPaymentRef } : {}),
+        // אם המתאמן-עצמו קטין/ה עם חשבון משלו/ה (לא במסלול "אני הורה") — שומרים את שם
+        // ההורה גם כאן על כרטיס המתאמן, לא רק ברשומת ההצהרה החתומה, כדי שיהיה נגיש
+        // ישירות מכרטיס המתאמן (AthleteManagement) בלי לחפש בטבלת club_waivers.
+        parent_name: selfIsMinor ? (form.self_guardian_name.trim() || null) : null,
+        ...(isCC ? {
+          registration_payment_ref: registrationPaymentRef,
+          ...(activeDiscount ? { discount_pct: activeDiscount.pct, discount_type: activeDiscount.type } : {}),
+        } : {}),
       })
     }
     if (form.is_guardian) {
@@ -360,7 +448,10 @@ export default function RegisterPage() {
           birth_date: c.birth_date || null,
           guardian_id: userId || null,
           parent_name: parentName,
-          ...(isCC ? { registration_payment_ref: registrationPaymentRef } : {}),
+          ...(isCC ? {
+            registration_payment_ref: registrationPaymentRef,
+            ...(activeDiscount ? { discount_pct: activeDiscount.pct, discount_type: activeDiscount.type } : {}),
+          } : {}),
         })
       }
     }
@@ -402,6 +493,9 @@ export default function RegisterPage() {
       const ccIndexes = memberRows.map((m, i) => m.registration_payment_ref ? i : -1).filter(i => i >= 0)
       const ccInsertedRows = ccIndexes.map(i => insertedRows[i])
 
+      // full_name = שם המשתתף/ת (מי שהצהרה הזו מכסה) — לא בהכרח מי שחתם בפועל.
+      // signature_typed_name = שם החותם/ת בפועל (waiverSignerName: ההורה אם מדובר בקטין
+      // עם חשבון עצמאי, אחרת בעל/ת החשבון עצמו/ה — ראו החישוב למעלה ליד handleSubmit).
       const waiverInserts = ccInsertedRows.map(r => ({
         branch_id: r.branch_id,
         member_id: r.id,
@@ -409,19 +503,46 @@ export default function RegisterPage() {
         id_number: waiver.idNumber,
         address: waiver.address || null,
         phone: form.phone.trim() || null,
-        signature_typed_name: waiver.signatureName.trim(),
+        signature_typed_name: (waiver.signatureName || '').trim() || waiverSignerName,
+        signature_image: waiver.signatureImage || null,
+        waiver_type: 'facility',
         waiver_version: WAIVER_VERSION,
         user_agent: navigator.userAgent,
       }))
       const { error: waiverErr } = await supabase.from('club_waivers').insert(waiverInserts)
       if (waiverErr) console.error('club_waivers insert error (ממשיכים בכל זאת):', waiverErr)
 
-      // סכום לתשלום: תמיד מחיר מלא — הנחות (קאנטרי/עובד) לא מוצגות בטופס הציבורי,
-      // ומטופלות בנפרד ע"י דודי אחרי פנייה ישירה (ראו הערת WhatsApp בטופס למטה)
+      // הצהרת סיכון בענף לחימה — גם היא רק לחולון קאנטרי, שורה אחת לכל מי ששייך לקאנטרי
+      // בהגשה הזו. is_minor מחושב לפי תאריך הלידה של כל שורה בנפרד — כדי שהורה שגם מתאמן
+      // (parent_also_trains) יסומן נכון כבוגר על עצמו וכקטין על ילדיו.
+      const injuryInserts = ccIndexes.map((idx, k) => {
+        const origRow = memberRows[idx]
+        const r = ccInsertedRows[k]
+        const age = calcAge(origRow.birth_date)
+        return {
+          branch_id: r.branch_id,
+          member_id: r.id,
+          full_name: r.full_name,
+          id_number: injuryWaiver.idNumber,
+          phone: form.phone.trim() || null,
+          signature_typed_name: (injuryWaiver.signatureName || '').trim() || waiverSignerName,
+          signature_image: injuryWaiver.signatureImage || null,
+          waiver_type: 'injury_risk',
+          is_minor: age != null && age < 18,
+          waiver_version: INJURY_WAIVER_VERSION,
+          user_agent: navigator.userAgent,
+        }
+      })
+      const { error: injuryWaiverErr } = await supabase.from('club_waivers').insert(injuryInserts)
+      if (injuryWaiverErr) console.error('injury_risk waiver insert error (ממשיכים בכל זאת):', injuryWaiverErr)
+
+      // סכום לתשלום: מחיר מלא, אלא אם ההרשמה הגיעה דרך לינק הנחה נסתר (?discount=...)
+      // — או-אז נגבה כבר הסכום המוזל בפועל (תואם למה שנשמר ב-discount_pct למעלה,
+      // ולמה שה-webhook יחשב כ"מחיר אפקטיבי" כדי לאשר אוטומטית).
       let totalAmount = 0
       for (let k = 0; k < ccIndexes.length; k++) {
         const origRow = memberRows[ccIndexes[k]]
-        totalAmount += COUNTRY_CLUB_PRICES[origRow.subscription_type] || 0
+        totalAmount += effectivePrice(origRow.subscription_type)
       }
 
       const registrationPaymentRef = memberRows[ccIndexes[0]]?.registration_payment_ref
@@ -509,12 +630,18 @@ export default function RegisterPage() {
   )
 
   const selfIsAthlete = !form.is_guardian || form.parent_also_trains
+  // האם המתאמן-עצמו (בעל/ת החשבון) קטין/ה — רלוונטי רק כשלא במסלול "אני הורה"
+  // (שם ההורה כבר הוא בעל/ת החשבון). קובע אם צריך שדה "שם הורה" נפרד לצורך החתימה.
+  const selfIsMinor = selfIsAthlete && !form.is_guardian && (() => {
+    const age = calcAge(form.self_birth_date)
+    return age != null && age < 18
+  })()
 
-  // סה"כ לתשלום לתצוגה בלבד — מחיר מלא (בלי הנחות, ראו הערה ליד COUNTRY_CLUB_PRICES).
+  // סה"כ לתשלום לתצוגה בלבד — מחיר אפקטיבי (אחרי הנחה, אם הלינק הנוכחי כולל אחת).
   // מחושב רק על אנשים שנרשמים לחולון קאנטרי ספציפית.
   const countryClubTotal =
-    (selfIsAthlete && selfIsCountryClub ? COUNTRY_CLUB_PRICES[form.self_subscription_type] || 0 : 0) +
-    children.reduce((sum, c) => sum + (isCountryClub(c.branch_ids) ? COUNTRY_CLUB_PRICES[c.subscription_type] || 0 : 0), 0)
+    (selfIsAthlete && selfIsCountryClub ? effectivePrice(form.self_subscription_type) : 0) +
+    children.reduce((sum, c) => sum + (isCountryClub(c.branch_ids) ? effectivePrice(c.subscription_type) : 0), 0)
 
   return (
     <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4" dir="rtl">
@@ -526,6 +653,13 @@ export default function RegisterPage() {
           <h1 className="font-bold text-xl text-gray-800">הצטרפות ל-TeamPact</h1>
           <p className="text-sm text-gray-600 mt-0.5">מלא את הפרטים ונחזור אליך בהקדם</p>
         </div>
+
+        {activeDiscount && (
+          <div role="note" className="bg-emerald-50 border-2 border-emerald-400 rounded-xl px-3 py-2.5 text-center">
+            <p className="text-sm font-bold text-emerald-800">🎉 הרשמה במסלול {activeDiscount.label} — TeamPact חולון קאנטרי</p>
+            <p className="text-xs text-emerald-700 mt-0.5">המחיר המיוחד יחושב אוטומטית — פשוט מלא/י את הפרטים שלך</p>
+          </div>
+        )}
 
         <div role="note" className="bg-blue-50 border-2 border-blue-300 rounded-xl px-3 py-3 text-center">
           <p className="text-sm font-bold text-blue-900">כבר נרשמת בעבר?</p>
@@ -629,8 +763,27 @@ export default function RegisterPage() {
                     onChange={e => setForm(p => ({ ...p, self_birth_date: e.target.value }))} />
                 )}
               </Field>
-              <BranchPicker branches={branches} selectedIds={form.self_branch_ids} onToggle={toggleSelfBranch} />
-              <SubscriptionSelect value={form.self_subscription_type} onChange={v => setForm(p => ({ ...p, self_subscription_type: v }))} showPrices={selfIsCountryClub} />
+              {selfIsMinor && selfIsCountryClub && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-bold text-amber-800">👨‍👩‍👧 את/ה קטין/ה — נדרש שם הורה/אפוטרופוס לצורך החתימה על ההצהרות למטה</p>
+                  <Field label="שם מלא של ההורה/אפוטרופוס" required hint="ההורה הוא שממלא ת״ז וחותם בהצהרות למטה, לא את/ה">
+                    {(props) => (
+                      <input {...props} type="text" lang="he" inputMode="text"
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        placeholder="ישראל ישראלי" value={form.self_guardian_name}
+                        onChange={e => setForm(p => ({ ...p, self_guardian_name: e.target.value }))} />
+                    )}
+                  </Field>
+                </div>
+              )}
+              {activeDiscount ? (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-sm text-emerald-800 font-semibold">
+                  📍 סניף: {branches.find(b => b.requires_facility_waiver)?.name || 'חולון קאנטרי'} — מסלול {activeDiscount.label}
+                </div>
+              ) : (
+                <BranchPicker branches={branches} selectedIds={form.self_branch_ids} onToggle={toggleSelfBranch} />
+              )}
+              <SubscriptionSelect value={form.self_subscription_type} onChange={v => setForm(p => ({ ...p, self_subscription_type: v }))} showPrices={selfIsCountryClub} discountPct={discPct} />
             </div>
           )}
 
@@ -665,8 +818,14 @@ export default function RegisterPage() {
                         onChange={e => updateChild(i, { birth_date: e.target.value })} />
                     )}
                   </Field>
-                  <BranchPicker branches={branches} selectedIds={c.branch_ids} onToggle={id => toggleChildBranch(i, id)} />
-                  <SubscriptionSelect value={c.subscription_type} onChange={v => updateChild(i, { subscription_type: v })} showPrices={isCountryClub(c.branch_ids)} />
+                  {activeDiscount ? (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-sm text-emerald-800 font-semibold">
+                      📍 סניף: {branches.find(b => b.requires_facility_waiver)?.name || 'חולון קאנטרי'} — מסלול {activeDiscount.label}
+                    </div>
+                  ) : (
+                    <BranchPicker branches={branches} selectedIds={c.branch_ids} onToggle={id => toggleChildBranch(i, id)} />
+                  )}
+                  <SubscriptionSelect value={c.subscription_type} onChange={v => updateChild(i, { subscription_type: v })} showPrices={isCountryClub(c.branch_ids)} discountPct={discPct} />
                 </div>
               ))}
               <button type="button" onClick={addChild}
@@ -679,19 +838,22 @@ export default function RegisterPage() {
           {anyCountryClub && (
             <div className="border-t border-gray-100 pt-3 space-y-3">
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5 flex items-center justify-between">
-                <span className="text-sm font-bold text-gray-700">סה״כ לתשלום</span>
+                <span className="text-sm font-bold text-gray-700">סה״כ לתשלום{activeDiscount ? ' (לאחר הנחה)' : ''}</span>
                 <span className="text-lg font-black text-emerald-700">₪{countryClubTotal}</span>
               </div>
-              <CountryClubWaiver value={waiver} onChange={setWaiver} prefilledName={form.account_name} />
+              <CountryClubWaiver value={waiver} onChange={setWaiver} prefilledName={selfIsMinor ? form.self_guardian_name : form.account_name} />
+              <InjuryRiskWaiver value={injuryWaiver} onChange={setInjuryWaiver} isMinor={form.is_guardian || selfIsMinor} prefilledName={selfIsMinor ? form.self_guardian_name : form.account_name} />
               <TermsAgreement checked={agreedToTerms} onChange={setAgreedToTerms} />
-              <a
-                href={DUDI_WHATSAPP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-xs text-gray-600 hover:border-emerald-400 hover:text-emerald-700 transition no-underline"
-              >
-                💬 מנוי מרכז הספורט (קאנטרי), עובד/ת שלו או בן/בת משפחה? יכול להיות שמגיע לך מחיר מותאם — צור/י קשר בוואטסאפ אחרי ההרשמה ונבדוק יחד.
-              </a>
+              {!activeDiscount && (
+                <a
+                  href={DUDI_WHATSAPP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-xs text-gray-600 hover:border-emerald-400 hover:text-emerald-700 transition no-underline"
+                >
+                  💬 מנוי מרכז הספורט (קאנטרי), עובד/ת שלו או בן/בת משפחה? יכול להיות שמגיע לך מחיר מותאם — צור/י קשר בוואטסאפ אחרי ההרשמה ונבדוק יחד.
+                </a>
+              )}
             </div>
           )}
         </div>

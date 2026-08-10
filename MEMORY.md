@@ -5237,8 +5237,37 @@ cd /Users/dudibenzaken/teampact-app && rm -f .git/index.lock && git status --sho
 
 דודי הבהיר מה הוא "קוד ההנחות הישן": **לא** קשור לעריכת הנחה לכל מתאמן — זה `CustomDiscountLink.jsx` (עדיין untracked, אף פעם לא committed), שני לינקי הרשמה קבועים (20% מנוי-קאנטרי, 50% עובד+משפחה, ר' `FIXED_LINKS`), מוצג בראש טאב "מתאמנים" למנהל. הבקשה: לתת לזה להתקפל **בדיוק כמו כל שאר האזורים בדשבורד** (לדוגמה "בקשות ממתינות" ב-`TodayClasses.jsx` — כפתור עם `▲`/`▼`, סגור כברירת מחדל). **תוקן:** כל הבלוק (כותרת + 2 הכרטיסים + הטופס החד-פעמי שכבר היה מתקפל) עטוף עכשיו בכפתור-קיפול יחיד, `open` state, סגור כברירת מחדל. build נבדק נקי. **דודי אישר בבדיקה לוקאלית שזה עובד כמצופה.** עדיין untracked — טרם commit/push.
 
+**✅ נדחף לפרודקשן.** קומיט `5092141` ב-`main`+`origin/main` (2 קבצים: `CustomDiscountLink.jsx` חדש + `MEMORY.md`).
+
+### 11.08.2026 (המשך) — שורש כשל מייל שחזור סיסמה נמצא ותוקן (Resend Insights, לא ניחוש)
+
+**דודי ביקש מפורשות: "תעשה אתה, אני יאשר" — אז נכנסתי בעצמי ל-Supabase Dashboard ול-Resend דרך Chrome MCP (עם הרשאתו), במקום לבקש ממנו צילומי מסך.**
+
+**מה נבדק ונשלל (כל אחד עם ראיה חיה, לא ניחוש):**
+- DNS בפועל (SPF/DKIM/DMARC/MX של `teampact.co.il`) — תקין, אומת דרך dns.google.
+- Supabase Custom SMTP — דלוק, מוגדר נכון (`smtp.resend.com`, sender `noreply@teampact.co.il`).
+- Rate Limits — 30 מיילים/שעה (לא המגבלה הישנה של 2-4).
+- דומיין ב-Resend — Verified.
+- **המייל בפועל לאמיר (`amirbdbd@gmail.com`, 10.08 13:25): סטטוס `Delivered` לפי Resend.**
+
+**השורש שנמצא — כלי "Insights" של Resend, ישירות על המייל האמיתי של אמיר, סימן 2 אזהרות:**
+1. **"Ensure link URLs match sending domain"** — הקישור בתוך המייל הצביע ישר על `pnicoluujpidguvniwub.supabase.co` בעוד השולח הוא `noreply@teampact.co.il` — דומיין שונה לגמרי. "Mismatched URLs can trigger spam filters" (ציטוט Resend). זו התבנית הקלאסית שספאם/פישינג-פילטרים תופסים.
+2. **"Don't use no-reply"** — כתובת `noreply@` מורידה אמון.
+
+זה מסביר בדיוק את מה שדודי דיווח: המייל "מגיע" (delivered בפועל), אבל ג'ימייל מתייחס אליו כחשוד ומסתיר/מטמין אותו — לא ספאם קלאסי שרואים בתיקייה, אלא סינון "שקט" יותר אגרסיבי, בגלל אי-ההתאמה בין הדומיינים.
+
+**התיקון שיושם (קוד + הגדרת Supabase, שניהם הושלמו):**
+1. **קוד חדש:** `src/components/auth/ResetPasswordVerify.jsx` — דף נחיתה בנתיב `/reset-password` שמקבל `?token_hash=...&type=recovery` ומאמת בעצמו בצד הלקוח (`supabase.auth.verifyOtp`), ואז מציג את `ResetPasswordPage` הקיים. נרשם ב-`App.jsx` (עם import + שורת path נוספת ליד `/register` וכו').
+2. **`admin-generate-recovery-link/index.ts` עודכן** — משתמש עכשיו ב-`hashed_token` (לא `action_link`) ובונה קישור לדומיין שלנו, באותה תבנית בדיוק — עקבי, ובונוס עוד יותר עמיד מפני "וואטסאפ צורך את הטוקן" (לא רק תוקן ב-11.08 הבוקר, אלא גם ברמת הארכיטקטורה עכשיו).
+3. **תבנית המייל "Reset Password" ב-Supabase Dashboard שונתה בפועל** (Authentication → Emails → Templates → Reset Password) מ-`{{ .ConfirmationURL }}` ל-`{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`. **בוצע ואומת בעצמי דרך Chrome MCP:** ערכתי את ה-Monaco editor דרך `window.monaco` API ישירות (הקלדה רגילה יצרה תו `>` עודף בגלל auto-close של העורך — תוקן ע"י `model.setValue()` מדויק), לחצתי Save, ואז **פתחתי טאב חדש לגמרי וטענתי מחדש מהשרת כדי לוודא שהשמירה באמת נקלטה** (לא רק state מקומי) — אומת: `model.getValue()` אחרי reload תואם בדיוק (192 תווים, matchesExpected: true).
+
+**⚠️ טרם בוצע (חוסם את הבדיקה המלאה מקצה-לקצה):**
+1. פריסת ה-Edge Function המעודכן: `npx supabase functions deploy admin-generate-recovery-link`.
+2. `npm run build` מקומי + commit + push ל-`main` (כדי ש-`/reset-password` יהיה קיים בפועל ב-`teampact-app.vercel.app` — התבנית כבר מצביעה לשם, אבל הדף עוד לא בפרודקשן).
+3. **בדיקה אמיתית מקצה-לקצה:** אחרי הפריסה — לבצע "שכחתי סיסמה" אמיתי (לא כלי המנהל) על מייל אמיתי (למשל של דודי עצמו או אמיר), ולוודא: (א) המייל מגיע בלי סימון חשוד, (ב) הקישור פותח את `/reset-password` ומציג "הגדר סיסמה חדשה" בהצלחה.
+
 **My last pending task (11.08.2026, עדכני):**
-1. **דחוף — מוכן ל-push:** `CustomDiscountLink.jsx` (הקיפול) — נבדק לוקאלית ואושר ע"י דודי, מחכה ל-`git add`/`commit`/`push`. **שים לב:** תמיד `rm -f .git/index.lock` לפני, ותמיד מרכאות בודדות (`'...'`) בהודעת commit בעברית (לא כפולות — "ע"י" וכו' שוברים את ה-quoting של bash, כבר קרה פעם).
+1. **דחוף — לסיים את הפריסה:** לפרוס Edge Function, build+commit+push, ואז בדיקה אמיתית מקצה-לקצה של "שכחתי סיסמה" (לא רק כלי המנהל).
 2. **פתוח, טרם הובהר:** קוד עריכת הנחה **לכל מתאמן בודד** (`discount_pct`/`discount_type`/`discount_valid_until` ב-`EMPTY_FORM`/`handleSave`/`startEdit` ב-`AthleteManagement.jsx`, unstaged) — זה נשאר שאלה פתוחה, דודי טרם אישר אם זה סגור/רצוי לדחוף.
 3. **פתוח, לא דחוף:** דודי צריך לבדוק Resend Logs + Supabase Rate Limits כדי להבין את שורש כשל שליחת מייל השחזור האוטומטי (לא דחוף — הכלי הידני מכסה את זה בינתיים).
 4. **נדחה במכוון:** מיזוג `RegisterPage.jsx`+`TrialFormPage.jsx`; אינטגרציית API לתשלום אימון ניסיון.

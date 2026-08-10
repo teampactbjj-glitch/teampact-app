@@ -12,6 +12,7 @@ import AccessibilityPage from './components/AccessibilityPage'
 import AccessibilityWidget from './components/AccessibilityWidget'
 import { SkipLink } from './components/a11y'
 import ResetPasswordPage from './components/auth/ResetPasswordPage'
+import ResetPasswordVerify from './components/auth/ResetPasswordVerify'
 
 // קריאה סינכרונית של ה-cache של Supabase — לפני שה-React מרנדר אפילו פעם אחת.
 // זה מאפשר לנו לדעת מיד אם המשתמש "סגר את האפליקציה כשהוא היה מחובר",
@@ -287,6 +288,11 @@ export default function App() {
   )
 
   // נתיבים ציבוריים — אחרי כל ה-hooks כדי לקיים את Rules of Hooks (Bug 1.7).
+  // ✅ 11.08.2026 — קישור שחזור סיסמה החדש (דרך תבנית המייל המעודכנת ב-Supabase) מגיע
+  // לנתיב הזה עם ?token_hash=...&type=recovery בדומיין שלנו, במקום ישר ל-supabase.co
+  // (ראה ResetPasswordVerify.jsx להסבר המלא — תיקון לבעיית "הדומיין בקישור לא תואם
+  // לדומיין השולח" שג'ימייל מסמן כספאם, אומת מול Resend Insights בפועל).
+  if (window.location.pathname === '/reset-password') return <ResetPasswordVerify />
   if (window.location.pathname === '/register') return (<><RegisterPage /><AccessibilityWidget /></>)
   if (window.location.pathname === '/trial') return (<><TrialFormPage /><AccessibilityWidget /></>)
   if (window.location.pathname === '/terms') return (<><TermsOfServicePage /><AccessibilityWidget /></>)

@@ -84,10 +84,16 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: linkErr.message }), { status: 400, headers: corsHeaders })
     }
 
-    const link = linkData?.properties?.action_link
-    if (!link) {
+    // ✅ 11.08.2026 — משתמשים ב-hashed_token ובונים קישור לדומיין שלנו (לא action_link
+    // הגולמי של Supabase), כדי לאמת בעצמנו בצד הלקוח דרך /reset-password (ר' ResetPasswordVerify.jsx).
+    // אותו תיקון בדיוק שיושם לתבנית המייל, בעקבות הממצא ב-Resend Insights על מייל אמיתי
+    // לאמיר בן דוד: קישור לדומיין שונה מהשולח מעורר חשד ספאם. כאן זה לא שולח מייל בכלל
+    // (הקישור מועתק/נשלח ידנית בוואטסאפ ע"י המנהל), אבל אותה תבנית קישור עקבית ואמינה יותר.
+    const hashedToken = linkData?.properties?.hashed_token
+    if (!hashedToken) {
       return new Response(JSON.stringify({ error: 'לא התקבל קישור מ-Supabase — ייתכן שהאימייל לא קיים במערכת' }), { status: 500, headers: corsHeaders })
     }
+    const link = `${appUrl}/reset-password?token_hash=${hashedToken}&type=recovery`
 
     return new Response(JSON.stringify({ ok: true, link }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (e) {

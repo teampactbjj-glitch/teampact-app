@@ -36,6 +36,11 @@ const EMPTY_FORM = {
   belt_received_at: '',
   belt_stripes: 0,
   bjj_start_date: '',
+  // הנחה (קאנטרי) — ✅ 06.08.2026: עורכים ישירות כאן, לא בטאב "שכר" (שם רק תצוגה/עריכה
+  // כללית לכל המתאמנים יחד — כאן זה חלק טבעי מעריכת המתאמן עצמו).
+  discount_pct: 0,
+  discount_type: null,
+  discount_valid_until: '',
 }
 
 function calcAge(birthDate) {
@@ -242,6 +247,12 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       belt_stripes: (form.trains_gi || form.trains_nogi) && form.belt ? Number(form.belt_stripes || 0) : 0,
       bjj_start_date: (form.trains_gi || form.trains_nogi) && form.bjj_start_date ? form.bjj_start_date : null,
       birth_date: form.birth_date || null,
+      // הנחה — נשמר רק ע"י מנהל אמיתי (לא מזכירה), כדי לא לחשוף/לאפשר עריכה של מידע פיננסי רגיש
+      ...(isAdmin && !isSecretary ? {
+        discount_pct: Number(form.discount_pct) || 0,
+        discount_type: form.discount_type || null,
+        discount_valid_until: form.discount_valid_until || null,
+      } : {}),
     }
     let error
     if (editing === 'new') {
@@ -263,13 +274,22 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       if (!ok) return
       // ניקוי רישומים+צ'ק-אינים עתידיים בלבד — עבר/היום נשמרים (שכר המאמנים על מה שהגיע)
       await cancelFutureBookings(id)
-      const { data: deleted, error } = await supabase.from('members').delete().eq('id', id).select('id')
-      if (error) { toast.error('שגיאה במחיקה: ' + error.message); return }
-      if (!deleted || deleted.length === 0) {
-        toast.error('המחיקה נחסמה — אין הרשאת מחיקה (RLS). הרץ את מיגרציית הרשאות המחיקה ב-Supabase.')
-        return
+      // ✅ 10.08.2026 — יש טריגר tr_soft_delete (supabase/migrations/soft_delete.sql) שהופך בכוונה
+      // כל DELETE ראשון על רשומה פעילה ל-soft-delete (deleted_at), כרשת ביטחון מפני מחיקה בטעות —
+      // ומחזיר 0 שורות. זה תקין וצפוי, לא כישלון RLS! (הבאג הישן כאן פירש את זה כשגיאה ועצר אחרי
+      // שלב 1 בלבד — מתאמן נשאר "תקוע" כמסומן-מוסר בלי באמת להימחק, עם הודעת שגיאה מטעה.)
+      // מאחר שדודי כבר אישר "למחוק לצמיתות" בדיאלוג — משלימים את שני השלבים באותה פעולה:
+      // שלב 1 (soft-delete) ואז מיד שלב 2 (purge אמיתי — כולל מחיקת חשבון ה-auth ושחרור המייל).
+      const step1 = await supabase.from('members').delete().eq('id', id).select('id')
+      if (step1.error) { toast.error('שגיאה במחיקה: ' + step1.error.message); return }
+      const step2 = await supabase.from('members').delete().eq('id', id).select('id')
+      if (step2.error) {
+        // המתאמן כן סומן כמוסר (soft-delete הצליח) — רק הפרגון הסופי נכשל, לא חוסם.
+        console.warn('deleteAthlete purge warning (soft-delete הצליח, purge סופי נכשל):', step2.error)
+        toast.warning('המתאמן סומן כמוסר, אך המחיקה הסופית (שחרור המייל) נכשלה. פנה לתמיכה אם צריך למחוק סופית.')
+      } else {
+        toast.success('המתאמן נמחק לצמיתות')
       }
-      toast.success('המתאמן נמחק')
     } else {
       const ok = await confirm({ title: 'בקשת מחיקה', message: 'לשלוח בקשת מחיקה למנהל?', confirmText: 'שלח בקשה' })
       if (!ok) return
@@ -289,6 +309,36 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       const next = new Set(prev); next.delete(id); return next
     })
     fetchAthletes()
+  }
+
+  // ✅ 11.08.2026 — כלי מנהל: יצירת קישור איפוס סיסמה ישיר, בלי תלות במייל שנתקע
+  // (ראה MEMORY.md — חקירת כשל שחזור סיסמה, לא נמצא root cause סופי בלוגים הזמינים).
+  // עוקף SMTP/rate-limit/spam לגמרי: המנהל מקבל קישור חד-פעמי אמיתי ושולח אותו
+  // ידנית בוואטסאפ. אין כאן שום שליחה אוטומטית — רק יצירת הקישור.
+  //
+  // ⚠️ תוקן 11.08.2026: בגרסה הראשונה הקוד פתח וואטסאפ אוטומטית והמנהל היה צריך להעתיק
+  // את הקישור *מתוך* תיבת הכתיבה של וואטסאפ — וזה יצר עותק פגום (טוקן חתוך/כפול) בבדיקה
+  // בפועל של דודי. עכשיו מציגים את הקישור הנקי בתיבה ייעודית עם כפתור העתקה משלו
+  // (navigator.clipboard ישירות על המחרוזת הגולמית שחזרה מהשרת) — בדיוק כמו התבנית
+  // הקיימת ב-CustomDiscountLink.jsx — ורק בנוסף לזה, אופציונלית, כפתור לפתוח וואטסאפ.
+  const [sendingRecoveryFor, setSendingRecoveryFor] = useState(null)
+  const [recoveryModal, setRecoveryModal] = useState(null) // { athlete, link } | null
+
+  async function sendRecoveryLink(athlete) {
+    if (!athlete?.email) { toast.error('למתאמן הזה אין אימייל שמור במערכת'); return }
+    setSendingRecoveryFor(athlete.id)
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-generate-recovery-link', {
+        body: { email: athlete.email },
+      })
+      if (error || !data?.link) {
+        toast.error('שגיאה ביצירת הקישור: ' + (data?.error || error?.message || 'לא ידוע'))
+        return
+      }
+      setRecoveryModal({ athlete, link: data.link })
+    } finally {
+      setSendingRecoveryFor(null)
+    }
   }
 
   async function approveDeletion(id) {
@@ -722,6 +772,9 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       belt_stripes: athlete.belt_stripes ?? 0,
       bjj_start_date: athlete.bjj_start_date || '',
       birth_date: athlete.birth_date || '',
+      discount_pct: athlete.discount_pct || 0,
+      discount_type: athlete.discount_type || null,
+      discount_valid_until: athlete.discount_valid_until || '',
     })
     setEditing(athlete.id)
     // גלילה אוטומטית לטופס העריכה — אחרת הוא נפתח למעלה והמשתמש לא רואה.
@@ -875,6 +928,33 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
               onChange={e => setForm(p => ({ ...p, active: e.target.checked }))} className="w-4 h-4" />
             מתאמן פעיל
           </label>
+
+          {/* הנחה (קאנטרי) — מנהל אמיתי בלבד, לא מזכירה */}
+          {isAdmin && !isSecretary && (
+            <div className="border rounded-lg p-3 space-y-2 bg-emerald-50/40">
+              <p className="text-xs font-medium text-gray-600">💸 הנחה (מנוי/עובד קאנטרי)</p>
+              <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                value={form.discount_type || 'none'}
+                onChange={e => {
+                  const v = e.target.value
+                  const pctByType = { none: 0, country_club_member: 20, employee_family: 50 }
+                  setForm(p => ({ ...p, discount_type: v === 'none' ? null : v, discount_pct: pctByType[v] }))
+                }}>
+                <option value="none">ללא הנחה</option>
+                <option value="country_club_member">מנוי קאנטרי — 20%</option>
+                <option value="employee_family">עובד/ת קאנטרי + משפחה — 50%</option>
+              </select>
+              {form.discount_type && (
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">בתוקף עד (לפי כרטיס/אישור הקאנטרי — ריק = לצמיתות)</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={form.discount_valid_until || ''}
+                    onChange={e => setForm(p => ({ ...p, discount_valid_until: e.target.value }))} />
+                  <p className="text-[11px] text-gray-400 mt-1">אחרי התאריך המחיר חוזר אוטומטית למלא — גם בתשלומים וגם בדוח השכר.</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* === BJJ Gi / NoGi belt section === */}
           <div className="border rounded-lg p-3 space-y-3 bg-amber-50/30">
@@ -1306,6 +1386,11 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                                 🚫 ביטול
                               </button>
                             )}
+                            <button onClick={() => sendRecoveryLink(a)} disabled={sendingRecoveryFor === a.id}
+                              title="יוצר קישור איפוס סיסמה חד-פעמי לשליחה ידנית בוואטסאפ — בלי תלות במייל"
+                              className="text-xs px-2 py-1 rounded-lg border border-purple-200 text-purple-600 hover:bg-purple-50 transition disabled:opacity-50">
+                              {sendingRecoveryFor === a.id ? '...' : '🔑 שחזור סיסמה'}
+                            </button>
                             <button onClick={() => deleteAthlete(a.id)}
                               className="text-xs px-2 py-1 rounded-lg border border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition">
                               מחק
@@ -1322,6 +1407,41 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
           </div>
         )
       })()}
+
+      {/* מודאל קישור שחזור סיסמה — 11.08.2026 */}
+      {recoveryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setRecoveryModal(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-gray-800">🔑 קישור שחזור סיסמה — {recoveryModal.athlete.full_name}</h3>
+              <button onClick={() => setRecoveryModal(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+
+            <div className="mb-3 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2.5">
+              הקישור חד-פעמי — משתמשים בו רק פעם אחת (גם פתיחה לבדיקה "צורכת" אותו). כל לחיצה על הכפתור למעלה יוצרת קישור חדש.
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs break-all text-gray-600 select-all mb-3">
+              {recoveryModal.link}
+            </div>
+
+            <div className="flex gap-2">
+              <button type="button"
+                onClick={async () => { await navigator.clipboard?.writeText(recoveryModal.link); toast.success('הקישור הועתק ללוח') }}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg py-2.5 text-sm transition-colors">
+                📋 העתק קישור
+              </button>
+              {recoveryModal.athlete.phone && (
+                <a href={`https://wa.me/${(() => { const d = recoveryModal.athlete.phone.replace(/\D/g, ''); return d.startsWith('0') ? '972' + d.slice(1) : d })()}?text=${encodeURIComponent(`שלום ${recoveryModal.athlete.full_name || ''}! הנה קישור להגדרת סיסמה חדשה ל-TeamPact:\n${recoveryModal.link}\n(הקישור חד-פעמי)`)}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex-1 text-center bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg py-2.5 text-sm transition-colors">
+                  💬 פתח בוואטסאפ
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* מודאל הקפאת מנוי */}
       {freezeModal && (

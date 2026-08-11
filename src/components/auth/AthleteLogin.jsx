@@ -3,6 +3,10 @@ import { supabase } from '../../lib/supabase'
 import InstallBanner from '../InstallBanner'
 import { Field, useToast } from '../a11y'
 
+// ✅ 11.08.2026 — כתובת וואטסאפ של דודי, לפניות "לא הצליח לשחזר סיסמה". אותה כתובת
+// בדיוק כמו ב-RegisterPage.jsx (DUDI_WHATSAPP_URL) — לשמור על עקביות אם משתנה בעתיד.
+const DUDI_WHATSAPP_URL = 'https://wa.me/972542250993'
+
 export default function AthleteLogin() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -112,6 +116,17 @@ export default function AthleteLogin() {
           >
             שכחתי סיסמה
           </button>
+          {/* ✅ 11.08.2026 — לפעמים מייל השחזור לא מגיע/נתפס כחשוד. אופציה ישירה ליצור
+              קשר עם דודי בוואטסאפ, עם ההודעה כבר כוללת את המייל שהוקלד — כדי שדודי ידע
+              מיד מי זה ויוכל לשלוח קישור שחזור ידני דרך כלי המנהל. */}
+          <a
+            href={`${DUDI_WHATSAPP_URL}?text=${encodeURIComponent(`שלום, לא הצלחתי לשחזר סיסמה באפליקציה. המייל שלי: ${email.trim() || '(לא הקלדתי)'}`)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full text-xs text-gray-500 hover:text-green-700 underline text-center focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-green-400 rounded"
+          >
+            💬 המייל לא הגיע? שלח לי הודעה בוואטסאפ
+          </a>
         </form>
 
         <div className="mt-6 pt-6 border-t text-center">

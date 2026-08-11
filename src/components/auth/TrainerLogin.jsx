@@ -3,6 +3,9 @@ import { supabase } from '../../lib/supabase'
 import InstallBanner from '../InstallBanner'
 import { Field, useToast } from '../a11y'
 
+// ✅ 11.08.2026 — אותה כתובת וואטסאפ בדיוק כמו ב-AthleteLogin.jsx / RegisterPage.jsx.
+const DUDI_WHATSAPP_URL = 'https://wa.me/972542250993'
+
 export default function TrainerLogin({ onSwitch }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -110,6 +113,14 @@ export default function TrainerLogin({ onSwitch }) {
           >
             שכחתי סיסמה
           </button>
+          <a
+            href={`${DUDI_WHATSAPP_URL}?text=${encodeURIComponent(`שלום, לא הצלחתי לשחזר סיסמה באפליקציה. המייל שלי: ${email.trim() || '(לא הקלדתי)'}`)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full text-xs text-gray-500 hover:text-green-700 underline text-center focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-green-400 rounded"
+          >
+            💬 המייל לא הגיע? שלח לי הודעה בוואטסאפ
+          </a>
         </form>
         <button
           type="button"

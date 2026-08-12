@@ -1301,7 +1301,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                   const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
                   const checked = selectedIds.has(a.id)
                   return (
-                    <li key={a.id} className={`px-4 py-3 flex items-center justify-between gap-3 ${checked ? 'bg-blue-50' : ''}`}>
+                    <li key={a.id} className={`px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 ${checked ? 'bg-blue-50' : ''}`}>
                       <div className="flex items-center gap-3 min-w-0">
                         {/* תיבת בחירה — מנהל ומזכירה */}
                         {isAdmin && (
@@ -1344,7 +1344,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                           )}
                         </div>
                       </div>
-                      <div className="flex gap-1.5 shrink-0 flex-wrap justify-end items-center">
+                      <div className="flex gap-1.5 flex-wrap justify-start sm:justify-end sm:shrink-0 items-center">
                         {isAdmin && (
                           <button onClick={() => startEdit(a)}
                             className="text-xs px-2 py-1 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition">

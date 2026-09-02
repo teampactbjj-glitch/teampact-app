@@ -86,6 +86,15 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   const [athletes, setAthletes] = useState([])
   const [pendingAthletes, setPendingAthletes] = useState([])
   const [pendingDeletions, setPendingDeletions] = useState([])
+  // ✅ 18.08.2026 — ארכיון: "דחה" על בקשה ממתינה כבר לא מוחק לצמיתות באותו רגע (ראו
+  // rejectPending למטה) — רק מסמן deleted_at (soft-delete), כדי שטעות-דחייה תהיה
+  // ניתנת לשחזור בלי לחפור בלוג ביקורת (ראה מקרה ירין+אביב קצב, חולון-בגין, 06.08.2026:
+  // מזכירות דחתה בטעות שתי בקשות שהיו תקינות לגמרי, ולא הייתה שום דרך להחזיר אותן
+  // חוץ מקריאה ידנית ל-audit_log). מוצג רק למנהל/מזכירה — אותה הרשאה כמו בקשות הצטרפות.
+  const [archivedAthletes, setArchivedAthletes] = useState([])
+  const [archiveCollapsed, setArchiveCollapsed] = useState(() => {
+    try { return localStorage.getItem('tp_archiveCollapsed') !== '0' } catch { return true }
+  })
   const [branches, setBranches] = useState([])
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
@@ -98,6 +107,9 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [freezeModal, setFreezeModal] = useState(null)
+  // ✅ 18.08.2026 — נשמר בזמן startEdit כדי שנוכל להשוות ב-saveAthlete אם המייל השתנה
+  // בפועל (ולסנכרן את חשבון ההתחברות רק אז — ראו syncMemberEmailToAuth למטה).
+  const [editingOriginalEmail, setEditingOriginalEmail] = useState('')
   const [pendingCollapsed, setPendingCollapsed] = useState(() => {
     try { return localStorage.getItem('tp_pendingCollapsed') === '1' } catch { return false }
   })
@@ -110,6 +122,9 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   useEffect(() => {
     try { localStorage.setItem('tp_athletesCollapsed', athletesCollapsed ? '1' : '0') } catch {}
   }, [athletesCollapsed])
+  useEffect(() => {
+    try { localStorage.setItem('tp_archiveCollapsed', archiveCollapsed ? '1' : '0') } catch {}
+  }, [archiveCollapsed])
 
   useEffect(() => {
     (async () => {
@@ -181,14 +196,24 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     let pendingQ     = supabase.from('members').select('*').eq('status', 'pending').is('deleted_at', null).order('created_at', { ascending: false })
     let deletionReqQ = supabase.from('members').select('*').eq('status', 'pending_deletion').is('deleted_at', null).order('full_name')
     let activeQ      = supabase.from('members').select('*').neq('status', 'pending').neq('status', 'pending_deletion').is('deleted_at', null).order('full_name')
+    // ✅ 18.08.2026 — ארכיון (מתאמנים שנדחו/נמחקו — deleted_at לא ריק). רק מנהל/מזכירה
+    // (אותה הרשאה כמו בקשות הצטרפות) — 60 האחרונות מספיקות, זו רשת ביטחון לטעויות
+    // אחרונות, לא ארכיון היסטורי מלא. null עבור מאמן רגיל, כדי לא למשוך את זה בכלל.
+    let archiveQ = isAdmin
+      ? supabase.from('members').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false }).limit(60)
+      : null
     if (branchOr) {
       pendingQ = pendingQ.or(branchOr)
       deletionReqQ = deletionReqQ.or(branchOr)
       activeQ = activeQ.or(branchOr)
+      if (archiveQ) archiveQ = archiveQ.or(branchOr)
     }
 
-    const [{ data: pendingData }, { data: deletionData }, { data, error }] = await Promise.all([pendingQ, deletionReqQ, activeQ])
+    const [{ data: pendingData }, { data: deletionData }, { data, error }, archiveRes] = await Promise.all([
+      pendingQ, deletionReqQ, activeQ, archiveQ || Promise.resolve({ data: [] }),
+    ])
     if (error) console.error('fetchAthletes error:', error)
+    if (archiveRes.error) console.error('fetchAthletes archive error:', archiveRes.error)
 
     // בדיקה אוטומטית: מתאמנים שתאריך הביטול שלהם הגיע
     const todayStr = new Date().toISOString().split('T')[0]
@@ -220,12 +245,29 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     setPendingAthletes((pendingData || []).filter(m => matchesAllowed(m) && matchesPendingCoach(m) && matchesBranch(m)))
     setPendingDeletions((deletionData || []).filter(m => matchesAllowed(m) && matchesBranch(m)))
     setAthletes((data || []).filter(m => matchesAllowed(m) && matchesBranch(m)))
+    setArchivedAthletes((archiveRes.data || []).filter(m => matchesAllowed(m) && matchesPendingCoach(m) && matchesBranch(m)))
     setLoading(false)
   }
 
   async function saveAthlete(e) {
     e.preventDefault()
     setSaveError('')
+    // ✅ 18.08.2026 — אזהרת כפילות בהוספה ידנית: אם כבר קיים מתאמן/בקשה עם אותו טלפון
+    // (כולל בקשות ממתינות מהאפליקציה), מזהירים לפני יצירת רשומה נוספת — כדי למנוע בדיוק
+    // את מה שקרה עם ירין+אביב קצב (06.08.2026, חולון-בגין): המזכירות רשמה/גבתה תשלום
+    // ידנית בלי לשים לב שכבר קיימת בקשה תואמת באפליקציה, ודחתה (=מחקה) אותה בטעות.
+    // בודקים רק בהוספה חדשה (לא בעריכת מתאמן קיים), ורק אם הוזן טלפון.
+    if (editing === 'new' && form.phone.trim()) {
+      const { data: dup } = await supabase.rpc('check_phone_registrations', { p_phone: form.phone.trim() })
+      if (dup?.exists) {
+        const ok = await confirm({
+          title: 'טלפון כבר קיים במערכת',
+          message: 'כבר יש מתאמן/ת (או בקשת הצטרפות ממתינה מהאפליקציה) עם הטלפון הזה במערכת. אם זו אותה משפחה — עדיף לבדוק ב"בקשות הצטרפות" ולאשר משם, במקום ליצור רשומה כפולה. ליצור בכל זאת מתאמן/ת נוספ/ת עם אותו טלפון?',
+          confirmText: 'צור בכל זאת',
+        })
+        if (!ok) return
+      }
+    }
     const payload = {
       full_name: form.full_name,
       email: form.email,
@@ -255,6 +297,8 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       } : {}),
     }
     let error
+    const wasEditingId = editing
+    const emailChanged = editing !== 'new' && form.email.trim() && form.email.trim() !== editingOriginalEmail
     if (editing === 'new') {
       // מאמן מוסיף מתאמן = מאושר אוטומטית (לא pending)
       ;({ error } = await supabase.from('members').insert({ ...payload, status: 'approved' }))
@@ -263,6 +307,24 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     }
     if (error) { setSaveError(error.message); return }
     setEditing(null)
+    // ✅ 18.08.2026 — עדכון מייל הקשר לבד לא מספיק: אם למתאמן הזה יש חשבון התחברות
+    // משלו (auth.users, לא כל ילד-של-הורה), הוא עדיין ינסה להתחבר/לשחזר סיסמה עם
+    // המייל הישן עד שנעדכן גם אותו. ראו admin-update-member-email ולמה זה קרה
+    // בפועל לתומר גנדלמן (18.08.2026 — אז תוקן ידנית). לא חוסם את השמירה עצמה —
+    // הטבלה כבר עודכנה; זו רק פעולת סנכרון נוספת, fire-and-forget עם toast.
+    if (emailChanged) {
+      supabase.functions.invoke('admin-update-member-email', {
+        body: { id: wasEditingId, email: form.email.trim() },
+      }).then(({ data, error: syncErr }) => {
+        if (syncErr) {
+          toast.error('מייל הקשר עודכן, אך סנכרון חשבון ההתחברות נכשל — פנה לתמיכה אם המתאמן לא מצליח להתחבר.')
+          console.error('admin-update-member-email error:', syncErr)
+        } else if (data?.synced) {
+          toast.success('מייל עודכן — כולל חשבון ההתחברות. המתאמן יכול להתחבר/לשחזר סיסמה עם המייל החדש.')
+        }
+        // synced:false + reason:'no_auth_account' — תקין ושקט (למשל ילד-של-הורה, אין לו חשבון בכלל).
+      }).catch(err => console.warn('admin-update-member-email skipped:', err?.message || err))
+    }
     fetchAthletes()
     onPendingChange?.()
   }
@@ -692,25 +754,21 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   }
 
   async function rejectPending(id, reason) {
-    // דחיית מתאמן ממתין → מחיקה מלאה ושחרור המייל להרשמה חוזרת.
-    // על members יש טריגר tr_soft_delete (soft_delete.sql):
-    //   • DELETE ראשון על רשומה פעילה → הופך ל-UPDATE deleted_at (soft-delete),
-    //     מבטל את ה-DELETE ומחזיר 0 שורות. (זו הסיבה ל"אין הרשאה" המטעה — לא RLS!)
-    //   • DELETE שני על רשומה שכבר מסומנת deleted_at → עובר באמת (purge),
-    //     ומפעיל את הטריגר שמוחק את חשבון ה-auth ומשחרר את המייל.
-    // לכן מוחקים פעמיים: שלב 1 = soft-delete, שלב 2 = purge אמיתי.
+    // ✅ 18.08.2026 — שונה מ"מחיקה מלאה מיידית" ל"ארכוב בלבד" (soft-delete, שלב 1
+    // בלבד — לא מפעילים יותר את שלב ה-purge כאן). הסיבה: ב-06.08.2026 מזכירות
+    // חולון-בגין דחתה בטעות שתי בקשות תקינות (ירין+אביב קצב) בגלל בלבול מול הרשמה
+    // ידנית מקבילה — ומכיוון שדחייה מחקה לצמיתות באותו רגע, השחזור היחיד האפשרי
+    // היה קריאה ידנית ל-audit_log. עכשיו "דחה" רק מסמן deleted_at (הרשומה נעלמת
+    // מכל המסכים הרגילים — הטריגר tr_soft_delete הופך את ה-DELETE הראשון ל-UPDATE
+    // אוטומטית, ר' soft_delete.sql) ונשארת זמינה לשחזור מתוך "ארכיון" למטה. מחיקה
+    // סופית אמיתית (purge — כולל שחרור מייל ומחיקת חשבון auth) קורית רק אם לוחצים
+    // "מחק לצמיתות" מפורשות בארכיון (purgeArchived למטה), לא אוטומטית בדחייה.
     const lead = pendingAthletes.find(a => a.id === id)
-    const step1 = await supabase.from('members').delete().eq('id', id)
-    if (step1.error) {
-      console.error('rejectPending soft-delete error:', step1.error)
-      alert('דחיית המתאמן נכשלה: ' + (step1.error.message || 'שגיאה לא ידועה'))
+    const { error } = await supabase.from('members').delete().eq('id', id)
+    if (error) {
+      console.error('rejectPending soft-delete error:', error)
+      alert('דחיית המתאמן נכשלה: ' + (error.message || 'שגיאה לא ידועה'))
       return
-    }
-    // שלב 2 — purge אמיתי (משחרר את המייל). הרשומה כבר deleted_at → הטריגר מתיר DELETE.
-    const { error: purgeErr } = await supabase.from('members').delete().eq('id', id).select('id')
-    if (purgeErr) {
-      // ה-soft-delete הצליח (המתאמן נעלם) — רק שחרור המייל נכשל. לא חוסם.
-      console.warn('rejectPending purge warning (member removed, email not freed):', purgeErr)
     }
     // הודעה אוטומטית למתאמן שנדחה — מפנה אותו למזכירות/מנהל.
     // רק אם יש מייל (למתאמנים-ילדים שנרשמו ע"י הורה אין email משלהם).
@@ -721,6 +779,40 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     }
     fetchAthletes()
     onPendingChange?.()
+  }
+
+  // שחזור מתוך הארכיון — מבטל deleted_at ומחזיר את הרשומה בדיוק כמו שהייתה
+  // (סטטוס, סניף, כל שאר השדות נשארים בלי שינוי — לא נגענו בהם בדחייה).
+  async function restoreArchived(id) {
+    const item = archivedAthletes.find(a => a.id === id)
+    const ok = await confirm({
+      title: 'שחזור מהארכיון',
+      message: `לשחזר את "${item?.full_name || 'הרשומה'}" בחזרה לרשימה הרגילה?`,
+      confirmText: 'שחזר',
+    })
+    if (!ok) return
+    const { error } = await supabase.from('members').update({ deleted_at: null }).eq('id', id)
+    if (error) { toast.error('שחזור נכשל: ' + (error.message || 'שגיאה לא ידועה')); return }
+    toast.success('שוחזר בהצלחה')
+    fetchAthletes()
+    onPendingChange?.()
+  }
+
+  // מחיקה סופית מתוך הארכיון — הרשומה כבר deleted_at, אז DELETE יחיד כבר עובר
+  // (הטריגר מתיר DELETE שני על רשומה שכבר soft-deleted). בלתי הפיך.
+  async function purgeArchived(id) {
+    const item = archivedAthletes.find(a => a.id === id)
+    const ok = await confirm({
+      title: 'מחיקה סופית מהארכיון',
+      message: `למחוק לצמיתות את "${item?.full_name || 'הרשומה'}"? לא ניתן לשחזר אחרי זה.`,
+      confirmText: 'מחק לצמיתות',
+      danger: true,
+    })
+    if (!ok) return
+    const { error } = await supabase.from('members').delete().eq('id', id)
+    if (error) { toast.error('מחיקה נכשלה: ' + (error.message || 'שגיאה לא ידועה')); return }
+    toast.success('נמחק לצמיתות')
+    fetchAthletes()
   }
 
   function toggleBranch(id) {
@@ -777,6 +869,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       discount_valid_until: athlete.discount_valid_until || '',
     })
     setEditing(athlete.id)
+    setEditingOriginalEmail(athlete.email || '')
     // גלילה אוטומטית לטופס העריכה — אחרת הוא נפתח למעלה והמשתמש לא רואה.
     setTimeout(() => {
       document.getElementById('athlete-edit-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1164,6 +1257,58 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
               )
             })}
           </ul>
+        </div>
+      )}
+
+      {/* ✅ 18.08.2026 — ארכיון: מתאמנים/בקשות שנדחו או נמחקו (deleted_at). גלוי רק
+          למנהל/מזכירה. ברירת מחדל מכווץ כדי לא לבלבל עם הרשימה הרגילה — נפתח בלחיצה.
+          זו רשת הביטחון שלא הייתה קיימת ב-06.08.2026 (ראו rejectPending למעלה). */}
+      {isAdmin && archivedAthletes.length > 0 && (stackedLayout || subTab === 'active') && (
+        <div className="space-y-2">
+          <button type="button" onClick={() => setArchiveCollapsed(v => !v)}
+            className="w-full flex items-center justify-between gap-2 text-right">
+            <h3 className="font-bold text-gray-500 text-sm flex items-center gap-2">
+              🗄 ארכיון — נדחו/נמחקו ({archivedAthletes.length})
+            </h3>
+            <span className={`text-gray-500 text-xs transition-transform ${archiveCollapsed ? '' : 'rotate-180'}`}>▼</span>
+          </button>
+          {!archiveCollapsed && (
+            <>
+              <p className="text-[11px] text-gray-400">
+                60 האחרונות. שחזור מחזיר בדיוק כמו שהיה (סטטוס, סניף, מנוי). מחיקה סופית בלתי הפיכה.
+              </p>
+              <ul className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y overflow-hidden">
+                {archivedAthletes.map(a => {
+                  const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+                  const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
+                  const deletedDate = a.deleted_at ? new Date(a.deleted_at).toLocaleDateString('he-IL') : ''
+                  return (
+                    <li key={a.id} className="px-4 py-3 flex items-center justify-between gap-3 bg-gray-50/60">
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-700 text-sm">{a.full_name}</p>
+                        <p className="text-xs text-gray-400">
+                          {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
+                          {a.phone && <span> · {a.phone}</span>}
+                          {bnames && <span> · 📍 {bnames}</span>}
+                          {deletedDate && <span> · נמחק/נדחה ב-{deletedDate}</span>}
+                        </p>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={() => restoreArchived(a.id)}
+                          className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700"
+                        >↩ שחזר</button>
+                        <button
+                          onClick={() => purgeArchived(a.id)}
+                          className="text-xs border border-red-300 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50"
+                        >מחק לצמיתות</button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
+          )}
         </div>
       )}
 

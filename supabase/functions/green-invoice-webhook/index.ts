@@ -1,6 +1,8 @@
 // Supabase Edge Function — webhook שמקבל אישור תשלום מחשבונית ירוקה (Green Invoice)
 // ומבצע אישור אוטומטי של הרשמה למנוי (חולון קאנטרי) כשהסכום ששולם תואם בדיוק
-// למחירון המלא (branch_subscription_prices), ואין בקשת הנחה. אימון ניסיון מסומן כ"שולם".
+// למחיר האפקטיבי (custom_price ?? מחירון הסניף, אחרי discount_pct אם קיים —
+// כמו SalaryReport.jsx getEffectivePrice), ואין בקשת הנחה עצמאית (wants_discount).
+// אימון ניסיון מסומן כ"שולם".
 //
 // ⚠️ מבנה ה-payload של ה-webhook ואופן האימות (חתימה/סוד משותף) *לא אומתו בפועל* —
 // כלל הברזל של הפרויקט (CLAUDE.md) אוסר לסמוך על ניחוש מהתיעוד בלבד. לפני הפעלה
@@ -64,28 +66,52 @@ serve(async (req) => {
     }
 
     if (refType === 'subscription') {
+      // ✅ 06.08.2026 — תוקן: המחיר הצפוי מחושב עכשיו לפי "מחיר אפקטיבי" (כמו
+      // SalaryReport.jsx getEffectivePrice), לא לפי מחיר מלא בלבד. זה נדרש כדי
+      // שתשלומים שנוצרו דרך כלי "לינק תשלום עם הנחה" (CustomDiscountLink.jsx —
+      // מנהל בלבד, discount_pct/custom_price כבר נקבעו מראש ע"י דודי) יאושרו
+      // אוטומטית כשמשולם הסכום המוזל הנכון, בלי לדרוש אישור ידני נוסף.
+      // נוסחה: base = custom_price ?? branch_subscription_prices[branch][type] ?? DEFAULT
+      //        effective = base × (1 − discount_pct/100)
       // refId = registration_payment_ref — עשוי לקבץ כמה שורות members (הורה + כמה ילדים)
       const { data: rows, error: fetchErr } = await admin
         .from('members')
-        .select('id, branch_id, subscription_type, wants_discount, status')
+        .select('id, branch_id, subscription_type, wants_discount, discount_pct, discount_valid_until, custom_price, status')
         .eq('registration_payment_ref', refId)
       if (fetchErr) throw fetchErr
       if (!rows || rows.length === 0) {
         return new Response(JSON.stringify({ error: `לא נמצאו רשומות members עם registration_payment_ref=${refId}` }), { status: 404, headers: corsHeaders })
       }
 
-      // מחשבים את הסכום הצפוי לפי מחירון הסניף לכל שורה, ומסכמים
+      const DEFAULT_SUB_PRICE: Record<string, number> = {
+        '1x_week': 200, '2x_week': 365, '4x_week': 500, 'unlimited': 600,
+      }
+
+      // מחשבים את הסכום הצפוי (אפקטיבי, אחרי הנחה אם יש) לכל שורה, ומסכמים
       let expectedTotal = 0
       let anyDiscount = false
       for (const row of rows) {
         if (row.wants_discount) anyDiscount = true
-        const { data: priceRow } = await admin
-          .from('branch_subscription_prices')
-          .select('price')
-          .eq('branch_id', row.branch_id)
-          .eq('subscription_type', row.subscription_type)
-          .maybeSingle()
-        expectedTotal += priceRow?.price || 0
+
+        let base: number
+        if (row.custom_price != null) {
+          base = row.custom_price
+        } else {
+          const { data: priceRow } = await admin
+            .from('branch_subscription_prices')
+            .select('price')
+            .eq('branch_id', row.branch_id)
+            .eq('subscription_type', row.subscription_type)
+            .maybeSingle()
+          base = priceRow?.price ?? DEFAULT_SUB_PRICE[row.subscription_type] ?? 0
+        }
+
+        // ✅ 06.08.2026 — הנחה עם תוקף: אם discount_valid_until קיים ועבר, ההנחה
+        // מתבטלת אוטומטית (מחיר מלא) — תואם ל-isDiscountExpired ב-SalaryReport.jsx.
+        const today = new Date().toISOString().slice(0, 10)
+        const discExpired = row.discount_valid_until && row.discount_valid_until < today
+        const discPct = discExpired ? 0 : (row.discount_pct || 0)
+        expectedTotal += Math.round(base * (1 - discPct / 100))
       }
 
       const amountMatches = expectedTotal > 0 && paidAmount === expectedTotal

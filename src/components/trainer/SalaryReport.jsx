@@ -56,11 +56,20 @@ function monthRange(year, month) {
   return { from, to }
 }
 
+// ✅ 06.08.2026 — הנחה עם תוקף: אם discount_valid_until קיים ועבר, ההנחה מתבטלת
+// אוטומטית (חוזרים למחיר מלא) בלי שדודי יצטרך לזכור להסיר אותה ידנית. דודי מזין
+// את התאריך לפי מה שכתוב בכרטיס/אישור החברות בקאנטרי שהוצג לו.
+function isDiscountExpired(member) {
+  if (!member.discount_valid_until) return false
+  const today = new Date().toISOString().slice(0, 10)
+  return member.discount_valid_until < today
+}
+
 function getEffectivePrice(member, branchPricesMap) {
   const base = member.custom_price != null
     ? member.custom_price
     : (branchPricesMap.get(`${member.branch_id}:${member.subscription_type}`) ?? DEFAULT_SUB_PRICE[member.subscription_type] ?? 0)
-  const disc = member.discount_pct || 0
+  const disc = isDiscountExpired(member) ? 0 : (member.discount_pct || 0)
   return base * (1 - disc / 100)
 }
 
@@ -124,7 +133,7 @@ export default function SalaryReport({ isAdmin }) {
         .order('checkin_date', { ascending: true }).order('class_id', { ascending: true }).order('athlete_id', { ascending: true })),
       supabase.from('classes').select('id, coach_id, branch_id').is('deleted_at', null),
       fetchAllPaged(() => supabase.from('members')
-        .select('id, full_name, subscription_type, branch_id, custom_price, discount_pct')
+        .select('id, full_name, subscription_type, branch_id, custom_price, discount_pct, discount_valid_until')
         .eq('active', true)
         .order('id', { ascending: true })),
       supabase.from('branches').select('id, name, platform_cut').order('name'),
@@ -359,6 +368,8 @@ export default function SalaryReport({ isAdmin }) {
       payload.custom_price = e.custom_price === '' ? null : Number(e.custom_price)
     if (e.discount_pct !== undefined)
       payload.discount_pct = e.discount_pct === '' ? 0 : Number(e.discount_pct)
+    if (e.discount_valid_until !== undefined)
+      payload.discount_valid_until = e.discount_valid_until === '' ? null : e.discount_valid_until
     setSavingMember(memberId)
     const { error } = await supabase.from('members').update(payload).eq('id', memberId)
     if (error) alert('שגיאה: ' + error.message)
@@ -583,6 +594,7 @@ export default function SalaryReport({ isAdmin }) {
                     <th className="text-center py-2 px-2 font-semibold">סוג מנוי</th>
                     <th className="text-center py-2 px-2 font-semibold">מחיר מותאם (₪)</th>
                     <th className="text-center py-2 px-2 font-semibold">הנחה %</th>
+                    <th className="text-center py-2 px-2 font-semibold">בתוקף עד</th>
                     <th className="text-center py-2 px-2 font-semibold">מחיר סופי</th>
                     <th className="py-2 px-2"></th>
                   </tr>
@@ -597,15 +609,18 @@ export default function SalaryReport({ isAdmin }) {
                     const displaySubType  = edit?.subscription_type ?? member.subscription_type
                     const displayCustom   = edit?.custom_price      ?? (member.custom_price != null ? String(member.custom_price) : '')
                     const displayDiscount = edit?.discount_pct      ?? (member.discount_pct || 0)
+                    const displayValidUntil = edit?.discount_valid_until ?? (member.discount_valid_until || '')
 
                     const previewMember = {
                       ...member,
                       subscription_type: displaySubType,
                       custom_price: displayCustom !== '' ? Number(displayCustom) : null,
                       discount_pct: Number(displayDiscount),
+                      discount_valid_until: displayValidUntil || null,
                     }
                     const effectivePreview = getEffectivePrice(previewMember, branchPricesMap)
                     const hasCustomization = member.custom_price != null || (member.discount_pct && member.discount_pct > 0)
+                    const discExpired = isDiscountExpired(member)
 
                     return (
                       <tr key={member.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-indigo-50 transition-colors`}>
@@ -650,9 +665,22 @@ export default function SalaryReport({ isAdmin }) {
                               <span className="text-gray-400">%</span>
                             </div>
                           ) : (
-                            <span className={member.discount_pct > 0 ? 'text-green-600 font-bold' : 'text-gray-300'}>
+                            <span className={discExpired ? 'text-red-400 line-through' : (member.discount_pct > 0 ? 'text-green-600 font-bold' : 'text-gray-300')}>
                               {member.discount_pct > 0 ? `${member.discount_pct}%` : '—'}
                             </span>
+                          )}
+                        </td>
+
+                        <td className="py-1.5 px-2 text-center border-b border-gray-100">
+                          {isEditing ? (
+                            <input type="date"
+                              value={displayValidUntil}
+                              onChange={e => setMemberEdits(p => ({ ...p, [member.id]: { ...p[member.id], discount_valid_until: e.target.value } }))}
+                              className="text-xs border border-indigo-400 rounded px-1 py-0.5 w-28" />
+                          ) : discExpired ? (
+                            <span className="text-red-600 font-bold text-[10px] bg-red-50 border border-red-200 rounded-full px-1.5 py-0.5">⚠️ פג תוקף</span>
+                          ) : (
+                            <span className="text-gray-500">{member.discount_valid_until || (member.discount_pct > 0 ? '∞' : '—')}</span>
                           )}
                         </td>
 
@@ -677,6 +705,7 @@ export default function SalaryReport({ isAdmin }) {
                                   subscription_type: member.subscription_type,
                                   custom_price: member.custom_price != null ? String(member.custom_price) : '',
                                   discount_pct: member.discount_pct || 0,
+                                  discount_valid_until: member.discount_valid_until || '',
                                 },
                               }))}
                               className="text-xs text-indigo-500 hover:text-indigo-700 font-medium"
@@ -692,6 +721,7 @@ export default function SalaryReport({ isAdmin }) {
             <div className="text-xs text-gray-400 mt-2 space-y-0.5">
               <div>★ = מתאמן עם מחיר/הנחה מותאמים אישית</div>
               <div>מחיר מותאם: עוקף את מחיר הסניף. הנחה: מופחתת על גבי מחיר מותאם / מחיר סניף.</div>
+              <div>בתוקף עד: אם לא הוזן תאריך — ההנחה בתוקף לצמיתות (∞). אחרי התאריך היא מתבטלת אוטומטית וחוזרים למחיר מלא, גם בתשלומים דרך לינקי ההרשמה וגם בחישוב השכר.</div>
             </div>
           </div>
         </div>

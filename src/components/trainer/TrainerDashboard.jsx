@@ -7,6 +7,7 @@ import ShopManager from './ShopManager'
 import ReportsManager from './ReportsManager'
 import CoachesManager from './CoachesManager'
 import SalaryReport from './SalaryReport'
+import CustomDiscountLink from './CustomDiscountLink'
 import BranchSettings from './BranchSettings'
 import TrainerProfile from './TrainerProfile'
 import AdminSettings from './AdminSettings'
@@ -292,7 +293,7 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
   useEffect(() => {
     const TAB_HASHES = isSecretary
       ? ['schedule', 'athletes', 'profile']
-      : ['schedule', 'athletes', 'reports', 'coaches', 'shop', 'announcements', 'profile', 'settings']
+      : ['schedule', 'athletes', 'reports', 'coaches', 'salary', 'shop', 'announcements', 'profile', 'settings']
     function syncFromHash() {
       const h = (window.location.hash || '').replace('#', '')
       if (TAB_HASHES.includes(h)) setActiveTab(h)
@@ -539,12 +540,15 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
                 stackedLayout
                 registerLinkCard={isSecretary ? null : <RegisterLinkCard />}
                 extraTop={
-                  requestsCount > 0 ? (
-                    <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
-                      <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי מנוי ({requestsCount})</h3>
-                      <ProfileChangeRequests onChange={refreshCounts} branchFilter={isSecretary ? secretaryBranchId : null} />
-                    </div>
-                  ) : null
+                  <>
+                    {isAdmin && !isSecretary && <CustomDiscountLink isAdmin={isAdmin} />}
+                    {requestsCount > 0 && (
+                      <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
+                        <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי מנוי ({requestsCount})</h3>
+                        <ProfileChangeRequests onChange={refreshCounts} branchFilter={isSecretary ? secretaryBranchId : null} />
+                      </div>
+                    )}
+                  </>
                 }
                 onPendingChange={refreshCounts}
               />

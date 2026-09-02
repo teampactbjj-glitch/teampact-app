@@ -141,6 +141,7 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
   const [loading, setLoading] = useState(true)
   const [activeBranch, setActiveBranch] = useState('all')
   const [activeDiscipline, setActiveDiscipline] = useState('all') // סינון תחום לחימה
+  const [activeCoach, setActiveCoach] = useState('all') // סינון מאמן
   // weekMode כעת נגזר מ-selectedDate (אין יותר טאב יד-ידני). אם אין תאריך נבחר — current.
   const nextWeekOpen = isNextWeekRegistrationOpen()
   // חישוב המונה האפקטיבי כאן — איפה ש-classes זמין בסקופ. (בהורה הוא לא היה זמין
@@ -264,13 +265,22 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
 
   // התחומים הקיימים בשיעורים של המתאמן (לפי הסדר הקבוע), להצגת כפתורי הסינון
   const availableDisciplines = DISCIPLINE_ORDER.filter(d => classes.some(c => classDiscipline(c) === d))
-  // סינון משולב: סניף ואז תחום לחימה
+  // רשימת מאמנים ייחודית *לפי שם* (לא coach_id) — מאמן שמלמד בכמה סניפים
+  // (כמו דודי בן זקן: קאונטרי + חולון-בגין) הוא שתי רשומות coach_id שונות
+  // באותה טבלה, אבל אותו איש — לא רוצים שיופיע פעמיים ברשימת הסינון.
+  const availableCoaches = Array.from(
+    new Set(classes.map(c => c.coaches?.name || c.coach_name).filter(Boolean))
+  ).map(name => ({ key: name, name }))
+  // סינון משולב: סניף → תחום לחימה → מאמן (לפי שם, לא coach_id — ראו הערה למעלה)
   const byBranch = activeBranch === 'all'
     ? classes
     : classes.filter(c => c.branch_id === activeBranch)
-  const filteredClasses = activeDiscipline === 'all'
+  const byDiscipline = activeDiscipline === 'all'
     ? byBranch
     : byBranch.filter(c => classDiscipline(c) === activeDiscipline)
+  const filteredClasses = activeCoach === 'all'
+    ? byDiscipline
+    : byDiscipline.filter(c => (c.coaches?.name || c.coach_name) === activeCoach)
 
   const selectedDow = selectedDate ? selectedDate.getDay() : null
   const dayClasses = selectedDate
@@ -404,6 +414,30 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
                   : 'bg-white text-gray-600 border border-gray-200'
               }`}>
               {DISCIPLINE_LABELS[d] || d}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Coach switcher — סינון לפי מאמן (מופיע רק אם יש יותר ממאמן אחד) */}
+      {availableCoaches.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <button onClick={() => setActiveCoach('all')}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
+              activeCoach === 'all'
+                ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
+                : 'bg-white text-gray-600 border border-gray-200'
+            }`}>
+            כל המאמנים
+          </button>
+          {availableCoaches.map(opt => (
+            <button key={opt.key} onClick={() => setActiveCoach(opt.key)}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
+                activeCoach === opt.key
+                  ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
+                  : 'bg-white text-gray-600 border border-gray-200'
+              }`}>
+              👤 {opt.name}
             </button>
           ))}
         </div>

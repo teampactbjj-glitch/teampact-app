@@ -101,6 +101,7 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
   const [branches, setBranches] = useState([])
   const [selectedBranch, setSelectedBranch] = useState('all')
   const [selectedDiscipline, setSelectedDiscipline] = useState('all') // סינון תחום לחימה
+  const [selectedCoach, setSelectedCoach] = useState('all') // סינון מאמן
   const [pendingRequests, setPendingRequests] = useState([])
   const [showPending, setShowPending] = useState(true)
   // עריכת שיעור — מנהל בלבד
@@ -1242,6 +1243,42 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
         )
       })()}
 
+      {/* Coach filter — סינון לפי מאמן, לפי שם (מופיע רק אם יש יותר ממאמן אחד).
+          לפי שם ולא coach_id: מאמן שמלמד בכמה סניפים (כמו דודי בן זקן, קאונטרי+
+          חולון-בגין) הוא שתי רשומות coach_id שונות באותה טבלה, אבל אותו איש —
+          לא רוצים שיופיע פעמיים ברשימת הסינון. */}
+      {(() => {
+        const coachCount = {}
+        classes.forEach(c => {
+          const name = c.coach_name
+          if (name) coachCount[name] = (coachCount[name] || 0) + 1
+        })
+        const availCoachNames = Object.keys(coachCount)
+        if (availCoachNames.length <= 1) return null
+        return (
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+            <button type="button" onClick={() => setSelectedCoach('all')}
+              className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
+                selectedCoach === 'all'
+                  ? 'bg-green-600 text-white border-green-600 shadow'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-green-400'
+              }`}>
+              כל המאמנים
+            </button>
+            {availCoachNames.map(name => (
+              <button key={name} type="button" onClick={() => setSelectedCoach(name)}
+                className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition ${
+                  selectedCoach === name
+                    ? 'bg-green-600 text-white border-green-600 shadow'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-green-400'
+                }`}>
+                🧑‍🏫 {name} ({coachCount[name]})
+              </button>
+            ))}
+          </div>
+        )
+      })()}
+
       {showAdd && (() => {
         // dedupe coaches by normalized name — עדיפות לרשומה שמקושרת ל־user_id.
         // מנרמל רווחים, תווים בלתי-נראים (zero-width, BOM), וגרסאות אותיות עברית.
@@ -1357,7 +1394,8 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
       {(() => {
         if (loading) return <p className="text-center text-gray-400 py-10">טוען שיעורים...</p>
         const byBranchVis = selectedBranch === 'all' ? classes : classes.filter(c => c.branch_id === selectedBranch)
-        const visibleClasses = selectedDiscipline === 'all' ? byBranchVis : byBranchVis.filter(c => classDiscipline(c) === selectedDiscipline)
+        const byDisciplineVis = selectedDiscipline === 'all' ? byBranchVis : byBranchVis.filter(c => classDiscipline(c) === selectedDiscipline)
+        const visibleClasses = selectedCoach === 'all' ? byDisciplineVis : byDisciplineVis.filter(c => c.coach_name === selectedCoach)
         if (visibleClasses.length === 0) {
           return (
             <div className="text-center py-12 text-gray-400">

@@ -215,6 +215,7 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
           .in('branch_id', branchIds)
           .eq('branches.hidden', false)
           .or('status.eq.approved,status.is.null')
+          .is('deleted_at', null)
           .order('day_of_week').order('start_time')
         if (error) console.error('ScheduleTab classes error:', error)
         setClasses(data || [])

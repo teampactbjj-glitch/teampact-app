@@ -174,6 +174,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       .from('classes')
       .select('id, name, day_of_week, start_time, hall, class_type')
       .in('branch_id', branchIds)
+      .is('deleted_at', null)
       .order('day_of_week')
     setClasses(data || [])
   }

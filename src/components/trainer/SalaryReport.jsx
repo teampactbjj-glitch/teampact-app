@@ -131,7 +131,7 @@ export default function SalaryReport({ isAdmin }) {
       fetchAllPaged(() => supabase.from('checkins').select('class_id, athlete_id, checkin_date, status, coach_id, coach_name')
         .gte('checkin_date', from).lte('checkin_date', to).eq('status', 'present')
         .order('checkin_date', { ascending: true }).order('class_id', { ascending: true }).order('athlete_id', { ascending: true })),
-      supabase.from('classes').select('id, coach_id, branch_id').is('deleted_at', null),
+      supabase.from('classes').select('id, coach_id, branch_id'), // ⚠️ בכוונה בלי is('deleted_at', null) — צריך גם שיעורים שנמחקו (soft-delete) כדי לא לאבד היסטוריית שכר. ראה RLS policy authenticated_read_classes_incl_deleted.
       fetchAllPaged(() => supabase.from('members')
         .select('id, full_name, subscription_type, branch_id, custom_price, discount_pct, discount_valid_until')
         .eq('active', true)

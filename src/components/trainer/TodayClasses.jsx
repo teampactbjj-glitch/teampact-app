@@ -864,18 +864,43 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
     const em = totalMin % 60
     const endTime = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`
 
+    const newDayOfWeek = Number(editData.day_of_week)
+    // האם השינוי משפיע בפועל על מועד השיעור (יום/שעת התחלה) — זה מה שרלוונטי למתאמנים הרשומים.
+    const scheduleChanged =
+      Number(editingClass.day_of_week) !== newDayOfWeek ||
+      editingClass.start_time?.slice(0, 5) !== editData.start_time
+
     const { error } = await supabase.from('classes').update({
       name: editData.name.trim(),
       coach_id: editData.coach_id,
       coach_name: coach?.name || null,
       branch_id: coach?.branch_id || null,
-      day_of_week: Number(editData.day_of_week),
+      day_of_week: newDayOfWeek,
       start_time: editData.start_time,
       end_time: endTime,
       duration_minutes: duration,
     }).eq('id', editingClass.id)
 
     if (error) { setEditError(error.message || 'שגיאה בשמירה'); return }
+
+    // Push לכל המתאמנים הרשומים לשיעור — רק כשהיום/שעת ההתחלה באמת השתנו.
+    if (scheduleChanged) {
+      const className = editData.name.trim()
+      supabase.from('class_registrations').select('athlete_id').eq('class_id', editingClass.id)
+        .then(({ data, error: regErr }) => {
+          if (regErr || !data?.length) return
+          const athleteIds = [...new Set(data.map(r => r.athlete_id).filter(Boolean))]
+          if (!athleteIds.length) return
+          notifyPush({
+            userIds: athleteIds,
+            title: 'עדכון לו"ז שיעור',
+            body: `השיעור "${className}" עבר ליום ${DAYS_HE[newDayOfWeek]} בשעה ${editData.start_time}`,
+            url: '/#schedule',
+            tag: `class-schedule-changed:${editingClass.id}`,
+          }).catch(() => {})
+        })
+        .catch(() => {})
+    }
 
     setEditingClass(null)
     toast.success('השיעור עודכן בהצלחה ✅')

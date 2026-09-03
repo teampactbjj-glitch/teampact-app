@@ -310,7 +310,7 @@ export default function ReportsManager({ isAdmin, profile }) {
         // checkins: מסנן בצד השרת לפי 180 יום. דפדוף (>1000 שורות) עם order יציב.
         fetchAllPaged(() => supabase
           .from('checkins')
-          .select('class_id, athlete_id, status, checked_in_at, checkin_date')
+          .select('class_id, athlete_id, status, checked_in_at, checkin_date, coach_id, coach_name')
           .eq('status', 'present')
           .gte('checked_in_at', sinceMaxISO)
           // מיון ייחודי (checkin_date+class_id+athlete_id) — חיוני לדפדוף יציב בלי דילוג/כפילות
@@ -597,9 +597,12 @@ export default function ReportsManager({ isAdmin, profile }) {
       const disc = disciplineByClassId.get(r.class_id) || 'אחר'
       if (!acc[disc]) return
 
+      // שיוך היסטורי: המאמן שהיה בפועל בזמן הצ'ק-אין (snapshot על checkins),
+      // ולא המאמן הנוכחי של הקבוצה — כדי שהחלפת מאמן לא תשכתב דוחות עבר.
       let coachName = null
-      if (cls.coach_id && coachById.has(cls.coach_id)) coachName = coachById.get(cls.coach_id).name
-      if (!coachName && cls.coach_name) coachName = cls.coach_name
+      const snapCoachId = r.coach_id ?? cls.coach_id
+      if (snapCoachId && coachById.has(snapCoachId)) coachName = coachById.get(snapCoachId).name
+      if (!coachName) coachName = r.coach_name || cls.coach_name
       if (!coachName) coachName = 'ללא מאמן'
 
       acc[disc].members.add(r.athlete_id)

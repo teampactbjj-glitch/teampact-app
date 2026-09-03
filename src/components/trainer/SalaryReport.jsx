@@ -128,7 +128,7 @@ export default function SalaryReport({ isAdmin }) {
     const [coachesRes, checkinsRes, classesRes, membersRes, branchesRes,
            ownerRes, expRes, fixedRes, pricesRes, appSettingsRes] = await Promise.all([
       supabase.from('coaches').select('id, name, branch_id, payment_rate, vat_type').order('name'),
-      fetchAllPaged(() => supabase.from('checkins').select('class_id, athlete_id, checkin_date, status')
+      fetchAllPaged(() => supabase.from('checkins').select('class_id, athlete_id, checkin_date, status, coach_id, coach_name')
         .gte('checkin_date', from).lte('checkin_date', to).eq('status', 'present')
         .order('checkin_date', { ascending: true }).order('class_id', { ascending: true }).order('athlete_id', { ascending: true })),
       supabase.from('classes').select('id, coach_id, branch_id').is('deleted_at', null),
@@ -185,8 +185,11 @@ export default function SalaryReport({ isAdmin }) {
 
     for (const chk of checkins) {
       const cls = classById.get(chk.class_id)
-      if (!cls?.coach_id || !cls?.branch_id) continue
-      const { coach_id, branch_id } = cls
+      // היסטוריה: שייך לפי המאמן שהיה בפועל בזמן הצ'ק-אין (snapshot),
+      // לא לפי המאמן הנוכחי של הקבוצה — כדי שהחלפת מאמן לא תשכתב שכר עבר.
+      const coach_id = chk.coach_id ?? cls?.coach_id
+      const branch_id = cls?.branch_id
+      if (!coach_id || !branch_id) continue
       if (!coachBranchAthleteCheckins.has(coach_id))
         coachBranchAthleteCheckins.set(coach_id, new Map())
       const byBranch = coachBranchAthleteCheckins.get(coach_id)

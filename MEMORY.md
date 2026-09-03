@@ -1,6 +1,130 @@
 # MEMORY - TeamPact App
 
 
+## ✅ Session 03.09.2026 — תיקון שיוך מאמן היסטורי בשכר/דוחות + Push על שינוי לו"ז
+
+**הקשר:** המשך ישיר מה"My last pending task" שנכתב בסוף סשן 02.09.2026. דודי ביקש
+לסגור עכשיו שני דברים ספציפיים שעלו כשבדקנו האם עריכת מערכת שעות ידנית מתעדכנת
+נכון בכל הטבלאות:
+
+> "לגבי השכר החודשי בוא נסדר כרגע ונסגור את זה... ברגע שמחליפים מאמן זה סוגר
+> את השכר שלו על אותה הקבוצה ומתחיל דוח למאמן המחליף."
+> "לגבי 3 תתקן כל מה שצריך לתקן, אפשר לשלוח הודעה כללית לכולם אם שיעור מסוים
+> השתנה בלוז."
+
+### 1. באג שכר קריטי (כסף אמיתי) — תוקן
+
+**הבעיה שנמצאה בקוד (לא ניחוש — `grep`+קריאת קוד מלאה):** `SalaryReport.jsx`
+ו-`ReportsManager.jsx` חישבו שיוך מאמן ל-checkins היסטוריים לפי **JOIN חי**
+(`checkins.class_id → classes.coach_id`), כלומר לפי מי שמלמד את הקבוצה **היום**,
+לא לפי מי שלימד בפועל בזמן שהצ'ק-אין קרה. משמעות: החלפת מאמן לקבוצה משכתבת
+רטרואקטיבית את **כל** היסטוריית הנוכחות/שכר של הקבוצה למאמן החדש — כולל חודשים
+שכבר שולם עליהם למאמן הקודם.
+
+**התיקון (Supabase project `pnicoluujpidguvniwub`, מיגרציה `add_checkin_coach_snapshot`):**
+```sql
+alter table public.checkins
+  add column if not exists coach_id uuid references public.coaches(id),
+  add column if not exists coach_name text;
+
+create or replace function public.set_checkin_coach_from_class()
+ returns trigger language plpgsql security definer set search_path to ''
+as $function$
+begin
+  if NEW.coach_id is null then
+    select c.coach_id, c.coach_name into NEW.coach_id, NEW.coach_name
+      from public.classes c where c.id = NEW.class_id;
+  end if;
+  return NEW;
+end;
+$function$;
+
+create trigger trg_set_checkin_coach
+  before insert on public.checkins
+  for each row execute function public.set_checkin_coach_from_class();
+```
+- מבנה זהה בדיוק לטריגר הקיים `trg_set_checkin_date`/`set_checkin_date_from_ts()`
+  (אותו pattern: BEFORE INSERT, snapshot מ-`classes` אם הלקוח לא שלח כבר ערך).
+  זה מכסה **את כל** נתיבי ה-INSERT (קיימים ועתידיים) בלי לגעת בכל אתר קוד בנפרד.
+- אומת אחרי ההרצה: העמודות קיימות, הטריגר מותקן, `get_advisors(security)` מראה
+  בדיוק את אותה רמת אזהרה (SECURITY DEFINER חשוף ל-anon/authenticated) כמו
+  התאום הקיים `set_checkin_date_from_ts` — לא regression חדש, זה pattern קיים
+  ומאושר במערכת.
+- **לא בוצע backfill** לרשומות checkins היסטוריות (יישארו `coach_id=NULL`) —
+  קוד ה-frontend עושה fallback (`chk.coach_id ?? cls.coach_id`) לרשומות ישנות,
+  כך שההתנהגות הישנה (הבאגית) נשמרת רק להיסטוריה שכבר עברה, וכל checkin חדש
+  מ-3.09.2026 ואילך יהיה נכון מהיסוד. **אם דודי רוצה תיקון רטרואקטיבי לחודש
+  הנוכחי (החודש שבתשלום), זה backfill נפרד שצריך לבקש/לאשר בנפרד** — לא בוצע.
+
+**קוד frontend שעודכן (commit `4c581c1`, נדחף ל-main):**
+- `SalaryReport.jsx`: ה-SELECT על `checkins` מושך גם `coach_id, coach_name`;
+  לולאת החישוב (שורות ~186 ואילך) עברה מ-`const { coach_id, branch_id } = cls`
+  ל-`coach_id = chk.coach_id ?? cls?.coach_id` (branch_id עדיין מה-class הנוכחי
+  — סניף לא משתנה כמו מאמן). **זו התוצאה הכספית בפועל** — השכר עכשיו נספר
+  למאמן הנכון per-checkin.
+- `ReportsManager.jsx`: אותו fallback ב-`byAssignedDiscipline` (הדוח הפעיל
+  היחיד שקורא checkins גולמיים עם שיוך מאמן — `byCoach`/`byDiscipline` הישנים
+  מומתים כבר עם `void byCoach; void byDiscipline` בשורה 1669, לא נגעתי בהם;
+  `churnByCoach`/`trialsByDiscipline` מבוססים על `class_registrations`/
+  `trial_visits` שאין להן snapshot מאמן — לא באותו scope, לא תוקנו).
+- **build (`vite build`) + `eslint` על 2 הקבצים עברו נקי** — כל השגיאות שהופיעו
+  (הרבה ב-`SalaryReport.jsx`, react-hooks/rules-of-hooks) הן **קיימות מראש**,
+  אומתו בהשוואה ישירה ל-`git show HEAD:...` לפני העריכה — לא נגרמו על ידי.
+
+### 2. Push על שינוי לו"ז — נבנה
+
+`TodayClasses.jsx` → `updateClass()`: אחרי UPDATE מוצלח, אם `day_of_week` או
+`start_time` **בפועל** השתנו (השוואה מול `editingClass` המקורי — לא נשלחת
+הודעה על עריכת שם/מאמן/משך בלבד), נשלחת התראה (`notifyPush`, אותו wrapper
+הקיים שכבר בשימוש ב-3 מקומות אחרים בקובץ) לכל `athlete_id` הרשום ב-
+`class_registrations` לאותו `class_id`, fire-and-forget (`.then/.catch`,
+לא חוסם את `toast.success`/`fetchDayClasses`).
+
+### תיעוד חשוב על סקופ שלא נגעתי בו (בכוונה)
+- `churnByCoach`/`trialsByDiscipline` ב-`ReportsManager.jsx` עדיין live-join
+  (לא snapshot) — כי מבוססים על `class_registrations`/`trial_visits` שאין
+  להן עמודת coach snapshot. זה לא באג כספי (דוחות נטישה/ניסיון, לא שכר), אבל
+  אם ירצו דיוק היסטורי גם שם צריך snapshot דומה על אותן טבלאות — לא בוצע.
+- `byCoach`/`byDiscipline` הישנים ב-`ReportsManager.jsx` הם קוד מת (מומתים
+  ב-`void`) — לא תוקנו כי אין השפעה בפועל.
+
+### תקלת git חוזרת (זהה לסשן קודם) — טופלה
+`git stash` (לבדיקת lint על הגרסה המקורית) יצר `.git/index.lock` וקרס
+באמצע כי `device_bash` לא יכול למחוק קבצים כברירת מחדל. אומת ש**השינויים
+לא אבדו** (`git stash list` ריק, ה-diff נשאר במקום) — הבעיה הייתה רק בניקוי
+הנעילה. הוסרה עם `device_request_delete_permission` + `rm -f .git/index.lock`.
+
+**נדחף ל-main:** commit `4c581c1` (אחרי `4af90c6`). `git log`/`git status`
+אומתו — עץ נקי חוץ מ-`supabase/.temp/cli-latest` (קובץ cache מקומי לא קשור).
+
+## ⏳ My last pending task (03.09.2026, סוף הסשן)
+
+1. **הבאג הכספי הקריטי (שיוך מאמן היסטורי ב-checkins) — תוקן וסגור.** לא בוצע
+   backfill רטרואקטיבי — אם דודי רוצה תיקון להיסטוריה הקיימת (למשל החודש
+   הנוכחי שבתשלום), צריך לבקש/לאשר את זה בנפרד לפני שמריצים UPDATE על
+   checkins קיימים.
+2. **Push על שינוי לו"ז — בוצע** ב-`TodayClasses.jsx` בלבד (עריכת מאמן/מנהל
+   דרך הטופס `updateClass()`). אם יש נתיבי עריכת לו"ז נוספים במקום אחר
+   באפליקציה — לא כוסו.
+3. **Invoice4u** — עדיין ממתין לאישור מחברת הסליקה. שום דבר לא בוצע בנושא
+   הזה בסשן הזה.
+4. **בדיקת הנחות (`discount_pct`/`discount_valid_until`/`custom_price`) —
+   עדיין לא בוצעה בנפרד.** ייתכן שתיקון השכר למעלה סוגר חלק מהדאגה של דודי
+   ("אסור טעויות בגביה/דוחות קאונטרי"), אבל זו לא אותה בדיקה — כדאי לוודא
+   מול דודי אם עדיין רוצה סבב נפרד על זה.
+5. תשובה לשאלת דודי (שוב רלוונטי): המנוי **עדיין לא** לפי מספר כניסות
+   בחודש — עדיין `1x_week`/`2x_week`/`4x_week`/`unlimited`.
+6. RBAC שלב 2 (frontend UI) — עדיין לא התחיל.
+7. `git stash@{0}` בשם `local-changes-before-sync` — עדיין לא נבדק.
+8. `churnByCoach`/`trialsByDiscipline` (ReportsManager) — snapshot מאמן לא
+   קיים שם (אין עמודה מתאימה ב-`class_registrations`/`trial_visits`), לא
+   דחוף (לא כסף), אבל פתוח לעתיד אם ירצו דיוק היסטורי גם בדוחות האלה.
+
+---
+
+
+
+
 ## ✅ Session 02.09.2026 (המשך) — לוז חולון-בגין 2026-27 + סינון מאמן + 4 קבצים ישנים נדחפו
 
 **המשך ישיר מהסשן הקודם באותו יום** (תשתית RBAC — ראו סקציה למעלה).

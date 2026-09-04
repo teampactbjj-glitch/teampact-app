@@ -1982,6 +1982,7 @@ function SettingsTab({ profile, member }) {
   const hasPendingBelt = pendingRequests.some(r => r.change_type === 'belt')
   const hasPendingMembership = pendingRequests.some(r => r.change_type === 'membership_freeze' || r.change_type === 'membership_cancel')
   const isFrozen = member?.membership_status === 'frozen'
+  const isExpired = member?.membership_status === 'expired'
   const hasPendingUnfreeze = pendingRequests.some(r => r.change_type === 'membership_unfreeze')
 
   return (
@@ -2160,7 +2161,14 @@ function SettingsTab({ profile, member }) {
             {/* הקפאה / ביטול מנוי */}
             <div className="space-y-2">
               <p className="text-xs text-gray-400 px-1">הקפאה או ביטול מנוי</p>
-              {isFrozen ? (
+              {isExpired ? (
+                <div className="text-sm bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+                  <p className="font-semibold text-amber-800">⏳ המנוי שלך לא חודש לעונה החדשה</p>
+                  <p className="text-xs text-amber-700">
+                    יש לפנות למזכירות/למאמן לחידוש המנוי. לאחר החידוש תוכל להירשם לאימונים שוב.
+                  </p>
+                </div>
+              ) : isFrozen ? (
                 <div className="space-y-3">
                   <div className="text-sm bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1">
                     <p className="font-semibold text-blue-800">❄️ המנוי שלך מוקפא</p>
@@ -2905,6 +2913,11 @@ export default function AthleteDashboard({ profile }) {
     // מתאמן מוקפא — חסום מרישום חדש (ביטול רישום קיים עדיין מותר)
     if (member?.membership_status === 'frozen' && !isRegistered) {
       toast.info('המנוי שלך מוקפא — לא ניתן להירשם לאימונים עד החזרה.')
+      return
+    }
+    // מתאמן שלא חידש מנוי לעונה החדשה — חסום מרישום חדש (ה-DB גם חוסם כגיבוי, current_user_can_book)
+    if (member?.membership_status === 'expired' && !isRegistered) {
+      toast.info('המנוי שלך לא חודש לעונה החדשה — פנה למזכירות לחידוש.')
       return
     }
 

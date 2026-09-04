@@ -106,7 +106,9 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   const [saveError, setSaveError] = useState('')
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkMarking, setBulkMarking] = useState(false)
   const [freezeModal, setFreezeModal] = useState(null)
+  const [renewModal, setRenewModal] = useState(null)
   // ✅ 18.08.2026 — נשמר בזמן startEdit כדי שנוכל להשוות ב-saveAthlete אם המייל השתנה
   // בפועל (ולסנכרן את חשבון ההתחברות רק אז — ראו syncMemberEmailToAuth למטה).
   const [editingOriginalEmail, setEditingOriginalEmail] = useState('')
@@ -615,6 +617,66 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     if (error) { toast.error('שגיאה: ' + error.message); return }
     toast.success('המנוי הופעל מחדש')
     fetchAthletes()
+  }
+
+  // "חדש מנוי" — למתאמן שסומן 'expired' (לא חידש לעונה החדשה). בניגוד ל-unfreeze,
+  // כאן תמיד שואלים כמה פעמים בשבוע (יכול להשתנות מהעונה הקודמת, למשל 2→4).
+  function openRenewModal(a) {
+    setRenewModal({
+      id: a.id,
+      name: a.full_name,
+      subscription_type: a.subscription_type || a.membership_type || '2x_week',
+      saving: false,
+    })
+  }
+
+  async function submitRenew() {
+    const r = renewModal
+    if (!r) return
+    setRenewModal(m => ({ ...m, saving: true }))
+    const { error } = await supabase.from('members').update({
+      membership_status: 'active',
+      subscription_type: r.subscription_type,
+    }).eq('id', r.id)
+    if (error) { toast.error('שגיאה: ' + error.message); setRenewModal(m => ({ ...m, saving: false })); return }
+    toast.success('המנוי חודש בהצלחה')
+    setRenewModal(null)
+    fetchAthletes()
+  }
+
+  // סגירת עונה — סימון גורף של הנבחרים כ-'expired' (לא חידשו). חוסם הרשמה
+  // לשיעורים (current_user_can_book) עד שיחודשו אחד-אחד עם הכפתור למעלה.
+  // בכוונה נוגע רק במי שכרגע 'active' — לא פוגע במוקפאים/מבוטלים בפועל.
+  async function bulkMarkExpired() {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    const ok = await confirm({
+      title: 'סגירת עונה — סימון כלא חידשו',
+      message: `${ids.length} מתאמנים יסומנו כ"לא חידשו מנוי" ויחסמו מהרשמה לשיעורים, עד שיחודשו אחד-אחד עם כפתור "חדש מנוי". להמשיך?`,
+      confirmText: 'סמן כלא חידשו',
+      danger: true,
+    })
+    if (!ok) return
+    setBulkMarking(true)
+    try {
+      const CHUNK = 200
+      let total = 0
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const part = ids.slice(i, i + CHUNK)
+        const { data, error } = await supabase.from('members')
+          .update({ membership_status: 'expired' })
+          .in('id', part)
+          .eq('membership_status', 'active')
+          .select('id')
+        if (error) { console.error('bulkMarkExpired error:', error); toast.error('שגיאה: ' + error.message); break }
+        total += data?.length || 0
+      }
+      toast.success(`${total} מתאמנים סומנו כלא-חידשו`)
+      clearSelection()
+      await fetchAthletes()
+    } finally {
+      setBulkMarking(false)
+    }
   }
 
   async function cancelAthleteAtMonthEnd(id) {
@@ -1418,6 +1480,17 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                       >
                         בטל
                       </button>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={bulkMarkExpired}
+                          disabled={bulkMarking}
+                          title="לתחילת עונה חדשה: סימון הנבחרים כלא-חידשו — חוסם הרשמה עד חידוש פרטני"
+                          className="text-xs bg-amber-500 text-white px-3 py-1.5 rounded-lg hover:bg-amber-600 disabled:opacity-60"
+                        >
+                          {bulkMarking ? 'מסמן...' : `⏳ סגירת עונה (${selCount})`}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={bulkDeleteAthletes}
@@ -1471,6 +1544,9 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                             {a.membership_status === 'cancelled' && (
                               <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium">🚫 מבוטל</span>
                             )}
+                            {a.membership_status === 'expired' && (
+                              <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">⏳ לא חידש לעונה</span>
+                            )}
                             {a.cancel_date && a.membership_status !== 'cancelled' && (
                               <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-medium">⏳ ביטול {formatDate(a.cancel_date)}</span>
                             )}
@@ -1497,9 +1573,14 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                             עריכה
                           </button>
                         )}
-                        {/* הקפאה/עריכה/הפעלה — מנהל ומזכירה */}
+                        {/* הקפאה/עריכה/הפעלה/חידוש — מנהל ומזכירה */}
                         {(isAdmin || isSecretary) && (
-                          a.membership_status === 'cancelled' || a.membership_status === 'frozen' ? (
+                          a.membership_status === 'expired' ? (
+                            <button onClick={() => openRenewModal(a)}
+                              className="text-xs px-2 py-1 rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 transition font-medium">
+                              🔄 חדש מנוי
+                            </button>
+                          ) : a.membership_status === 'cancelled' || a.membership_status === 'frozen' ? (
                             <>
                               {a.membership_status === 'frozen' && (
                                 <button onClick={() => openFreezeModal(a, true)}
@@ -1690,6 +1771,36 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
               <button onClick={submitFreeze} disabled={freezeModal.saving}
                 className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium disabled:opacity-50">
                 {freezeModal.saving ? 'שומר...' : (freezeModal.editing ? 'עדכן הקפאה' : 'הקפא מנוי')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* מודל "חדש מנוי" — למתאמן שסומן 'expired' בתחילת עונה. בוחרים כמה
+          פעמים בשבוע (יכול להשתנות מהעונה הקודמת) ומחזירים אותו ל-active. */}
+      {renewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !renewModal.saving && setRenewModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-4 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-gray-800">🔄 חידוש מנוי — {renewModal.name}</h3>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">כמה פעמים בשבוע (המנוי החדש)</label>
+              <select value={renewModal.subscription_type}
+                onChange={e => setRenewModal(m => ({ ...m, subscription_type: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+                {Object.entries(MEMBERSHIP_LABELS).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setRenewModal(null)} disabled={renewModal.saving}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm">
+                ביטול
+              </button>
+              <button onClick={submitRenew} disabled={renewModal.saving}
+                className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm font-medium disabled:opacity-50">
+                {renewModal.saving ? 'שומר...' : 'חדש מנוי'}
               </button>
             </div>
           </div>

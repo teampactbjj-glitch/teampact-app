@@ -630,13 +630,24 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     })
   }
 
+  // ✅ 05.09.2026 — חידוש מנוי לעונה החדשה: קובע membership_start=היום ו-
+  // membership_end=31.8 הקרוב (אם החידוש בספטמבר-דצמבר → 31.8 בשנה הבאה,
+  // אחרת → 31.8 באותה שנה). כך התאריכים מתעדכנים אוטומטית עם כל חידוש,
+  // ומשם המנגנון האוטומטי (ראה מיגרציה auto_expire_begin_membership_season)
+  // ידע לבד לסגור את העונה ב-1.9 הבא בלי לחיצה ידנית.
   async function submitRenew() {
     const r = renewModal
     if (!r) return
     setRenewModal(m => ({ ...m, saving: true }))
+    const today = new Date()
+    const endYear = today.getMonth() >= 8 ? today.getFullYear() + 1 : today.getFullYear()
+    const membership_start = today.toISOString().slice(0, 10)
+    const membership_end = `${endYear}-08-31`
     const { error } = await supabase.from('members').update({
       membership_status: 'active',
       subscription_type: r.subscription_type,
+      membership_start,
+      membership_end,
     }).eq('id', r.id)
     if (error) { toast.error('שגיאה: ' + error.message); setRenewModal(m => ({ ...m, saving: false })); return }
     toast.success('המנוי חודש בהצלחה')

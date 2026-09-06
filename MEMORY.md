@@ -1,6 +1,239 @@
 # MEMORY - TeamPact App
 
 
+## ✅ Session 06.09.2026 — Invoice4u: העסק סודר עם חברת הסליקה, נחקר ה-API הרשמי (gitbook)
+
+**הקשר:** דודי אישר סופית: "סידרתי את זה עם חברת סליקה" ושלח את קישור התיעוד
+הרשמי: https://invoice4u.gitbook.io/invoice4u-docs. זה הקו הישר להמשך תכנון
+חיוב חוזר אוטומטי לסניף חולון-קאונטרי (נושא שנפתח לראשונה ב-06.08.2026,
+עבר מסע ארוך דרך Green Invoice/Grow → Cardcom → ועכשיו Invoice4u).
+
+**המחקר בוצע מול המסמכים הרשמיים בפועל (WebFetch על ה-gitbook + llms.txt
+המלא של האתר), לא ניחוש. ממצאים מדויקים:**
+
+### Base URL + אימות
+- Production: `https://api.invoice4u.co.il/Services/ApiService.svc/ProcessApiRequestV2`
+- QA/sandbox: `https://apiqa.invoice4u.co.il/Services/ApiService.svc/ProcessApiRequestV2`
+- הכל POST יחיד, JSON envelope עם `{"request": {...}}`, שדה אחד לאימות בכל
+  קריאה: `Invoice4UUserApiKey` (GUID). **את המפתח מקבלים מתוך ה-Settings
+  באפליקציית הווב של Invoice4u** — דודי צריך להוציא אותו משם (טרם בידינו).
+- אזהרת אבטחה מהתיעוד עצמו: המפתח לעולם לא בצד לקוח (browser/mobile),
+  רק server-side מעל HTTPS — בדיוק כמו שעשינו עם Green Invoice.
+
+### שלושה מסלולים טכניים אמיתיים לחיוב חוזר/מפוצל (לא שערה — כתוב בתיעוד):
+
+**א. `IsStandingOrderClearance` (הוראת קבע מובנית ב-Invoice4u עצמו):**
+לקוח נכנס פעם אחת לעמוד hosted, מזין כרטיס, ומ-Invoice4u עצמו מריץ
+`StandingOrderDuration` חיובים חודשיים (למשל 12, בדיוק מספר החודשים
+בשנתון ספטמבר-אוגוסט!). כל חיוב יוצר מסמך אוטומטית ושולח POST ל-
+`StandingOrderCallBackUrl`. **⚠️ בעיה קריטית שנמצאה בתיעוד: אין שום
+מנגנון ביטול/עצירה מתועד** לפני תום ה-`StandingOrderDuration` — בדיוק
+הדרישה שדודי הדגיש כקריטית ("הכל דיגיטלי, גם התחלה וגם עצירה, בלי מגע
+יד אדם", 26.08.2026). צריך לשאול את Invoice4u תמיכה במפורש אם יש endpoint
+לביטול לפני שסומכים על המסלול הזה.
+
+**ב. `AddToken`/`AddTokenAndCharge` + `ChargeWithToken` (טוקן שמור + cron
+משלנו — התכנון המקורי שכבר סוכם מ-06.08.2026):**
+`AddToken` פותח עמוד hosted ששומר כרטיס לקוח (`CustomerId` קיים,
+שנוצר מראש דרך `CreateCustomer`) **בלי לחייב**. אחר כך `ChargeWithToken`
+הוא קריאת שרת-לשרת סינכרונית (בלי redirect) שמחייבת את הטוקן השמור —
+**זה בדיוק המנגנון שתכננו לבנות** (cron חודשי שמוצא טוקן לכל מתאמן פעיל,
+בודק `discount_valid_until`, וקורא ChargeWithToken). שליטה מלאה שלנו על
+עצירה (פשוט מפסיקים לקרוא ל-API בשביל מתאמן ספציפי) — עונה בדיוק על
+הדרישה של דודי, בניגוד למסלול א'.
+**מגבלה:** שמירת כרטיס חדש למתאמן מחליפה את הטוקן הקודם — טוקן אחד בלבד
+ללקוח בכל רגע נתון (לא רלוונטי אלינו, כל מתאמן שומר כרטיס אחד).
+**קוד שגיאה קריטי לבדוק מראש:** `ApiTokenizationNotApprovedInClearingTerminal`
+(309) ו-`ApiStandingOrderNotApprovedInClearingTerminal` (310) — צריך
+לוודא מול Invoice4u/חברת הסליקה ש"טוקנים והוראות קבע" **מופעלים בפועל**
+על מסוף הסליקה של דודי, לא רק שהעסק אושר באופן כללי.
+
+**ג. `PaymentsNum` על עסקה בודדת ("תשלומים" רגיל של כרטיס אשראי ישראלי —
+בדיוק הרעיון שדודי הציע בעצמו ב-09.08.2026!):**
+ב-`ProcessApiRequestV2` הרגיל (בלי טוקן, בלי הוראת קבע) יש שדה `PaymentsNum`
+(integer), ו-`ClearingLog.TransactionType=4` מתועד כ-`PaymentInNumbers`.
+זה **תשלום אחד** שהבנק של הלקוח מפצל בעצמו לכמה חיובים חודשיים (המנגנון
+הרגיל של "תשלומים" בכרטיס אשראי ישראלי) — **אין צורך בטוקן שמור, אין
+צורך בהוראת קבע, אין cron חודשי בכלל.** זה עדיין לא אומת חי מול הפרויקט
+(אין עדיין API key), אבל אם זה עובד כמצופה — זה **הכי פשוט ועמיד** מבין
+שלושת המסלולים לגביית **הסכום השנתי המלא בהרשמה, מחולק לתשלומים** — בדיוק
+התכנון שדודי בעצמו הציע כשהתעייף מהוראת קבע/טוקן.
+**⚠️ שאלה פתוחה שלא נענתה בתיעוד:** האם `PaymentsNum` מחייב הסכמה
+מוקדמת/הפעלה במסוף הסליקה (כמו טוקנים/הוראת קבע), או שזה זמין כברירת
+מחדל לכל עסק. צריך לבדוק חי או לשאול את Invoice4u.
+
+### מבנה לקוח (Customer)
+`POST /CreateCustomer` יוצר לקוח ב-Invoice4u (`CreateCustomerResult.ID`),
+ורק אחרי זה `CustomerId` הזה משמש ב-`AddToken`/`ChargeWithToken`/
+`IsStandingOrderClearance`. **המשמעות לקוד שלנו:** צריך שדה חדש ב-`members`
+לשמירת ה-`invoice4u_customer_id` (מקביל בקונספט למה שתכננו לגבי טוקן
+ב-06.08.2026), נוצר פעם אחת per מתאמן.
+
+### בדיקת סטטוס חיוב בדיעבד (חלופה/גיבוי ל-webhook)
+`POST /GetClearingLogByParams` / `GetClearingLogById` מחזיר `ClearingLog`
+מלא (`IsSuccess`, `Amount`, `IsToken`, `TransactionType`, `DocId` וכו') —
+אפשר להשתמש בזה כדי **לאמת חי** שחיוב הצליח, בלי לסמוך אך ורק על webhook
+נכנס (בדיוק כמו הגישה שכבר השתמשנו בה מול Green Invoice — ראיות מהשרת,
+לא ניחוש).
+
+**⚠️ לא נמצא בתיעוד (נבדק במפורש, לא רק לא-חיפשתי):** שום מנגנון חתימה/
+אימות של ה-webhook הנכנס (`CallBackUrl`/`StandingOrderCallBackUrl`) — לא
+secret, לא signature header. כשנבנה את ה-Edge Function שמקבל את זה, צריך
+זהירות דומה למה שכבר כתוב בהערה הקיימת על `green-invoice-webhook` (מבנה
+ה-payload ואימותו לא אומתו בפועל).
+
+### ✅ החלטה שהתקבלה (06.09.2026, המשך אותו היום) — מסלול ב׳ נבחר
+
+דודי בחר מפורשות: **מסלול ב׳ — טוקן שמור (`AddToken`/`ChargeWithToken`) +
+חיוב חודשי אמיתי (cron שלנו)**, לא מסלול א׳ (הוראת קבע מובנית ב-Invoice4u
+עצמו) ולא מסלול ג׳ (תשלומים). עדיין חסום מפתח API מדודי — הנחיתי הודעה
+להוציא אותו (התחברות/פנייה לתמיכה אם לא נמצא במסך). ברגע שיגיע:
+1. לבקש מ-Invoice4u במפורש גם אישור/הפעלה של "טוקנים והוראות קבע"
+   (Tokens & Standing Orders) על מסוף הסליקה של דודי — אחרת נקבל שגיאות
+   `ApiTokenizationNotApprovedInClearingTerminal`/
+   `ApiStandingOrderNotApprovedInClearingTerminal`.
+2. לאחר שהמפתח יגיע — יישמר כ-Supabase secret בצד שרת בלבד (כמו
+   `GREEN_INVOICE_API_ID`), ואז נתחיל בפועל לבנות: שדה
+   `invoice4u_customer_id` על `members`, עמוד hosted-page לשמירת כרטיס
+   (`AddToken`), ו-cron חודשי (Supabase) שקורא ל-`ChargeWithToken` לכל
+   מתאמן פעיל בקאונטרי, לפי הסכום המתאים ל-`subscription_type` (נשאר
+   מ-`branch_subscription_prices`, כבר קיים) ומתחשב ב-`discount_valid_until`.
+
+### ✅ מפתח ה-API הוגדר ואומת חי בפועל (06.09.2026, המשך אותו היום)
+
+דודי הוציא את המפתח מהמסך "ייצור מפתח API" באפליקציית Invoice4u ושלח.
+**בוצע בפועל (לא רק "נשמר", גם אומת שעובד):**
+1. המפתח (`INVOICE4U_API_KEY`) הוגדר כ-Supabase secret דרך דפדפן מחובר
+   (Claude-in-Chrome, בדיוק כמו עם Green Invoice ב-02.08.2026) — Dashboard
+   → Edge Functions → Secrets → Save. אומת: הודעת "Successfully created
+   new secret" בפועל, סביבת הפרויקט מאומתת כ-PRODUCTION (לא QA).
+2. נבנה ונפרס Edge Function זמני `invoice4u-debug-auth` (Deno.serve) שקורא
+   בפועל ל-`POST /Services/ApiService.svc/IsAuthenticated` ול-
+   `GetExpDateByApiKey` מול ה-API האמיתי של Invoice4u Production, ונבדק
+   דרך "Test function" בדשבורד (curl ישיר חסום גם מה-sandbox וגם מה-VM
+   של דודי ע"י allowlist הרשת — בדיוק כמו שקרה עם Green Invoice, אותו
+   פתרון: בדיקה דרך "Test function").
+3. **תוצאה (עובדה, לא ניחוש):**
+   - `IsAuthenticated` → HTTP 200, `Errors: []`, החזיר אובייקט `User`/
+     ארגון מלא (`__type: "User:#Invoice.Common"`, שדות כמו
+     `AccessPermissionsId`/`AccountingMethod` וכו') — **המפתח תקין ועובד
+     בפועל מול Production**.
+   - `GetExpDateByApiKey` → `{"d":"06\/10\/2026"}`. **⚠️ פורמט לא ודאי
+     (dd/MM/yyyy מול MM/dd/yyyy)** — אם dd/MM (הפורמט הישראלי הסביר יותר,
+     גם כי MM/dd היה אומר שהמפתח כבר פג ב-10.6.2026, לפני היום, וזה סותר
+     שהוא כרגע עובד) **המפתח פג תוקף ב-6.10.2026 — כחודש מהיום בלבד.**
+     **צריך לשאול את Invoice4u/חברת הסליקה במפורש: האם זה מתחדש
+     אוטומטית, או שצריך להנפיק מפתח חדש כל תקופה — לפני שבונים cron
+     חודשי שתלוי במפתח הזה.**
+4. Edge Function הזמני `invoice4u-debug-auth` **נמחק** מיד אחרי האימות
+   (אושר מול `list_edge_functions` — לא מופיע יותר ברשימה). לא נשאר קוד
+   בדיקה זמני בפרודקשן.
+
+### ⏳ My last pending task (06.09.2026, המשך)
+1. **⚠️ לשאול את Invoice4u: מדיניות פקיעת תוקף המפתח** (סעיף 3 למעלה) —
+   קריטי לפני שסומכים עליו ל-cron חודשי ארוך-טווח.
+2. עדיין לפני שמתחילים קוד בפועל: לוודא מול Invoice4u/חברת הסליקה
+   ש"טוקנים והוראות קבע" מופעלים על מסוף הסליקה של דודי (כמו שכבר תועד).
+3. **מוכן להתחיל בפועל (מסלול ב', כבר אושר ע"י דודי):** שדה
+   `invoice4u_customer_id` על `members`, `CreateCustomer` + `AddToken`
+   (hosted page) לשמירת כרטיס, ו-cron חודשי ב-Supabase שקורא
+   `ChargeWithToken` לכל מתאמן פעיל בקאונטרי לפי `subscription_type`/
+   `branch_subscription_prices` ומתחשב ב-`discount_valid_until`.
+4. עדיין פתוח מסשנים קודמים (לא נשכח): מיפוי מי בפועל גובה כסף מכל
+   מתאמן בקאונטרי (09.08.2026); `green-invoice-debug-tokens` הזמני עדיין
+   קיים ב-Supabase (לא קשור למחקר הנוכחי, לא נגעתי בו).
+
+---
+
+
+### ✅ נבנה בפועל (06.09.2026, המשך אותו היום) — מסלול ב׳ מומש, טרם נדחף
+
+דודי אישר תרחיש רחב יותר ממה שסוכם בהתחלה: **Invoice4u יחליף את Green
+Invoice/Grow לגמרי** כספק הסליקה החי (גם אימון ניסיון, גם הרשמה למנוי,
+לא רק חיוב חוזר של מתאמנים קיימים) — כי Green Invoice בפועל לא מעבד שום
+תשלום היום (מושבת). נבדק קודם המבנה הקיים (`members`/
+`branch_subscription_prices`/`trial_visits`/קוד `green-invoice-webhook`)
+כדי לבנות באותו contract בדיוק ולא לשבור כלום.
+
+**מה בוצע בפועל (הכל אומת, לא רק "success: true"):**
+
+1. **מיגרציה `add_invoice4u_fields`** — עמודות חדשות אדיטיביות (אין
+   ברירת מחדל שמשנה התנהגות קיימת): `members.invoice4u_customer_id`,
+   `invoice4u_token_status` (none/active/failed), `invoice4u_last_charge_at/
+   _status/_payment_id`, `invoice4u_doc_id/_doc_url`; אותו דבר (בלי
+   customer/token) על `trial_visits`. **אומת** מול `information_schema.columns`
+   — כל 10 העמודות קיימות בדיוק כמתוכנן.
+
+2. **Edge Function `invoice4u-create-payment-link`** (מחליף
+   `green-invoice-create-payment-link`, **אותו contract בדיוק**:
+   `{type, reference_id, amount, description, customer_name, customer_phone}`
+   → `{payment_url}`):
+   - `trial` → חיוב חד-פעמי רגיל (`ProcessApiRequestV2`, בלי טוקן).
+   - `subscription` → `CreateCustomer` ב-Invoice4u (עם
+     `IsNonUniqueNameCreation:true` כי שמות מתאמנים לא ייחודיים) ואז
+     `AddTokenAndCharge` — **שומר כרטיס וגובה תשלום ראשון בפעולה אחת**,
+     כך שמעכשיו ואילך `invoice4u-charge-monthly` כבר יכול לחייב אותו בלי
+     שום שלב ידני נוסף. ה-`CustomerId` נשמר על שורות `members` **מיד**
+     (לפני ה-redirect, לא מחכה ל-callback) כדי שלא יאבד אם ה-callback
+     ייכשל/יתעכב.
+
+3. **Edge Function `invoice4u-callback`** (מחליף `green-invoice-webhook`,
+   `verify_jwt:false`): מקבל את תוצאת החיוב, מעדכן `trial_visits`/
+   `members` לפי `OrderIdClientUsage` (type:id, אותה קונבנציה כמו קודם),
+   כולל אישור אוטומטי כשהסכום תואם למחירון ואין בקשת הנחה (אותה לוגיקה
+   בדיוק כמו ב-webhook הישן). **⚠️ מבנה ה-payload של Invoice4u ל-CallBackUrl
+   לא מאומת בפועל** (לא מתועד ב-gitbook) — נכתב בהגנתיות עם כמה וריאציות
+   שמות שדה אפשריות + `console.log` מלא של ה-payload הגולמי, בדיוק כמו
+   שהיה עם Green Invoice. **לפני סמיכה מלאה על אישור אוטומטי: לבצע תשלום
+   בדיקה אמיתי קטן ולבדוק בלוגים של הפונקציה מה באמת הגיע.**
+
+4. **Edge Function `invoice4u-charge-monthly` + פיקוד pg_cron**: רץ
+   ב-1 לחודש (`0 3 1 * *`, מוגן ב-header `x-cron-secret` מול secret
+   `CRON_SECRET` — לא נגיש לאף אחד אחר). עובר על כל מתאמן פעיל בסניף עם
+   `requires_facility_waiver=true` (קאונטרי) עם `invoice4u_token_status=
+   'active'`, מחשב סכום לפי `subscription_type`/`branch_subscription_prices`/
+   `discount_pct`+`discount_valid_until`/`custom_price`, וגובה דרך
+   `ChargeWithToken`. מדלג אוטומטית על מי שכבר חויב החודש הקלנדרי הנוכחי
+   (לפי `invoice4u_last_charge_at`) — **מונע חיוב כפול אם ה-cron ירוץ
+   פעמיים בטעות**. **הופעל בבדיקה חיה דרך "Test function"** (עם ה-header
+   הנכון) — החזיר `{"ok":true,"charged":0,"failed":0,"skipped":0,"results":[]}`
+   — 0 כי עדיין אין אף מתאמן עם טוקן פעיל (הגיוני, המנגנון רק עכשיו נבנה).
+   **פישוט מכוון ל-v1**: חיוב קבוע ב-1 לחודש לכולם, לא לפי יום ההרשמה
+   האישי של כל מתאמן (anniversary billing) — אם דודי ירצה דיוק לפי יום
+   ההרשמה, זה שיפור נפרד לעתיד.
+
+5. **`RegisterPage.jsx` + `TrialFormPage.jsx`** — שינוי שורה אחת בכל קובץ:
+   שם הפונקציה הנקראת השתנה מ-`green-invoice-create-payment-link` ל-
+   `invoice4u-create-payment-link`. **שום דבר אחר לא השתנה** — אותו
+   contract בדיוק, אותה התנהגות UI (כולל נפילה עדינה ל"ניצור קשר" אם
+   הפונקציה נכשלת).
+
+6. **build+eslint נבדקו**: `npx vite build` — 122 מודולים, 0 שגיאות
+   חדשות (רק אזהרות קיימות מראש על גודל chunk). `npx eslint` על 2
+   הקבצים ששונו — **0 בעיות** (exit 0, אין פלט). `git diff` אומת —
+   רק שינוי שם הפונקציה, שורה אחת בכל קובץ, אין שינויים לוואי.
+
+**⚠️ עדיין פתוח, לא בוצע בסשן הזה:**
+- **backfill למתאמני קאונטרי קיימים** שכבר רשומים אבל אין להם טוקן שמור —
+  צריך כלי מנהל (בדומה ל"🔑 שחזור סיסמה") שיוצר לינק `AddToken` (בלי
+  charge) לשליחה בוואטסאפ, כדי שיוכלו לשמור כרטיס בלי לשלם פעם נוספת.
+  לא נבנה עדיין — v1 מכסה רק הרשמות **חדשות** מעכשיו והלאה.
+- **תשלום בדיקה אמיתי חי מקצה-לקצה טרם בוצע** (רק "Test function" על
+  ה-cron, לא זרימת register→callback אמיתית) — מומלץ לבצע אחרי push,
+  עם סכום קטן, ולבדוק בלוגים של `invoice4u-callback` את ה-payload
+  האמיתי (סעיף 3 למעלה).
+- **פקיעת תוקף מפתח ה-API (~6.10.2026)** — עדיין לא נשאל Invoice4u אם
+  מתחדש אוטומטית. ה-cron החודשי הראשון (1.10 או 1.11) עלול להיכשל אם
+  המפתח יפוג לפני שמבררים.
+- **git commit+push טרם בוצע** — משנה תשלום חי, ממתין לאישור מפורש
+  של דודי אחרי סקירה (הפונקציות ב-Supabase כבר חיות/נפרסות, אבל שינוי
+  ה-frontend לא ישפיע בפועל עד push+deploy ב-Vercel — זו נקודת הבלימה
+  הבטוחה).
+
+
+---
+
+
 ## ✅ Session 05.09.2026 — הפעלת "סגירת עונה" בפועל + אוטומציה שנתית לחולון-בגין
 
 **מה קרה בפועל (פעולת דאטה חיה, לא רק קוד):**

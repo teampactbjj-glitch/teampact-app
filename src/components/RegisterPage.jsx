@@ -547,7 +547,7 @@ export default function RegisterPage() {
 
       const registrationPaymentRef = memberRows[ccIndexes[0]]?.registration_payment_ref
 
-      const { data: fnData, error: fnErr } = await supabase.functions.invoke('green-invoice-create-payment-link', {
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('invoice4u-create-payment-link', {
         body: {
           type: 'subscription',
           reference_id: registrationPaymentRef,

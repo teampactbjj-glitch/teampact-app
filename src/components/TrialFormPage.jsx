@@ -136,7 +136,7 @@ export default function TrialFormPage() {
     if (injuryWaiverErr) console.error('injury_risk waiver insert error (ממשיכים בכל זאת):', injuryWaiverErr)
 
     // ניסיון ליצור לינק תשלום — אם עדיין לא הוגדר חשבונית ירוקה (secrets), מציגים נפילה חלקה
-    const { data: fnData, error: fnErr } = await supabase.functions.invoke('green-invoice-create-payment-link', {
+    const { data: fnData, error: fnErr } = await supabase.functions.invoke('invoice4u-create-payment-link', {
       body: {
         type: 'trial',
         reference_id: visit.id,

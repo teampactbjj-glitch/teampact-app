@@ -684,6 +684,14 @@ export default function RegisterPage() {
           </a>
         </div>
 
+        <div role="note" className="bg-purple-50 border-2 border-purple-300 rounded-xl px-3 py-3 text-center">
+          <p className="text-sm font-bold text-purple-900">רק רוצים לנסות לפני שנרשמים?</p>
+          <p className="text-xs text-purple-700 mt-0.5 mb-2">הרשמה לאימון ניסיון בודד — 50 ₪, ללא התחייבות</p>
+          <a href="/trial" className="inline-block bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl no-underline focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-purple-400">
+            הרשמה לאימון ניסיון ←
+          </a>
+        </div>
+
         <div role="note" className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-center">
           <p className="text-sm font-semibold text-amber-800">📝 יש למלא את הטופס בעברית בלבד</p>
           <p className="text-xs text-amber-700 mt-0.5">כדי שנוכל לזהות אתכם ולקשר לתשלום</p>

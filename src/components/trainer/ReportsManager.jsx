@@ -5,6 +5,7 @@ import { fetchAllPaged } from '../../lib/fetchAllPaged'
 import { notifyPush } from '../../lib/notifyPush'
 import { useToast, useConfirm } from '../a11y'
 import PromotionEvents from './PromotionEvents'
+import BillingReconciliation from './BillingReconciliation'
 import BeltHistoryEditor from './BeltHistoryEditor'
 import { getBeltMeta, getBeltLabel, ADULT_BELTS, KIDS_BELTS,
   getBeltFamily, getBeltLevelPosition, getBeltFamilyLabel, getBeltFamilyColor,
@@ -1717,6 +1718,9 @@ export default function ReportsManager({ isAdmin, profile }) {
           )}
         </div>
       </div>
+
+      {/* התאמת גביה חודשית — מנהל בלבד */}
+      {isAdmin && <BillingReconciliation />}
 
       {/* באנר זיהוי תפקיד למאמן רגיל */}
       {!isAdmin && myAthleteIds && isBjjCoach && (

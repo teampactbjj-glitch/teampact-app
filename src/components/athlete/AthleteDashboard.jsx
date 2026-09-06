@@ -1657,6 +1657,9 @@ function SettingsTab({ profile, member }) {
   const [freezeReqStart, setFreezeReqStart] = useState('')
   const [freezeReqReason, setFreezeReqReason] = useState('military')
   const [freezeMinDate, setFreezeMinDate] = useState('')
+  const [cancelConfirmStage, setCancelConfirmStage] = useState(0) // 0=טרם, 1=גילוי ראשון, 2=אישור סופי
+  const [cancelSubmitting, setCancelSubmitting] = useState(false)
+  const [localCancelDate, setLocalCancelDate] = useState(null) // עדכון אופטימי מקומי אחרי ביטול עצמאי מוצלח
 
   // התאריך המוקדם ביותר שאפשר להקפיא ממנו: יום אחרי האימון האחרון שהמתאמן היה בו נוכח
   async function computeFreezeMinDate() {
@@ -1890,6 +1893,46 @@ function SettingsTab({ profile, member }) {
     setSubNote(''); loadPending()
   }
 
+  // מוסיף חודש קלנדרי אחד לתאריך, עם clamp לסוף החודש (זהה בדיוק להתנהגות PostgreSQL של
+  // date + interval '1 month'). לדוגמה: 31 בינואר + חודש = 28/29 בפברואר (לא "3 במרץ" כמו
+  // שהיה קורה עם JS Date רגיל ללא clamp) — כדי שהתאריך שמוצג כאן יתאים לתאריך שה-RPC בשרת
+  // באמת יקבע.
+  function addOneMonthClamped(base) {
+    const day = base.getDate()
+    const target = new Date(base.getFullYear(), base.getMonth() + 1, 1)
+    const daysInTarget = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
+    target.setDate(Math.min(day, daysInTarget))
+    return target
+  }
+  function formatDateHe(d) {
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+  }
+
+  // ביטול מנוי עצמאי — ללא צורך באישור מנהל. קורא ל-RPC self_cancel_membership שקובע
+  // (בשרת, מקור האמת) cancel_date = היום + חודש קלנדרי אחד. האכיפה בפועל (חסימת הרשמה
+  // לשיעורים + עצירת החיוב החודשי) מתבצעת ע"י cron יומי + current_user_can_book/
+  // member_can_book (ראו מיגרציית self_service_cancellation_and_booking_gate, 06.09.2026).
+  async function confirmSelfCancel() {
+    if (blockIfNotActive()) return
+    setCancelSubmitting(true)
+    const { data: cancelDate, error } = await supabase.rpc('self_cancel_membership', { p_member_id: profile.id })
+    setCancelSubmitting(false)
+    if (error) { toast.error('שגיאה: ' + error.message); return }
+    setLocalCancelDate(cancelDate)
+    const dateStr = formatDateHe(new Date(String(cancelDate) + 'T00:00:00'))
+    toast.success(`המנוי בוטל. הגישה תיחסם והחיוב החוזר יופסק החל מ-${dateStr}.`)
+    nonSecretaryTrainerUserIds().then(ids => notifyPush({
+      userIds: ids,
+      title: '🚫 ביטול מנוי (עצמאי)',
+      body: `${athleteName} ביטל/ה מנוי באפליקציה — יסתיים ב-${dateStr}. לא נדרשת פעולה מצדך.`,
+      url: '/#reports', tag: `membership-cancel:${profile.id}`,
+    })).catch(() => {})
+    setMembershipAction(null)
+    setCancelConfirmStage(0)
+    setMembershipNote('')
+    loadPending()
+  }
+
   async function submitMembershipRequest() {
     if (blockIfNotActive()) return
     if (!membershipAction) return
@@ -1980,10 +2023,13 @@ function SettingsTab({ profile, member }) {
   const hasPendingName = pendingRequests.some(r => r.change_type === 'name')
   const hasPendingSub = pendingRequests.some(r => r.change_type === 'subscription')
   const hasPendingBelt = pendingRequests.some(r => r.change_type === 'belt')
-  const hasPendingMembership = pendingRequests.some(r => r.change_type === 'membership_freeze' || r.change_type === 'membership_cancel')
+  const hasPendingMembership = pendingRequests.some(r => r.change_type === 'membership_freeze')
   const isFrozen = member?.membership_status === 'frozen'
   const isExpired = member?.membership_status === 'expired'
   const hasPendingUnfreeze = pendingRequests.some(r => r.change_type === 'membership_unfreeze')
+  // ביטול עצמאי שכבר אושר וממתין לתאריך הסיום (cancel_date נקבע, membership_status עדיין
+  // לא 'cancelled' — האכיפה בפועל מתבצעת ע"י ה-cron היומי enforce_membership_cancellations).
+  const effectiveCancelDate = localCancelDate || (member?.membership_status !== 'cancelled' ? member?.cancel_date : null)
 
   return (
     <div className="space-y-4">
@@ -2196,6 +2242,15 @@ function SettingsTab({ profile, member }) {
                     </button>
                   )}
                 </div>
+              ) : effectiveCancelDate ? (
+                <div className="text-sm bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
+                  <p className="font-semibold text-red-800">🚫 המנוי מתוכנן להסתיים</p>
+                  <p className="text-xs text-red-700">
+                    המנוי יבוטל והחיוב החוזר יופסק החל מ-{formatDateHe(new Date(String(effectiveCancelDate) + 'T00:00:00'))}.
+                    עד אז אפשר להמשיך להתאמן ולהירשם לשיעורים כרגיל.
+                  </p>
+                  <p className="text-[11px] text-red-500">שינית דעתך? פנה/י למאמן שלך לפני מועד הסיום.</p>
+                </div>
               ) : hasPendingMembership ? (
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                   יש בקשה ממתינה לאישור מנהל
@@ -2205,7 +2260,7 @@ function SettingsTab({ profile, member }) {
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => { setMembershipAction(a => a === 'freeze' ? null : 'freeze'); if (membershipAction !== 'freeze') computeFreezeMinDate() }}
+                      onClick={() => { const next = membershipAction === 'freeze' ? null : 'freeze'; setMembershipAction(next); setCancelConfirmStage(0); if (next === 'freeze') computeFreezeMinDate() }}
                       className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition ${
                         membershipAction === 'freeze'
                           ? 'bg-blue-600 text-white border-blue-600'
@@ -2215,7 +2270,7 @@ function SettingsTab({ profile, member }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setMembershipAction(a => a === 'cancel' ? null : 'cancel')}
+                      onClick={() => { setMembershipAction(a => a === 'cancel' ? null : 'cancel'); setCancelConfirmStage(0) }}
                       className={`px-3 py-2.5 rounded-lg text-sm font-medium border transition ${
                         membershipAction === 'cancel'
                           ? 'bg-red-600 text-white border-red-600'
@@ -2224,37 +2279,31 @@ function SettingsTab({ profile, member }) {
                       🚫 ביטול מנוי
                     </button>
                   </div>
-                  {membershipAction && (
+                  {membershipAction === 'freeze' && (
                     <div className="space-y-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
-                      {membershipAction === 'freeze' ? (
-                        <>
-                          <p className="text-xs text-blue-700 font-medium">הקפאת מנוי — הבקשה תאושר ע"י המנהל.</p>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">תאריך התחלת הקפאה</label>
-                            <input type="date" value={freezeReqStart} min={freezeMinDate}
-                              onChange={e => setFreezeReqStart(e.target.value)}
-                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" />
-                            {freezeMinDate && (
-                              <p className="text-[11px] text-gray-400 mt-1">
-                                לא ניתן להקפיא בתאריך שבו היית באימון. הכי מוקדם: {freezeMinDate.split('-').reverse().join('/')}
-                              </p>
-                            )}
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">סיבה</label>
-                            <select value={freezeReqReason} onChange={e => setFreezeReqReason(e.target.value)}
-                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
-                              <option value="military">מילואים</option>
-                              <option value="study">לימודים</option>
-                              <option value="medical">רפואי</option>
-                              <option value="injury">פציעה</option>
-                              <option value="other">אחר</option>
-                            </select>
-                          </div>
-                        </>
-                      ) : (
-                        <p className="text-xs text-red-700 font-medium">ביטול מנוי — ייכנס לתוקף בסוף החודש הנוכחי.</p>
-                      )}
+                      <p className="text-xs text-blue-700 font-medium">הקפאת מנוי — הבקשה תאושר ע"י המנהל.</p>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">תאריך התחלת הקפאה</label>
+                        <input type="date" value={freezeReqStart} min={freezeMinDate}
+                          onChange={e => setFreezeReqStart(e.target.value)}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" />
+                        {freezeMinDate && (
+                          <p className="text-[11px] text-gray-400 mt-1">
+                            לא ניתן להקפיא בתאריך שבו היית באימון. הכי מוקדם: {freezeMinDate.split('-').reverse().join('/')}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">סיבה</label>
+                        <select value={freezeReqReason} onChange={e => setFreezeReqReason(e.target.value)}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+                          <option value="military">מילואים</option>
+                          <option value="study">לימודים</option>
+                          <option value="medical">רפואי</option>
+                          <option value="injury">פציעה</option>
+                          <option value="other">אחר</option>
+                        </select>
+                      </div>
                       <textarea
                         value={membershipNote}
                         onChange={e => setMembershipNote(e.target.value)}
@@ -2268,6 +2317,53 @@ function SettingsTab({ profile, member }) {
                         className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
                         {saving ? 'שולח...' : 'שלח בקשה למנהל'}
                       </button>
+                    </div>
+                  )}
+                  {membershipAction === 'cancel' && cancelConfirmStage !== 2 && (
+                    <div className="space-y-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                      <p className="text-sm font-bold text-red-800">שים/י לב — ביטול מנוי</p>
+                      <p className="text-xs text-red-700 leading-relaxed">
+                        פעולה זו מבטלת את המנוי החודשי המתחדש שלך ב-TeamPact. בהתאם לתקנון האתר ולחוק
+                        הגנת הצרכן, הביטול ייכנס לתוקף בתום חודש קלנדרי אחד ממועד האישור — ועד למועד זה
+                        יחול חיוב מלא כרגיל, כמקובל. המשמעות בפועל: יבוצע חיוב נוסף ואחרון לפי מחיר המנוי
+                        הרגיל שלך, ותוכל/י להמשיך להתאמן ולהירשם לשיעורים כרגיל עד לתאריך הסיום.
+                      </p>
+                      <p className="text-xs text-red-700 leading-relaxed">
+                        תאריך סיום משוער: <b>{formatDateHe(addOneMonthClamped(new Date()))}</b>. החל ממנו המנוי
+                        יסתיים סופית, החיוב החוזר יופסק, והגישה לרישום לאימונים תיחסם אוטומטית.
+                      </p>
+                      <textarea
+                        value={membershipNote}
+                        onChange={e => setMembershipNote(e.target.value)}
+                        placeholder="סיבה (אופציונלי)"
+                        rows="2"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCancelConfirmStage(2)}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg text-sm font-medium">
+                        המשך לביטול
+                      </button>
+                    </div>
+                  )}
+                  {membershipAction === 'cancel' && cancelConfirmStage === 2 && (
+                    <div className="space-y-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                      <p className="text-sm font-bold text-red-800">אישור סופי לביטול המנוי</p>
+                      <p className="text-xs text-red-700 leading-relaxed">
+                        לחיצה על הכפתור למטה תבטל את המנוי שלך. המנוי ייסגר, החיוב החוזר יופסק, והגישה שלך
+                        לרישום לאימונים תיחסם — החל מתאריך {formatDateHe(addOneMonthClamped(new Date()))}.
+                      </p>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setCancelConfirmStage(1)}
+                          className="flex-1 bg-white border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">
+                          חזרה
+                        </button>
+                        <button type="button" onClick={confirmSelfCancel} disabled={cancelSubmitting}
+                          className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                          {cancelSubmitting ? 'מבטל...' : 'כן, בטל את המנוי לצמיתות'}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

@@ -262,9 +262,23 @@ export default function RegisterPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branches, activeDiscount])
 
-  // מחיר אפקטיבי (אחרי הנחה, אם הלינק הנוכחי כולל אחת) — לתצוגה ולסכום התשלום בפועל
+  // מחיר אפקטיבי (אחרי הנחה, אם הלינק הנוכחי כולל אחת) — מחיר חודשי מלא, ללא יחס לימים.
   const discPct = activeDiscount?.pct || 0
-  const effectivePrice = (type) => Math.round((COUNTRY_CLUB_PRICES[type] || 0) * (1 - discPct / 100))
+
+  // חישוב יחסי (פרו-רייטה) לחודש ההרשמה: מי שנרשם באמצע החודש משלם רק על הימים שנותרו
+  // עד סופו, ומ-1 לחודש הבא ואילך משלם את המחיר המלא הרגיל (ה-cron החודשי כבר מדלג נכון
+  // על מי שכבר חויב החודש הקלנדרי הנוכחי — ראו invoice4u-charge-monthly). הנוסחה כאן זהה
+  // בדיוק (אותו סדר פעולות חשבוני) לזו שב-invoice4u-callback, כדי שהסכום שנגבה בפועל יתאים
+  // תמיד למחירון ואישור אוטומטי לא ייפול סתם ל"בדיקה ידנית".
+  function computeProration(now = new Date()) {
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const remainingDays = daysInMonth - now.getDate() + 1
+    return { daysInMonth, remainingDays, factor: remainingDays / daysInMonth }
+  }
+  const { remainingDays: prorationRemainingDays, daysInMonth: prorationDaysInMonth, factor: prorationFactor } = computeProration()
+  const isFullMonth = prorationRemainingDays >= prorationDaysInMonth
+  // מחיר בפועל לתשלום היום — משמש הן לתצוגה (סה"כ לתשלום) והן לסכום שנשלח בפועל לחיוב.
+  const proratedPrice = (type) => Math.round((COUNTRY_CLUB_PRICES[type] || 0) * (1 - discPct / 100) * prorationFactor)
 
   async function handleSubmit() {
     // --- ולידציה: פרטי חשבון ---
@@ -542,7 +556,7 @@ export default function RegisterPage() {
       let totalAmount = 0
       for (let k = 0; k < ccIndexes.length; k++) {
         const origRow = memberRows[ccIndexes[k]]
-        totalAmount += effectivePrice(origRow.subscription_type)
+        totalAmount += proratedPrice(origRow.subscription_type)
       }
 
       const registrationPaymentRef = memberRows[ccIndexes[0]]?.registration_payment_ref
@@ -555,6 +569,7 @@ export default function RegisterPage() {
           description: `הרשמה למנוי — TeamPact חולון קאנטרי (${ccInsertedRows.map(r => r.full_name).join(', ')})`,
           customer_name: parentName,
           customer_phone: form.phone.trim(),
+          customer_email: form.email.trim() || undefined,
         },
       })
 
@@ -640,8 +655,8 @@ export default function RegisterPage() {
   // סה"כ לתשלום לתצוגה בלבד — מחיר אפקטיבי (אחרי הנחה, אם הלינק הנוכחי כולל אחת).
   // מחושב רק על אנשים שנרשמים לחולון קאנטרי ספציפית.
   const countryClubTotal =
-    (selfIsAthlete && selfIsCountryClub ? effectivePrice(form.self_subscription_type) : 0) +
-    children.reduce((sum, c) => sum + (isCountryClub(c.branch_ids) ? effectivePrice(c.subscription_type) : 0), 0)
+    (selfIsAthlete && selfIsCountryClub ? proratedPrice(form.self_subscription_type) : 0) +
+    children.reduce((sum, c) => sum + (isCountryClub(c.branch_ids) ? proratedPrice(c.subscription_type) : 0), 0)
 
   return (
     <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4" dir="rtl">
@@ -837,9 +852,18 @@ export default function RegisterPage() {
 
           {anyCountryClub && (
             <div className="border-t border-gray-100 pt-3 space-y-3">
-              <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5 flex items-center justify-between">
-                <span className="text-sm font-bold text-gray-700">סה״כ לתשלום{activeDiscount ? ' (לאחר הנחה)' : ''}</span>
-                <span className="text-lg font-black text-emerald-700">₪{countryClubTotal}</span>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-gray-700">
+                    סה״כ לתשלום היום{isFullMonth ? '' : ` (יחסי ל-${prorationRemainingDays} הימים שנותרו החודש)`}{activeDiscount ? ' + הנחה' : ''}
+                  </span>
+                  <span className="text-lg font-black text-emerald-700">₪{countryClubTotal}</span>
+                </div>
+                {!isFullMonth && (
+                  <p className="text-[11px] text-gray-500">
+                    ההרשמה היום היא ליתרת החודש הנוכחי בלבד. החל מה-1 לחודש הבא יחויב המחיר המלא של המנוי בכל חודש כרגיל.
+                  </p>
+                )}
               </div>
               <CountryClubWaiver value={waiver} onChange={setWaiver} prefilledName={selfIsMinor ? form.self_guardian_name : form.account_name} />
               <InjuryRiskWaiver value={injuryWaiver} onChange={setInjuryWaiver} isMinor={form.is_guardian || selfIsMinor} prefilledName={selfIsMinor ? form.self_guardian_name : form.account_name} />

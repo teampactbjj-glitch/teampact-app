@@ -439,24 +439,43 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
       })
     }
 
-    // 5. ביקורי ניסיון לתאריך הנבחר (טבלת trial_visits — מתאמני ניסיון
-    //    שלא נמצאים ב-members כי הם לא מתאמני המועדון)
+    // 5. ביקורי ניסיון לתאריך הנבחר: (א) שנוספו ידנית ע"י מאמן (טבלת trial_visits —
+    //    מתאמני ניסיון שלא נמצאים ב-members כי הם לא מתאמני המועדון), מזוהים לפי visited_at
+    //    בטווח היום; (ב) ✅ 07.09.2026 — הרשמות עצמאיות מהאפליקציה (/trial) לאותו שיעור
+    //    ותאריך, מוצגות רק אם payment_status='paid' (אם לא שולם, ההרשמה לא הושלמה בכלל —
+    //    אין טעם להציג/לספור אותה, כפי שביקש דודי).
     let trialVisits = []
     {
-      const { data: tvRows, error: tvErr } = await supabase
-        .from('trial_visits')
-        .select('id, visitor_name, visitor_phone, visited_at, notes')
-        .eq('class_id', classId)
-        .gte('visited_at', dayStart.toISOString())
-        .lte('visited_at', dayEnd.toISOString())
-        .order('visited_at')
-      if (tvErr) {
-        // אם הטבלה עדיין לא נוצרה (טרם הריצה את המיגרציה) — לא נשבור את המסך.
-        if (!/relation .*trial_visits/i.test(tvErr.message || '')) {
-          console.error('trial_visits error:', tvErr)
-        }
+      const dayDateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`
+
+      const [manualRes, onlineRes] = await Promise.all([
+        supabase
+          .from('trial_visits')
+          .select('id, visitor_name, visitor_phone, visited_at, notes, source')
+          .eq('class_id', classId)
+          .gte('visited_at', dayStart.toISOString())
+          .lte('visited_at', dayEnd.toISOString())
+          .order('visited_at'),
+        supabase
+          .from('trial_visits')
+          .select('id, visitor_name, visitor_phone, visited_at, notes, source')
+          .eq('class_id', classId)
+          .eq('requested_date', dayDateStr)
+          .eq('source', 'app_self_serve')
+          .eq('payment_status', 'paid'),
+      ])
+      const tvErr = manualRes.error
+      const tvErr2 = onlineRes.error
+      if (tvErr && !/relation .*trial_visits/i.test(tvErr.message || '')) {
+        console.error('trial_visits error:', tvErr)
       }
-      trialVisits = tvRows || []
+      if (tvErr2 && !/relation .*trial_visits/i.test(tvErr2.message || '')) {
+        console.error('trial_visits (online) error:', tvErr2)
+      }
+      // מיזוג + הסרת כפילויות לפי id (ליתר ביטחון)
+      const byId = new Map()
+      ;[...(manualRes.data || []), ...(onlineRes.data || [])].forEach(r => byId.set(r.id, r))
+      trialVisits = Array.from(byId.values())
     }
 
     setClassData(prev => ({
@@ -1598,7 +1617,12 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
                           {data.trialVisits.map(tv => (
                             <li key={tv.id} className="py-2.5 px-3 flex items-center justify-between gap-2">
                               <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-800">{tv.visitor_name}</p>
+                                <p className="text-sm font-medium text-gray-800">
+                                  {tv.visitor_name}
+                                  {tv.source === 'app_self_serve' && (
+                                    <span className="mr-1.5 inline-block align-middle text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">🌐 נרשם ושילם באפליקציה</span>
+                                  )}
+                                </p>
                                 {tv.visitor_phone && (
                                   <p className="text-xs text-gray-500 mt-0.5">📞 {tv.visitor_phone}</p>
                                 )}

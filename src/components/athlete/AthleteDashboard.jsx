@@ -66,76 +66,6 @@ function isNextWeekRegistrationOpen(now = new Date()) {
   return true
 }
 
-// רשימת הנרשמים לשיעור — נשלפת דרך RPC מאובטח (get_class_registrants) כי
-// ה-RLS של class_registrations מאפשר למתאמן לראות רק את הרישומים של עצמו.
-// ה-RPC (SECURITY DEFINER) מאמת שהקורא הוא מתאמן פעיל בסניף של השיעור (או מאמן),
-// ומחזיר שמות מלאים בלבד + דגל יומולדת 🎂 — בלי טלפון/אימייל/פרטים רגישים.
-// העוגה מוצגת מהיומולדת ועד השיעור הראשון שהחוגג נרשם אליו אחריו, גג שבוע.
-function ClassRegistrants({ classId, weekStart, classDate }) {
-  const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [list, setList] = useState(null)
-
-  // החלפת שיעור/תאריך/שבוע — איפוס הרשימה כדי לא להציג נתונים של הקשר קודם
-  useEffect(() => { setList(null); setOpen(false) }, [classId, weekStart, classDate])
-
-  async function toggle() {
-    if (open) { setOpen(false); return }
-    setOpen(true)
-    if (list !== null) return
-    setLoading(true)
-    try {
-      const { data, error } = await supabase.rpc('get_class_registrants', {
-        p_class_id: classId,
-        p_week_start: weekStart,
-        p_class_date: classDate,
-      })
-      if (error) throw error
-      setList(data || [])
-    } catch (err) {
-      console.error('get_class_registrants error:', err)
-      setList([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="mt-1">
-      <button
-        type="button"
-        onClick={toggle}
-        className="w-full flex items-center justify-between px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold transition"
-      >
-        <span>👥 מי נרשם לשיעור?</span>
-        <span className="text-gray-400">{open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mt-1">
-          {loading ? (
-            <p className="text-xs text-gray-400 text-center py-1">טוען...</p>
-          ) : !list || list.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-1">עדיין אין נרשמים לשיעור הזה</p>
-          ) : (
-            <>
-              <p className="text-[10px] text-gray-400 font-bold mb-2">{list.length} נרשמו</p>
-              <ul className="space-y-1.5">
-                {list.map((r, i) => (
-                  <li key={i} className="text-xs text-gray-700 flex items-center gap-1.5">
-                    <span className="text-gray-300">•</span>
-                    <span className="font-medium">{r.full_name}</span>
-                    {r.is_birthday && <span title="יומולדת! 🎉">🎂</span>}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 function ScheduleTab({ member, limit, registrations, registrationsNext, onRegister, branchesMap }) {
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
@@ -289,20 +219,6 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
         .filter(c => c.day_of_week === selectedDow)
         .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
     : []
-
-  // week_start של השבוע שאליו שייך התאריך הנבחר (יום ראשון, אותה קונבנציה
-  // כמו getWeekStart — toISOString) + מחרוזת תאריך מקומית של היום הנבחר.
-  // שניהם משמשים את רשימת הנרשמים (ClassRegistrants) — כך הרשימה נכונה
-  // גם לימים בשבוע שעבר/הבא בסטריפ התאריכים.
-  const selectedWeekStart = selectedDate ? (() => {
-    const d = new Date(selectedDate)
-    d.setDate(d.getDate() - d.getDay())
-    d.setHours(0, 0, 0, 0)
-    return d.toISOString().split('T')[0]
-  })() : null
-  const selectedDateStr = selectedDate
-    ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`
-    : null
 
   // בדיקה אם תאריך/שעת שיעור בעבר (חוסם הרשמה לעבר)
   const isPastDate = (d) => d < today
@@ -574,11 +490,6 @@ function ScheduleTab({ member, limit, registrations, registrationsNext, onRegist
                       : '+ הירשם'}
                   </span>
                 </button>
-                <ClassRegistrants
-                  classId={cls.id}
-                  weekStart={selectedWeekStart}
-                  classDate={selectedDateStr}
-                />
                 </div>
               )
             })

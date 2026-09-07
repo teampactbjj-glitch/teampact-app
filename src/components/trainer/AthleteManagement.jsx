@@ -95,6 +95,13 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   const [archiveCollapsed, setArchiveCollapsed] = useState(() => {
     try { return localStorage.getItem('tp_archiveCollapsed') !== '0' } catch { return true }
   })
+  // ✅ 07.09.2026 — מתאמנים שהוסתרו אוטומטית (3 חודשים בלי checkin, ר' מיגרציית
+  // auto_hide_inactive_members). לא נמחקים — כל ההיסטוריה נשארת לשכר/דוחות, רק
+  // מוסתרים מהרשימה הרגילה. חוזרים לבד אם הם צ'ק-אין שוב; אפשר גם לשחזר ידנית כאן.
+  const [hiddenAthletes, setHiddenAthletes] = useState([])
+  const [hiddenCollapsed, setHiddenCollapsed] = useState(() => {
+    try { return localStorage.getItem('tp_hiddenCollapsed') !== '0' } catch { return true }
+  })
   const [branches, setBranches] = useState([])
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
@@ -127,6 +134,9 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   useEffect(() => {
     try { localStorage.setItem('tp_archiveCollapsed', archiveCollapsed ? '1' : '0') } catch {}
   }, [archiveCollapsed])
+  useEffect(() => {
+    try { localStorage.setItem('tp_hiddenCollapsed', hiddenCollapsed ? '1' : '0') } catch {}
+  }, [hiddenCollapsed])
 
   useEffect(() => {
     (async () => {
@@ -198,25 +208,34 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     const branchOr = branchFilter ? `branch_id.eq.${branchFilter},branch_ids.cs.{${branchFilter}}` : null
     let pendingQ     = supabase.from('members').select('*').eq('status', 'pending').is('deleted_at', null).order('created_at', { ascending: false })
     let deletionReqQ = supabase.from('members').select('*').eq('status', 'pending_deletion').is('deleted_at', null).order('full_name')
-    let activeQ      = supabase.from('members').select('*').neq('status', 'pending').neq('status', 'pending_deletion').is('deleted_at', null).order('full_name')
+    // ✅ 07.09.2026 — is('auto_hidden_at', null): מתאמנים שהוסתרו אוטומטית (3 חודשים
+    // בלי checkin) לא מופיעים ברשימה הרגילה — יש להם קטע נפרד למטה.
+    let activeQ      = supabase.from('members').select('*').neq('status', 'pending').neq('status', 'pending_deletion').is('deleted_at', null).is('auto_hidden_at', null).order('full_name')
     // ✅ 18.08.2026 — ארכיון (מתאמנים שנדחו/נמחקו — deleted_at לא ריק). רק מנהל/מזכירה
     // (אותה הרשאה כמו בקשות הצטרפות) — 60 האחרונות מספיקות, זו רשת ביטחון לטעויות
     // אחרונות, לא ארכיון היסטורי מלא. null עבור מאמן רגיל, כדי לא למשוך את זה בכלל.
     let archiveQ = isAdmin
       ? supabase.from('members').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false }).limit(60)
       : null
+    // ✅ 07.09.2026 — מתאמנים שהוסתרו אוטומטית עקב חוסר פעילות (לא נמחקו! deleted_at
+    // עדיין null). מוצג רק למנהל/מזכירה, כמו הארכיון.
+    let hiddenQ = isAdmin
+      ? supabase.from('members').select('*').is('deleted_at', null).not('auto_hidden_at', 'is', null).order('auto_hidden_at', { ascending: false }).limit(200)
+      : null
     if (branchOr) {
       pendingQ = pendingQ.or(branchOr)
       deletionReqQ = deletionReqQ.or(branchOr)
       activeQ = activeQ.or(branchOr)
       if (archiveQ) archiveQ = archiveQ.or(branchOr)
+      if (hiddenQ) hiddenQ = hiddenQ.or(branchOr)
     }
 
-    const [{ data: pendingData }, { data: deletionData }, { data, error }, archiveRes] = await Promise.all([
-      pendingQ, deletionReqQ, activeQ, archiveQ || Promise.resolve({ data: [] }),
+    const [{ data: pendingData }, { data: deletionData }, { data, error }, archiveRes, hiddenRes] = await Promise.all([
+      pendingQ, deletionReqQ, activeQ, archiveQ || Promise.resolve({ data: [] }), hiddenQ || Promise.resolve({ data: [] }),
     ])
     if (error) console.error('fetchAthletes error:', error)
     if (archiveRes.error) console.error('fetchAthletes archive error:', archiveRes.error)
+    if (hiddenRes.error) console.error('fetchAthletes hidden error:', hiddenRes.error)
 
     // בדיקה אוטומטית: מתאמנים שתאריך הביטול שלהם הגיע
     const todayStr = new Date().toISOString().split('T')[0]
@@ -249,6 +268,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     setPendingDeletions((deletionData || []).filter(m => matchesAllowed(m) && matchesBranch(m)))
     setAthletes((data || []).filter(m => matchesAllowed(m) && matchesBranch(m)))
     setArchivedAthletes((archiveRes.data || []).filter(m => matchesAllowed(m) && matchesPendingCoach(m) && matchesBranch(m)))
+    setHiddenAthletes((hiddenRes.data || []).filter(m => matchesAllowed(m) && matchesPendingCoach(m) && matchesBranch(m)))
     setLoading(false)
   }
 
@@ -889,6 +909,21 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     fetchAthletes()
   }
 
+  // ✅ 07.09.2026 — שחזור ידני של מתאמן שהוסתר אוטומטית (בלי לחכות שיצ'ק-אין לבד).
+  async function restoreHidden(id) {
+    const item = hiddenAthletes.find(a => a.id === id)
+    const ok = await confirm({
+      title: 'ביטול הסתרה',
+      message: `להחזיר את "${item?.full_name || 'המתאמן'}" לרשימה הרגילה?`,
+      confirmText: 'החזר',
+    })
+    if (!ok) return
+    const { error } = await supabase.from('members').update({ auto_hidden_at: null }).eq('id', id)
+    if (error) { toast.error('שחזור נכשל: ' + (error.message || 'שגיאה לא ידועה')); return }
+    toast.success('הוחזר לרשימה הרגילה')
+    fetchAthletes()
+  }
+
   function toggleBranch(id) {
     setForm(p => {
       const already = p.branch_ids.includes(id)
@@ -1376,6 +1411,51 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                           onClick={() => purgeArchived(a.id)}
                           className="text-xs border border-red-300 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50"
                         >מחק לצמיתות</button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+
+      {isAdmin && hiddenAthletes.length > 0 && (stackedLayout || subTab === 'active') && (
+        <div className="space-y-2">
+          <button type="button" onClick={() => setHiddenCollapsed(v => !v)}
+            className="w-full flex items-center justify-between gap-2 text-right">
+            <h3 className="font-bold text-gray-500 text-sm flex items-center gap-2">
+              🙈 הוסתרו אוטומטית — לא פעילים 3+ חודשים ({hiddenAthletes.length})
+            </h3>
+            <span className={`text-gray-500 text-xs transition-transform ${hiddenCollapsed ? '' : 'rotate-180'}`}>▼</span>
+          </button>
+          {!hiddenCollapsed && (
+            <>
+              <p className="text-[11px] text-gray-400">
+                לא נמחקו — כל ההיסטוריה (נוכחויות, שכר, דוחות) נשארת. חוזרים אוטומטית לרשימה הרגילה אם יצ'ק-אין שוב, או ידנית עם "החזר".
+              </p>
+              <ul className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y overflow-hidden">
+                {hiddenAthletes.map(a => {
+                  const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+                  const bnames = bids.map(id => branches.find(b => b.id === id)?.name).filter(Boolean).join(', ')
+                  const hiddenDate = a.auto_hidden_at ? new Date(a.auto_hidden_at).toLocaleDateString('he-IL') : ''
+                  return (
+                    <li key={a.id} className="px-4 py-3 flex items-center justify-between gap-3 bg-gray-50/60">
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-700 text-sm">{a.full_name}</p>
+                        <p className="text-xs text-gray-400">
+                          {MEMBERSHIP_LABELS[a.membership_type || a.subscription_type] || '—'}
+                          {a.phone && <span> · {a.phone}</span>}
+                          {bnames && <span> · 📍 {bnames}</span>}
+                          {hiddenDate && <span> · הוסתר ב-{hiddenDate}</span>}
+                        </p>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={() => restoreHidden(a.id)}
+                          className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700"
+                        >↩ החזר</button>
                       </div>
                     </li>
                   )

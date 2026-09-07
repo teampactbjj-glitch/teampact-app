@@ -1,18 +1,24 @@
 import { useState } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../../lib/supabase'
+import { monthLabel, recentMonths, monthBoundsMs } from '../../lib/reportMonths'
 
 // דוח התאמה חודשית — סניפי קאונטרי (branches.requires_facility_waiver=true).
 // נבנה 06.09.2026 בעקבות בקשת דודי: לוודא כל סוף חודש שרשימת המתאמנים הפעילים
 // תואמת את מה שבאמת נגבה דרך invoice4u-charge-monthly. לא שולף כלום מ-Invoice4u —
 // מציג את מה שכבר נשמר ב-members (invoice4u_last_charge_at/status) מול מה שהיה
 // אמור לקרות, לפי אותה שאילתת-זכאות בדיוק כמו ה-cron החודשי עצמו.
+//
+// ✅ 07.09.2026 — נוסף בורר חודש קלנדרי (כמו ב-SalaryReport) במקום "החודש הנוכחי" קבוע,
+// כדי שדודי יוכל לשבת בספטמבר ולבדוק את דוח אוגוסט. שים לב: רשימת המתאמנים עצמה היא
+// תמיד תמונת מצב *נוכחית* של טבלת members (מי שפעיל/מאושר היום) — הדוח לא משחזר
+// היסטורית מי היה פעיל בחודש שנבחר, רק בודק **מתי חויבו בפועל** ביחס לחודש שנבחר.
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
 const STATE_LABELS = {
-  paid: 'שולם החודש',
-  failed: 'נכשל החודש',
-  pending: 'טרם נגבה החודש',
+  paid: 'שולם בחודש שנבחר',
+  failed: 'נכשל בחודש שנבחר',
+  pending: 'טרם נגבה בחודש שנבחר',
   no_token: 'בלי טוקן שמור',
   frozen: 'מוקפא',
   cancelling: 'בביטול',
@@ -67,8 +73,10 @@ export default function BillingReconciliation() {
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState(null)
   const [err, setErr] = useState('')
+  const availableMonths = recentMonths(6)
+  const [selectedMonth, setSelectedMonth] = useState(availableMonths[0])
 
-  async function load() {
+  async function load(month = selectedMonth) {
     setLoading(true)
     setErr('')
     try {
@@ -92,20 +100,21 @@ export default function BillingReconciliation() {
 
       const priceMap = new Map((prices || []).map(p => [`${p.branch_id}|${p.subscription_type}`, p.price]))
       const branchNameOf = new Map((branches || []).map(b => [b.id, b.name]))
-      const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
+      const { start: monthStartMs, end: monthEndMs } = monthBoundsMs(month.year, month.month)
 
       const out = (members || []).map(m => {
         const basePrice = priceMap.get(`${m.branch_id}|${m.subscription_type}`)
         const expected = effectiveAmount(basePrice ?? 0, m.discount_pct, m.discount_valid_until, m.custom_price)
-        const chargedThisMonth = m.invoice4u_last_charge_at && new Date(m.invoice4u_last_charge_at) >= monthStart
+        const lastChargeMs = m.invoice4u_last_charge_at ? new Date(m.invoice4u_last_charge_at).getTime() : null
+        const chargedInMonth = lastChargeMs != null && lastChargeMs >= monthStartMs && lastChargeMs <= monthEndMs
 
         let state = 'not_applicable'
         if (m.membership_status === 'frozen') state = 'frozen'
         else if (m.cancel_date) state = 'cancelling'
         else if (!m.invoice4u_customer_id || m.invoice4u_token_status !== 'active') state = 'no_token'
         else if (m.membership_status === 'active') {
-          if (chargedThisMonth && m.invoice4u_last_charge_status === 'success') state = 'paid'
-          else if (chargedThisMonth && m.invoice4u_last_charge_status === 'failed') state = 'failed'
+          if (chargedInMonth && m.invoice4u_last_charge_status === 'success') state = 'paid'
+          else if (chargedInMonth && m.invoice4u_last_charge_status === 'failed') state = 'failed'
           else state = 'pending'
         }
 
@@ -135,6 +144,11 @@ export default function BillingReconciliation() {
     if (next && rows === null) load()
   }
 
+  function changeMonth(m) {
+    setSelectedMonth(m)
+    load(m)
+  }
+
   function exportExcel() {
     if (!rows?.length) return
     const ws = XLSX.utils.json_to_sheet(rows.map(r => ({
@@ -148,8 +162,7 @@ export default function BillingReconciliation() {
     })))
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'התאמה חודשית')
-    const monthLabel = new Date().toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })
-    XLSX.writeFile(wb, `התאמת_גביה_${monthLabel}.xlsx`)
+    XLSX.writeFile(wb, `התאמת_גביה_${monthLabel(selectedMonth.year, selectedMonth.month)}.xlsx`)
   }
 
   const failedCount = rows?.filter(r => r.state === 'failed').length || 0
@@ -170,23 +183,32 @@ export default function BillingReconciliation() {
 
       {open && (
         <div className="mt-3 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-600 font-semibold">חודש:</span>
+            {availableMonths.map(m => (
+              <button key={`${m.year}-${m.month}`}
+                onClick={() => changeMonth(m)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-bold ${selectedMonth.year === m.year && selectedMonth.month === m.month ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >{monthLabel(m.year, m.month)}</button>
+            ))}
+          </div>
           {loading && <p className="text-sm text-gray-500">טוען...</p>}
           {err && <p className="text-sm text-red-600">שגיאה: {err}</p>}
           {!loading && rows && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <MiniStat label="נכשלו החודש" value={failedCount} tone="red" />
-                <MiniStat label="טרם נגבו החודש" value={pendingCount} tone="amber" />
+                <MiniStat label="נכשלו בחודש שנבחר" value={failedCount} tone="red" />
+                <MiniStat label="טרם נגבו בחודש שנבחר" value={pendingCount} tone="amber" />
                 <MiniStat label="בלי טוקן שמור" value={noTokenCount} tone="gray" />
-                <MiniStat label="נגבה בפועל החודש" value={`${paidTotal.toLocaleString()} ₪`} tone="green" />
+                <MiniStat label="נגבה בפועל בחודש שנבחר" value={`${paidTotal.toLocaleString()} ₪`} tone="green" />
               </div>
               {expectedTotal > 0 && paidTotal < expectedTotal && (
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  צפי גביה החודש (כולל טרם נגבה/נכשל): {expectedTotal.toLocaleString()} ₪ — פער של {(expectedTotal - paidTotal).toLocaleString()} ₪ מול מה שכבר נגבה בפועל.
+                  צפי גביה בחודש שנבחר (כולל טרם נגבה/נכשל): {expectedTotal.toLocaleString()} ₪ — פער של {(expectedTotal - paidTotal).toLocaleString()} ₪ מול מה שכבר נגבה בפועל.
                 </p>
               )}
               <div className="flex justify-end gap-2">
-                <button onClick={load} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold px-3 py-1.5 rounded-lg">🔄 רענן</button>
+                <button onClick={() => load()} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold px-3 py-1.5 rounded-lg">🔄 רענן</button>
                 <button onClick={exportExcel} disabled={!rows.length} className="text-xs bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-bold px-3 py-1.5 rounded-lg">📥 Excel</button>
               </div>
               <div className="overflow-x-auto">

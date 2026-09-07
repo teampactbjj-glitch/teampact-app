@@ -1,29 +1,37 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { monthLabel, recentMonths, monthBoundsMs } from '../../lib/reportMonths'
 
 // דוח אימוני ניסיון ששולמו בפועל, מפוצל לפי סניף — לצורך התחשבנות (למשל בין הסניפים
 // שדודי מנהל לבד לעומת סניפים בשותפות). נבנה 07.09.2026 בעקבות בקשת דודי. מציג רק
 // payment_status='paid' של הרשמות עצמאיות מהאפליקציה (source='app_self_serve') —
 // הרשמה שלא הושלמה בתשלום לא נחשבת (אי אפשר להמשיך רישום בלי לשלם, אז אין טעם לספור אותה).
+//
+// ✅ 07.09.2026 — בורר חודש קלנדרי (כמו שאר הדוחות) במקום "N ימים אחרונים", כדי שדודי
+// יוכל לבדוק חודש קודם (למשל אוגוסט כשיושבים בספטמבר) בלי בעיה.
 export default function TrialVisitsByBranch() {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [periodDays, setPeriodDays] = useState(30)
+  const availableMonths = recentMonths(6)
+  const [selectedMonth, setSelectedMonth] = useState(availableMonths[0])
   const [rows, setRows] = useState(null)
   const [err, setErr] = useState('')
 
-  async function load(days) {
+  async function load(month = selectedMonth) {
     setLoading(true)
     setErr('')
     try {
-      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+      const { start, end } = monthBoundsMs(month.year, month.month)
+      const sinceISO = new Date(start).toISOString()
+      const untilISO = new Date(end).toISOString()
       const [{ data: branches, error: bErr }, { data: visits, error: vErr }] = await Promise.all([
         supabase.from('branches').select('id, name'),
         supabase.from('trial_visits')
           .select('id, branch_id, visitor_name, paid_amount, paid_at')
           .eq('source', 'app_self_serve')
           .eq('payment_status', 'paid')
-          .gte('paid_at', since)
+          .gte('paid_at', sinceISO)
+          .lte('paid_at', untilISO)
           .order('paid_at', { ascending: false }),
       ])
       if (bErr) throw bErr
@@ -48,12 +56,12 @@ export default function TrialVisitsByBranch() {
   function toggleOpen() {
     const next = !open
     setOpen(next)
-    if (next && rows === null) load(periodDays)
+    if (next && rows === null) load()
   }
 
-  function changePeriod(days) {
-    setPeriodDays(days)
-    load(days)
+  function changeMonth(m) {
+    setSelectedMonth(m)
+    load(m)
   }
 
   const grandTotal = rows?.reduce((s, r) => s + r.total, 0) || 0
@@ -71,11 +79,12 @@ export default function TrialVisitsByBranch() {
 
       {open && (
         <div className="mt-3 space-y-3">
-          <div className="flex gap-2">
-            {[30, 90, 365].map(d => (
-              <button key={d} onClick={() => changePeriod(d)}
-                className={`text-xs font-bold px-3 py-1.5 rounded-lg ${periodDays === d ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
-                {d === 365 ? 'שנה אחרונה' : `${d} ימים אחרונים`}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-600 font-semibold">חודש:</span>
+            {availableMonths.map(m => (
+              <button key={`${m.year}-${m.month}`} onClick={() => changeMonth(m)}
+                className={`text-xs font-bold px-3 py-1.5 rounded-lg ${selectedMonth.year === m.year && selectedMonth.month === m.month ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+                {monthLabel(m.year, m.month)}
               </button>
             ))}
           </div>
@@ -111,7 +120,7 @@ export default function TrialVisitsByBranch() {
                       </tr>
                     ))}
                     {rows.length === 0 && (
-                      <tr><td colSpan={3} className="py-4 text-center text-gray-400">אין אימוני ניסיון ששולמו בתקופה זו</td></tr>
+                      <tr><td colSpan={3} className="py-4 text-center text-gray-400">אין אימוני ניסיון ששולמו בחודש זה</td></tr>
                     )}
                   </tbody>
                 </table>

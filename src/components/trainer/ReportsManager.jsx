@@ -7,6 +7,7 @@ import { useToast, useConfirm } from '../a11y'
 import PromotionEvents from './PromotionEvents'
 import BillingReconciliation from './BillingReconciliation'
 import TrialVisitsByBranch from './TrialVisitsByBranch'
+import { monthLabel, recentMonths, monthBoundsMs } from '../../lib/reportMonths'
 import BeltHistoryEditor from './BeltHistoryEditor'
 import { getBeltMeta, getBeltLabel, ADULT_BELTS, KIDS_BELTS,
   getBeltFamily, getBeltLevelPosition, getBeltFamilyLabel, getBeltFamilyColor,
@@ -108,14 +109,6 @@ function registrationOccurrenceDateStr(weekStart, dayOfWeek) {
   const mm = String(dt.getMonth() + 1).padStart(2, '0')
   const dd = String(dt.getDate()).padStart(2, '0')
   return `${yy}-${mm}-${dd}`
-}
-
-// כמות ימים מ"היום" (ללא שעה)
-function daysAgoISO(days) {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  d.setTime(d.getTime() - days * DAY_MS)
-  return d.toISOString()
 }
 
 // המרת מספר טלפון ישראלי לפורמט בינלאומי עבור wa.me
@@ -232,7 +225,12 @@ export default function ReportsManager({ isAdmin, profile }) {
   const [hasLoaded, setHasLoaded] = useState(false)
   const [err, setErr] = useState('')
   // סלייד אחד מאוחד שמשפיע על כל הדוחות (נרשמים חדשים + נטישה + נוכחות)
-  const [periodDays, setPeriodDays] = useState(30)
+  const availableMonths = useMemo(() => recentMonths(6), [])
+  const [selectedMonth, setSelectedMonth] = useState(availableMonths[0])
+  const periodBounds = useMemo(() => monthBoundsMs(selectedMonth.year, selectedMonth.month), [selectedMonth])
+  const periodSinceMs = periodBounds.start
+  const periodUntilMs = periodBounds.end
+  const periodLabel = monthLabel(selectedMonth.year, selectedMonth.month)
   const [branchFilter, setBranchFilter] = useState('all')
 
   // בורר חודש לייצוא Excel — נפרד מהסלייד הכללי
@@ -503,8 +501,8 @@ export default function ReportsManager({ isAdmin, profile }) {
   // ספירה רק אחרי שהשיעור באמת קרה ונגמר.
   // אם חסר start_time/checkin_date (נתונים ישנים) — fallback ל-checked_in_at.
   const filteredCheckins = useMemo(() => {
-    const now = Date.now()
-    const since = now - periodDays * DAY_MS
+    const since = periodSinceMs
+    const until = periodUntilMs
     return checkins.filter(c => {
       if (!c.checked_in_at) return false
       const cls = classById.get(c.class_id)
@@ -512,15 +510,15 @@ export default function ReportsManager({ isAdmin, profile }) {
       const endMs = cls ? classEndMs(c.checkin_date, cls.start_time, cls.duration_minutes) : null
       if (endMs !== null) {
         // יש לנו שעת סיום אמיתית של השיעור. רק אם הוא הסתיים.
-        return endMs <= now && endMs >= since
+        return endMs <= until && endMs >= since
       }
       // Fallback לנתונים ישנים בלי start_time או checkin_date:
       // לפחות נוודא ש-checked_in_at בעבר ובטווח. עדיף מאשר לפסול הכל.
       const t = new Date(c.checked_in_at).getTime()
       if (!Number.isFinite(t)) return false
-      return t >= since && t <= now
+      return t >= since && t <= until
     })
-  }, [checkins, periodDays, classById])
+  }, [checkins, periodSinceMs, periodUntilMs, classById])
 
   // myClassIds — הקבוצות (classes) שהמאמן הנוכחי מלמד. מנהל → null (בלי סינון).
   // שיוך: classes.coach_id ∈ הכרטיסים שלו (coaches.user_id = profile.id), fallback ל-coach_name.
@@ -539,12 +537,12 @@ export default function ReportsManager({ isAdmin, profile }) {
   }, [isAdmin, profile?.id, profile?.full_name, coaches, classes])
 
   // filteredAttendance — נוכחות בפועל: checkins במצב 'present' (מסונן בשרת),
-  // לשיעור שהסתיים בפועל ובתוך טווח periodDays. מאמן רגיל → רק הקבוצות שלו.
+  // לשיעור שהסתיים בפועל ובתוך טווח periodSinceMs/periodUntilMs. מאמן רגיל → רק הקבוצות שלו.
   // זהו המקור לכל דוחות הפעילות (במקום class_registrations): סופר רק מי שבאמת נכח,
   // ולא מי שסומן ✕ נעדר.
   const filteredAttendance = useMemo(() => {
-    const now = Date.now()
-    const since = now - periodDays * DAY_MS
+    const since = periodSinceMs
+    const until = periodUntilMs
     return checkins.filter(c => {
       if (!c.class_id || !c.athlete_id) return false
       if (myClassIds && !myClassIds.has(c.class_id)) return false
@@ -552,13 +550,13 @@ export default function ReportsManager({ isAdmin, profile }) {
       if (!cls) return false
       if (c.checkin_date) {
         const endMs = classEndMs(c.checkin_date, cls.start_time, cls.duration_minutes)
-        if (endMs !== null) return endMs <= now && endMs >= since
+        if (endMs !== null) return endMs <= until && endMs >= since
       }
       // fallback: לפי checked_in_at אם חסרים checkin_date/נתוני שיעור
       const t = c.checked_in_at ? new Date(c.checked_in_at).getTime() : null
-      return t !== null && t <= now && t >= since
+      return t !== null && t <= until && t >= since
     })
-  }, [checkins, periodDays, classById, myClassIds])
+  }, [checkins, periodSinceMs, periodUntilMs, classById, myClassIds])
 
   // סט מתאמנים פעילים (לצורך סינון נוכחויות)
   const activeMemberIds = useMemo(() => new Set(activeMembers.map(m => m.id)), [activeMembers])
@@ -580,7 +578,7 @@ export default function ReportsManager({ isAdmin, profile }) {
   // ============================================================
   // דוחות פעילות — מבוססים על נוכחות בפועל (filteredAttendance = checkins 'present').
   // סופרים רק מי שבאמת נכח; מי שסומן ✕ נעדר אינו נספר. הפילטר כבר אוכף
-  // "השיעור הסתיים בפועל" + טווח periodDays + (למאמן רגיל) רק הקבוצות שלו.
+  // "השיעור הסתיים בפועל" + טווח periodSinceMs/periodUntilMs + (למאמן רגיל) רק הקבוצות שלו.
   // ============================================================
 
   // 0b) מתאמנים פעילים לפי תחום + פילוח לפי מאמן בתוך התחום.
@@ -846,7 +844,8 @@ export default function ReportsManager({ isAdmin, profile }) {
   // עוזר להבין איזה מאמן מקדם המרת ניסיונות ובאיזה תחום.
   // בעתיד נחבר לעמודת תשלום כדי לדעת כמה ניסיונות נסגרו במנוי.
   const trialsByDiscipline = useMemo(() => {
-    const since = Date.now() - periodDays * DAY_MS
+    const since = periodSinceMs
+    const until = periodUntilMs
     const acc = {}
     DISCIPLINE_ORDER.forEach(d => {
       acc[d] = { count: 0, byCoach: new Map() }
@@ -854,7 +853,8 @@ export default function ReportsManager({ isAdmin, profile }) {
     let total = 0
     trialVisits.forEach(tv => {
       if (!tv.visited_at) return
-      if (new Date(tv.visited_at).getTime() < since) return
+      const tvMs = new Date(tv.visited_at).getTime()
+      if (tvMs < since || tvMs > until) return
       const cls = classById.get(tv.class_id)
       const disc = disciplineByClassId.get(tv.class_id) || 'אחר'
       if (!acc[disc]) return
@@ -880,23 +880,26 @@ export default function ReportsManager({ isAdmin, profile }) {
       })),
       total,
     }
-  }, [trialVisits, periodDays, disciplineByClassId, classById, coachById])
+  }, [trialVisits, periodSinceMs, periodUntilMs, disciplineByClassId, classById, coachById])
 
   // 3) נרשמים חדשים (לפי created_at בטווח הזמן שנבחר) — ללא soft-deleted
   const newMembers = useMemo(() => {
-    const since = new Date(daysAgoISO(periodDays)).getTime()
+    const since = periodSinceMs
+    const until = periodUntilMs
     return filteredMembers.filter(m => {
       if (m.deleted_at) return false
       if (!m.created_at) return false
-      return new Date(m.created_at).getTime() >= since
+      const t = new Date(m.created_at).getTime()
+      return t >= since && t <= until
     })
-  }, [filteredMembers, periodDays])
+  }, [filteredMembers, periodSinceMs, periodUntilMs])
 
   // 4) נטישה (churn) — מתאמנים שבוטל להם המנוי (deleted_at בתוך חלון הזמן)
   // מבוסס נוכחות בפועל (checkins): שיוך מאמן/קבוצה לפי היכן שהמתאמן התאמן בפועל,
   // לא לפי coach_id הפורמלי בפרופיל. עקבי לדוחות האחרים.
   const { churnByCoach, churnByGroup, totalChurned, totalActiveBase } = useMemo(() => {
-    const cutoff = Date.now() - periodDays * DAY_MS
+    const cutoff = periodSinceMs
+    const cutoffUntil = periodUntilMs
 
     // מבנים עזר: מתאמן → סט מאמנים וקבוצות שבהם התאמן בפועל (לפי כל היסטוריית ה-checkins)
     // רק שיעורים שהסתיימו בפועל נספרים — רישום לאימון עתידי לא יוצר שיוך.
@@ -930,7 +933,8 @@ export default function ReportsManager({ isAdmin, profile }) {
     // מתאמנים שבוטלו בתקופה — deleted_at קיים ונמצא בתוך החלון
     const churned = filteredMembers.filter(m => {
       if (!m.deleted_at) return false
-      return new Date(m.deleted_at).getTime() >= cutoff
+      const t = new Date(m.deleted_at).getTime()
+      return t >= cutoff && t <= cutoffUntil
     })
 
     // סיכום לפי מאמן (אילו מאמנים אצלם המתאמן אימן בפועל)
@@ -985,7 +989,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       totalChurned: churned.length,
       totalActiveBase: activeMembers.length + churned.length,
     }
-  }, [activeMembers, filteredMembers, periodDays, coachById, classById, registrations])
+  }, [activeMembers, filteredMembers, periodSinceMs, periodUntilMs, coachById, classById, registrations])
 
   // ============================================================
   // ===== Promotion Suggestions: ספי IBJJF + score =====
@@ -1746,21 +1750,21 @@ export default function ReportsManager({ isAdmin, profile }) {
       {isAdmin && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="מתאמנים פעילים" value={totalActive} tone="blue" />
-        <StatCard label={`נרשמים חדשים (${periodDays} ימים)`} value={newMembers.length} tone="green" />
+        <StatCard label={`נרשמים חדשים (${periodLabel})`} value={newMembers.length} tone="green" />
         <StatCard label="ממתינים לאישור" value={totalPending} tone="orange" />
-        <StatCard label={`% נטישה (${periodDays} ימים)`} value={`${churnPctTotal}%`} sub={`${totalChurned} ביטולים מתוך ${totalActiveBase}`} tone="red" />
+        <StatCard label={`% נטישה (${periodLabel})`} value={`${churnPctTotal}%`} sub={`${totalChurned} ביטולים מתוך ${totalActiveBase}`} tone="red" />
       </div>
       )}
 
       {/* ====== בורר טווח זמן + פילוח תחומים — מנהל ומאמן ====== */}
       {/* סלייד אחד מאוחד — משפיע על כל הדוחות (נוכחות + נרשמים חדשים + נטישה) */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-3 flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-gray-600 font-semibold">טווח זמן לכל הדוחות:</span>
-        {[7, 30, 60, 90, 180].map(d => (
-          <button key={d}
-            onClick={() => setPeriodDays(d)}
-            className={`text-xs px-3 py-1.5 rounded-lg font-bold ${periodDays === d ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >{d} ימים</button>
+        <span className="text-xs text-gray-600 font-semibold">חודש לכל הדוחות:</span>
+        {availableMonths.map(m => (
+          <button key={`${m.year}-${m.month}`}
+            onClick={() => setSelectedMonth(m)}
+            className={`text-xs px-3 py-1.5 rounded-lg font-bold ${selectedMonth.year === m.year && selectedMonth.month === m.month ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+          >{monthLabel(m.year, m.month)}</button>
         ))}
       </div>
 
@@ -1768,7 +1772,7 @@ export default function ReportsManager({ isAdmin, profile }) {
 
       {/* מתאמנים פעילים לפי תחום + פילוח לפי מאמן */}
       <SectionCard
-        title={`מתאמנים פעילים לפי תחום לחימה (${periodDays} ימים)`}
+        title={`מתאמנים פעילים לפי תחום לחימה (${periodLabel})`}
         icon="🥊"
         footer="מבוסס על נוכחות בפועל (checkin 'present') לאימונים שהסתיימו — מי שסומן ✕ נעדר לא נספר. המספר הראשון = מתאמנים ייחודיים שנכחו בתחום. השני = סה״כ הגעות בתחום. תחת כל תחום, פילוח לפי המאמן."
       >
@@ -1925,7 +1929,7 @@ export default function ReportsManager({ isAdmin, profile }) {
 
       {/* שיעורי ניסיון לפי תחום לחימה + פילוח לפי מאמן — דוח שיווקי */}
       <SectionCard
-        title={`שיעורי ניסיון לפי תחום ולפי מאמן (${periodDays} ימים)`}
+        title={`שיעורי ניסיון לפי תחום ולפי מאמן (${periodLabel})`}
         icon="🆕"
         footer={`סה״כ ${trialsByDiscipline.total} ביקורי ניסיון. תחת כל תחום, פילוח לפי המאמן שאצלו היה הניסיון — עוזר להבין איזה מאמן מקדם הצטרפות.`}
       >
@@ -1974,7 +1978,7 @@ export default function ReportsManager({ isAdmin, profile }) {
       </SectionCard>
 
       {/* נרשמים חדשים */}
-      <SectionCard title={`נרשמים חדשים (${periodDays} ימים אחרונים)`} icon="📝" footer={`סה״כ ${newMembers.length} רישומים בתקופה`}>
+      <SectionCard title={`נרשמים חדשים (${periodLabel})`} icon="📝" footer={`סה״כ ${newMembers.length} רישומים בתקופה`}>
         {newMembers.length === 0 ? (
           <p className="text-sm text-gray-500">לא נרשמו מתאמנים חדשים בתקופה זו.</p>
         ) : (
@@ -2014,7 +2018,7 @@ export default function ReportsManager({ isAdmin, profile }) {
 
       {/* נטישה לפי מאמן */}
       <SectionCard
-        title={`% נטישה לפי מאמן (ביטולי מנוי ב-${periodDays} ימים האחרונים)`}
+        title={`% נטישה לפי מאמן (ביטולי מנוי ב-${periodLabel})`}
         icon="📉"
         footer={totalChurned === 0 ? '✅ לא היו ביטולי מנוי בתקופה זו.' : undefined}
       >
@@ -2036,7 +2040,7 @@ export default function ReportsManager({ isAdmin, profile }) {
 
       {/* נטישה לפי קבוצה */}
       <SectionCard
-        title={`% נטישה לפי קבוצה (ביטולי מנוי ב-${periodDays} ימים האחרונים)`}
+        title={`% נטישה לפי קבוצה (ביטולי מנוי ב-${periodLabel})`}
         icon="👥"
       >
         {churnByGroup.length === 0 ? (

@@ -32,7 +32,7 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
     let mMap = {}
     if (athleteIds.length > 0) {
       const { data: members } = await supabase.from('members')
-        .select('id, full_name, branch_ids, branch_id, subscription_type, belt, belt_stripes, belt_received_at, bjj_start_date, trains_gi, trains_nogi, belt_category')
+        .select('id, full_name, phone, branch_ids, branch_id, subscription_type, belt, belt_stripes, belt_received_at, bjj_start_date, trains_gi, trains_nogi, belt_category')
         .in('id', athleteIds)
       ;(members || []).forEach(m => { mMap[m.id] = m })
     }
@@ -243,6 +243,7 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1">
               <p className="font-semibold text-gray-800">{displayName}</p>
+              {m?.phone && <p className="text-xs text-gray-500">📞 {m.phone}</p>}
               <p className="text-sm text-gray-600 mt-1">
                 {req.change_type === 'name' && '✏️ שינוי שם מלא'}
                 {req.change_type === 'email' && '📧 שינוי מייל'}

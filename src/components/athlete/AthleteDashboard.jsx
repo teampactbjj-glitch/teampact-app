@@ -2522,6 +2522,20 @@ function isOpenMatClass(cls) {
   return false;
 }
 
+// ✅ 08.09.2026 — טווח השבוע (ראשון 00:00 עד שבת 23:59:59.999, שעון מקומי) של תאריך
+// נתון — לבדיקת מכסה שבועית מול השרת. חייב לכלול את כל השבת (בניגוד לבאג שנמצא
+// ב-TodayClasses.jsx/getWeekRange, ששם weekEnd הוא תחילת השבת ולא סופה).
+function getWeekRangeOfDate(refDate) {
+  const d = new Date(refDate)
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - d.getDay())
+  const weekStart = new Date(d)
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 6)
+  weekEnd.setHours(23, 59, 59, 999)
+  return { weekStart: weekStart.toISOString(), weekEnd: weekEnd.toISOString() }
+}
+
 // === ווצאפ — נרמול טלפון ישראלי לפורמט בינלאומי + יצירת קישור wa.me ===
 // משוכפל מ-ReportsManager.jsx (לא רוצים import בין trainer ל-athlete).
 function athleteToIntlPhone(phone) {
@@ -3034,6 +3048,44 @@ export default function AthleteDashboard({ profile }) {
         toast.error('ביטול הרישום נכשל. נסה שוב.')
       }
     } else {
+      // ✅ 08.09.2026 — בדיקת מכסה שבועית *מול השרת* לפני כתיבה בפועל.
+      // באג שנמצא בפועל (איתי חזאני, 6-12/9/2026): הפונקציה הזו — שהיא בפועל
+      // מסלול ההרשמה היחיד שבשימוש באפליקציה (ClassSchedule.jsx שהכיל בדיקה כזו
+      // כבר לא בשימוש בכלל, לא מיובא ב-App.jsx) — סמכה אך ורק על atRegLimit
+      // ב-UI (ScheduleTab, state שיכול להיות לא מסונכרן עם השרת, למשל אחרי
+      // הוספה חיצונית/batch שלא רועננה במסך) בלי לבדוק שוב לפני ה-insert בפועל.
+      // זה איפשר לכתוב class_registrations+checkins גם כשהמכסה כבר מלאה.
+      // עכשיו יש כאן בדיקה אמיתית טרייה, זהה בעיקרון לזו שכבר קיימת ב-
+      // TodayClasses.jsx/addRegisteredMember (אבל עם weekEnd תקין — כולל שבת).
+      const subType = member?.subscription_type || member?.membership_type
+      const limit = SUBSCRIPTION_LIMITS[subType] ?? 2
+      if (!isOpenMatClass(cls) && limit !== Infinity) {
+        const occStartForQuota = computeOccurrenceStart()
+        const { weekStart: quotaWeekStart, weekEnd: quotaWeekEnd } = getWeekRangeOfDate(occStartForQuota)
+        const { data: weekChks, error: quotaErr } = await supabase
+          .from('checkins')
+          .select('class_id')
+          .eq('athlete_id', athleteId)
+          .neq('status', 'absent')
+          .gte('checked_in_at', quotaWeekStart)
+          .lte('checked_in_at', quotaWeekEnd)
+        if (quotaErr) console.error('handleRegister quota check error:', quotaErr)
+        const checkinClassIds = Array.from(new Set((weekChks || []).map(r => r.class_id).filter(Boolean)))
+        let openMatIds = new Set()
+        if (checkinClassIds.length > 0) {
+          const { data: chkClasses } = await supabase
+            .from('classes')
+            .select('id, name, class_type')
+            .in('id', checkinClassIds)
+          openMatIds = new Set((chkClasses || []).filter(isOpenMatClass).map(c => c.id))
+        }
+        const weekCount = (weekChks || []).filter(r => !openMatIds.has(r.class_id)).length
+        if (weekCount >= limit) {
+          toast.error(`הגעת למגבלת ${limit} שיעורים שבועיים לפי המנוי שלך`)
+          return
+        }
+      }
+
       setTargetSet(p => new Set([...p, cls.id]))
       try {
         // ה-UNIQUE constraint העדכני הוא (athlete_id, class_id, week_start) —

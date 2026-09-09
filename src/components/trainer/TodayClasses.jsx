@@ -6,6 +6,12 @@ import { useToast, useConfirm } from '../a11y'
 import { classDiscipline, DISCIPLINE_ORDER, DISCIPLINE_LABELS } from '../../lib/disciplines'
 
 const WEEKLY_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
+
+// ✅ 09.09.2026 — חסימה מוחלטת של רישום מתאמן לשיעור כשהמנוי לא פעיל (דודי דיווח על
+// איידלין דניאל/מקרה דומה: מאמן הצליח לרשום מתאמן בלי מנוי פעיל). אותם 3 סטטוסים
+// שכבר חוסמים הרשמה עצמית במסך המתאמן (AthleteDashboard.handleRegister) והרשמת הורה
+// בשם ילד (member_can_book, RLS) — עכשיו גם כאן, בלי אפשרות עקיפה, גם למנהל.
+const BLOCKED_MEMBERSHIP_STATUS_LABELS = { frozen: 'מוקפא', expired: 'לא חודש לעונה החדשה', cancelled: 'מבוטל' }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 const DAYS_HE_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
@@ -500,6 +506,16 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
   async function addRegisteredMember(cls, member, isNetworkVisit = false) {
     const classId = cls.id
     const openMat = isOpenMatClass(cls)
+
+    // חסימה מוחלטת — ר' הערה על BLOCKED_MEMBERSHIP_STATUS_LABELS למעלה. בדיקה כפולה
+    // בכוונה: גם כאן (הגנה בעומק, למקרה שקריאה אחרת תגיע לפונקציה הזו בעתיד) וגם
+    // כבר ב-UI של תוצאות החיפוש (הכפתור מוצג כמושבת ולא ניתן ללחיצה כשהמנוי לא פעיל).
+    const blockedLabel = BLOCKED_MEMBERSHIP_STATUS_LABELS[member.membership_status]
+    if (blockedLabel) {
+      toast.error(`לא ניתן לרשום את ${member.full_name} לשיעור — המנוי ${blockedLabel}.`)
+      return
+    }
+
     const membershipType = member.membership_type || member.subscription_type
     const limit = WEEKLY_LIMITS[membershipType] ?? 2
 
@@ -709,7 +725,7 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
     // נסנן בצד הלקוח לפי סניף השיעור.
     const { data: allData, error } = await supabase
       .from('members')
-      .select('id, full_name, membership_type, subscription_type, branch_id, branch_ids')
+      .select('id, full_name, membership_type, subscription_type, branch_id, branch_ids, membership_status')
       .ilike('full_name', `%${query}%`)
       .eq('active', true)
       .limit(50)
@@ -1662,6 +1678,7 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
                             const mtype = m.membership_type || m.subscription_type
                             const isReg = m.isRegistered
                             const isNet = m.isNetworkVisitor
+                            const blockedLabel = BLOCKED_MEMBERSHIP_STATUS_LABELS[m.membership_status]
                             return (
                               <li
                                 key={m.id}
@@ -1694,6 +1711,13 @@ export default function TodayClasses({ trainerId, isAdmin, isSecretary = false, 
                                     className="text-xs bg-gray-100 text-gray-500 border border-gray-200 px-2.5 py-1 rounded-lg font-bold cursor-not-allowed select-none"
                                   >
                                     ✓ רשום
+                                  </span>
+                                ) : blockedLabel ? (
+                                  <span
+                                    title={`לא ניתן לרשום — המנוי ${blockedLabel}`}
+                                    className="text-xs bg-red-50 text-red-500 border border-red-200 px-2.5 py-1 rounded-lg font-bold cursor-not-allowed select-none"
+                                  >
+                                    מנוי {blockedLabel}
                                   </span>
                                 ) : (
                                   <button

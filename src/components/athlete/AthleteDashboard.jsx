@@ -13,8 +13,14 @@ import { useToast, useConfirm } from '../a11y'
 import logoUrl from '../../assets/logo.png'
 import { ADULT_BELTS, KIDS_BELTS, getMaxStripes, getBeltLabel } from '../../lib/belts'
 import { classDiscipline, DISCIPLINE_ORDER, DISCIPLINE_LABELS } from '../../lib/disciplines'
+import CountryClubWaiver, { WAIVER_VERSION, validateWaiver } from '../CountryClubWaiver'
+import InjuryRiskWaiver, { INJURY_WAIVER_VERSION, validateInjuryWaiver } from '../InjuryRiskWaiver'
+import TermsAgreement from '../TermsAgreement'
 
 const SUBSCRIPTION_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
+// ✅ 09.09.2026 — הצטרפות עצמאית לקאנטרי (הגדרות ← "הצטרפות לקאנטרי"). מחירון זהה
+// בכוונה ל-COUNTRY_CLUB_PRICES ב-RegisterPage.jsx — לתצוגה/גיבוי בלבד אם ה-RPC לא מחזיר מחיר.
+const COUNTRY_CLUB_PRICES = { '1x_week': 300, '2x_week': 400, '4x_week': 500, unlimited: 600 }
 const SUBSCRIPTION_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 const FREEZE_REASON_LABELS = { military: 'מילואים', study: 'לימודים', medical: 'רפואי', injury: 'פציעה', other: 'אחר' }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
@@ -1562,6 +1568,12 @@ function SettingsTab({ profile, member }) {
   // מאמנים + ניווט
   const [myCoaches, setMyCoaches] = useState([])
   const [settingsView, setSettingsView] = useState(null)
+  // הצטרפות/תשלום עצמאי למנוי קאנטרי (הגדרות ← "הצטרפות לקאנטרי")
+  const [joinCcSub, setJoinCcSub] = useState('unlimited')
+  const [joinCcWaiver, setJoinCcWaiver] = useState({})
+  const [joinCcInjuryWaiver, setJoinCcInjuryWaiver] = useState({})
+  const [joinCcTermsAgreed, setJoinCcTermsAgreed] = useState(false)
+  const [joinCcSubmitting, setJoinCcSubmitting] = useState(false)
   // הקפאה/ביטול מנוי
   const [membershipAction, setMembershipAction] = useState(null) // 'freeze' | 'cancel' | null
   const [membershipNote, setMembershipNote] = useState('')
@@ -1594,6 +1606,21 @@ function SettingsTab({ profile, member }) {
 
   const athleteName = member?.full_name || profile?.full_name || profile?.email || '—'
   const currentSub = member?.subscription_type || profile?.subscription_type || '—'
+
+  // ✅ 09.09.2026 — הצטרפות עצמאית לקאנטרי: זיהוי סניף קאנטרי + האם כבר חבר/ה פעיל/ה שם.
+  // invoice4u_token_status==='active' נוצר רק אחרי תשלום אמיתי שעבר בפועל (לא סתם שיוך
+  // לסניף) — ראו הערה מפורטת ב-submitJoinCountry למטה.
+  const countryBranch = (allBranches || []).find(b => b.requires_facility_waiver)
+  const memberBranchIds = Array.isArray(member?.branch_ids) ? member.branch_ids : (member?.branch_id ? [member.branch_id] : [])
+  const isCountryMemberActive = !!(countryBranch && memberBranchIds.includes(countryBranch.id) && member?.invoice4u_token_status === 'active')
+  function computeCcProration(now = new Date()) {
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const remainingDays = daysInMonth - now.getDate() + 1
+    return { daysInMonth, remainingDays, factor: remainingDays / daysInMonth }
+  }
+  const { remainingDays: ccRemainingDays, daysInMonth: ccDaysInMonth, factor: ccProrationFactor } = computeCcProration()
+  const ccIsFullMonth = ccRemainingDays >= ccDaysInMonth
+  const ccDisplayPrice = Math.round((COUNTRY_CLUB_PRICES[joinCcSub] || 0) * ccProrationFactor)
 
   // === חישוב גיל + קטגוריה לפי תאריך לידה ===
   const autoAge = (() => {
@@ -1685,7 +1712,7 @@ function SettingsTab({ profile, member }) {
   }, [profile?.id])
 
   useEffect(() => {
-    supabase.from('branches').select('id, name').eq('hidden', false).order('name').then(({ data }) => {
+    supabase.from('branches').select('id, name, requires_facility_waiver').eq('hidden', false).order('name').then(({ data }) => {
       const list = data || []
       setAllBranches(list)
       const visibleIds = new Set(list.map(b => b.id))
@@ -1906,6 +1933,81 @@ function SettingsTab({ profile, member }) {
     loadPending()
   }
 
+  // ✅ 09.09.2026 — הצטרפות/תשלום מנוי קאנטרי למתאמן קיים ומחובר (לא הרשמה חדשה!).
+  // בכוונה לא נוגעים כאן בכלל ב-branch_ids/subscription_type/membership_status של המתאמן —
+  // כל זה קורה אך ורק ב-invoice4u-callback, ורק אחרי תשלום שאושר בפועל ותואם בדיוק למחירון
+  // (amountMatches). כך אין שום דרך "לקבל גישה/מכסה" בלי לשלם קודם בפועל — ראו גם
+  // join_country_start (RPC) שגם הוא לא כותב שום שדה גישה/מכסה, רק registration_payment_ref.
+  async function submitJoinCountry() {
+    if (blockIfNotActive()) return
+    if (!countryBranch) { toast.error('סניף קאנטרי לא מוגדר במערכת — פנה למנהל'); return }
+    const waiverErr = validateWaiver(joinCcWaiver)
+    if (waiverErr) { toast.error(waiverErr); return }
+    const injuryErr = validateInjuryWaiver(joinCcInjuryWaiver)
+    if (injuryErr) { toast.error(injuryErr); return }
+    if (!joinCcTermsAgreed) { toast.error('יש לאשר את תנאי השימוש לפני המשך לתשלום'); return }
+
+    setJoinCcSubmitting(true)
+    const { data: startData, error: startErr } = await supabase.rpc('join_country_start', {
+      p_member_id: profile.id,
+      p_subscription_type: joinCcSub,
+    })
+    if (startErr || !startData || !startData[0]) {
+      setJoinCcSubmitting(false)
+      toast.error('שגיאה בפתיחת תהליך התשלום: ' + (startErr?.message || 'לא ידוע'))
+      return
+    }
+    const { registration_payment_ref: ref, country_branch_id: ccBranchId, price: serverPrice } = startData[0]
+    const basePrice = serverPrice != null ? serverPrice : (COUNTRY_CLUB_PRICES[joinCcSub] || 0)
+    const amount = Math.round(basePrice * ccProrationFactor)
+
+    // הצהרות — אותו טופס משפטי בדיוק כמו בהרשמה חדשה (RegisterPage.jsx: CountryClubWaiver +
+    // InjuryRiskWaiver). member_id אמיתי (לא trial_visit_id) — עומד ב-RLS של club_waivers
+    // (authenticated יכול לכתוב רק member_id=auth.uid()).
+    const waiverBase = { member_id: profile.id, branch_id: ccBranchId, phone: member?.phone || null, user_agent: navigator.userAgent }
+    const { error: waiverErr2 } = await supabase.from('club_waivers').insert({
+      ...waiverBase,
+      full_name: athleteName,
+      id_number: joinCcWaiver.idNumber,
+      address: joinCcWaiver.address || null,
+      signature_typed_name: (joinCcWaiver.signatureName || '').trim() || athleteName,
+      signature_image: joinCcWaiver.signatureImage || null,
+      waiver_type: 'facility',
+      waiver_version: WAIVER_VERSION,
+    })
+    if (waiverErr2) console.error('club_waivers (facility) insert error (ממשיכים בכל זאת):', waiverErr2)
+
+    const { error: injErr2 } = await supabase.from('club_waivers').insert({
+      ...waiverBase,
+      full_name: athleteName,
+      id_number: joinCcInjuryWaiver.idNumber,
+      signature_typed_name: (joinCcInjuryWaiver.signatureName || '').trim() || athleteName,
+      signature_image: joinCcInjuryWaiver.signatureImage || null,
+      waiver_type: 'injury_risk',
+      waiver_version: INJURY_WAIVER_VERSION,
+    })
+    if (injErr2) console.error('club_waivers (injury_risk) insert error (ממשיכים בכל זאת):', injErr2)
+
+    const { data: fnData, error: fnErr } = await supabase.functions.invoke('invoice4u-create-payment-link', {
+      body: {
+        type: 'subscription',
+        reference_id: ref,
+        amount,
+        description: `הצטרפות למנוי קאנטרי — TeamPact (${athleteName})`,
+        customer_name: athleteName,
+        customer_phone: member?.phone || '',
+        customer_email: profile?.email || undefined,
+        target_subscription_type: joinCcSub,
+      },
+    })
+    setJoinCcSubmitting(false)
+    if (fnErr || !fnData?.payment_url) {
+      toast.error('שגיאה ביצירת לינק תשלום: ' + (fnErr?.message || 'לא ידוע'))
+      return
+    }
+    window.location.href = fnData.payment_url
+  }
+
   async function submitBeltChange() {
     if (blockIfNotActive()) return
     if (!beltVal) { toast.error('בחר חגורה'); return }
@@ -2003,6 +2105,18 @@ function SettingsTab({ profile, member }) {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-300 shrink-0 rotate-180"><path d="M9 18l6-6-6-6"/></svg>
               </button>
             </div>
+
+            {!isCountryMemberActive && countryBranch && (
+              <button onClick={() => setSettingsView('joinCountry')}
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-right bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition">
+                <span className="text-xl w-8 text-center shrink-0">🏆</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-amber-900">הצטרפות לקאנטרי</div>
+                  <div className="text-xs text-amber-700">מנוי חודשי מתחדש דרך חולון קאנטרי</div>
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-400 shrink-0 rotate-180"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            )}
 
             {myCoaches.length > 0 && (
               <div>
@@ -2341,6 +2455,55 @@ function SettingsTab({ profile, member }) {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ── הצטרפות/תשלום קאנטרי ── */}
+        {settingsView === 'joinCountry' && (
+          <div className="space-y-4">
+            <button onClick={() => setSettingsView(null)} className="flex items-center gap-1 text-sm text-emerald-600 font-medium -mb-1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l6-6-6-6"/></svg>
+              הגדרות
+            </button>
+            {isCountryMemberActive ? (
+              <div className="text-sm bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-1">
+                <p className="font-semibold text-emerald-800">✅ את/ה כבר חבר/ה פעיל/ה בקאנטרי</p>
+                <p className="text-xs text-emerald-700">המנוי מתחדש אוטומטית כל חודש. לביטול — דרך "מנוי" למעלה, או פנייה למאמן.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-white rounded-xl border p-4 space-y-3">
+                  <p className="text-sm font-bold text-gray-900">🏆 הצטרפות למנוי קאנטרי — חולון קאנטרי</p>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    מנוי נפרד, חודשי ומתחדש אוטומטית, מול חולון קאנטרי — בנוסף לכל סניף אחר שאת/ה כבר משויך/ת אליו (לא נוגע ולא מבטל שום דבר קיים).
+                  </p>
+                  <div>
+                    <p className="text-xs text-gray-400 mb-1.5">סוג מנוי</p>
+                    <select value={joinCcSub} onChange={e => setJoinCcSub(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm">
+                      <option value="1x_week">1× שבוע — {COUNTRY_CLUB_PRICES['1x_week']}₪/חודש</option>
+                      <option value="2x_week">2× שבוע — {COUNTRY_CLUB_PRICES['2x_week']}₪/חודש</option>
+                      <option value="4x_week">4× שבוע — {COUNTRY_CLUB_PRICES['4x_week']}₪/חודש</option>
+                      <option value="unlimited">ללא הגבלה — {COUNTRY_CLUB_PRICES['unlimited']}₪/חודש</option>
+                    </select>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
+                    סה"כ לתשלום היום: <span className="font-bold text-gray-900">{ccDisplayPrice}₪</span>
+                    {!ccIsFullMonth && ` (יחסי ל-${ccRemainingDays} הימים שנותרו החודש)`}
+                    <br />מהחודש הבא ואילך יחויב המחיר המלא ({COUNTRY_CLUB_PRICES[joinCcSub]}₪) אוטומטית כל 1 לחודש, עם אפשרות ביטול בהתראה של חודש מראש.
+                  </div>
+                </div>
+
+                <CountryClubWaiver value={joinCcWaiver} onChange={setJoinCcWaiver} prefilledName={athleteName} />
+                <InjuryRiskWaiver value={joinCcInjuryWaiver} onChange={setJoinCcInjuryWaiver} isMinor={false} prefilledName={athleteName} />
+                <TermsAgreement checked={joinCcTermsAgreed} onChange={setJoinCcTermsAgreed} />
+
+                <button onClick={submitJoinCountry} disabled={joinCcSubmitting}
+                  className="w-full bg-gray-900 hover:bg-gray-800 text-white py-3 rounded-lg text-sm font-bold disabled:opacity-50">
+                  {joinCcSubmitting ? 'מעביר לתשלום...' : `המשך לתשלום (${ccDisplayPrice}₪)`}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

@@ -168,6 +168,10 @@ export default function RegisterPage() {
   const [done, setDone] = useState(false)
   const [paymentPending, setPaymentPending] = useState(false) // נרשם בהצלחה אך תשלום מקוון עדיין לא זמין
   const [error, setError] = useState(null)
+  // ✅ 09.09.2026 — מספר טלפון כבר רשום: לא חוסמים "בסתם" — מציגים CTA להתחברות, כדי
+  // שמתאמן קיים יוכל להתחבר לפרופיל הישן שלו (ואז, אם רלוונטי, להצטרף לקאנטרי דרך
+  // "הגדרות" ב-AthleteDashboard.jsx). ראו join_country_start (RPC) + invoice4u-callback.
+  const [phoneExists, setPhoneExists] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
   // הצהרת קאנטרי — חתימה אחת (של ההורה/המתאמן הבוגר) שמכסה את כל מי שנרשם בהגשה הזו
@@ -281,6 +285,7 @@ export default function RegisterPage() {
   const proratedPrice = (type) => Math.round((COUNTRY_CLUB_PRICES[type] || 0) * (1 - discPct / 100) * prorationFactor)
 
   async function handleSubmit() {
+    setPhoneExists(false)
     // --- ולידציה: פרטי חשבון ---
     if (!form.account_name.trim() || !form.email.trim()) {
       setError('נא למלא שם ואימייל')
@@ -400,7 +405,8 @@ export default function RegisterPage() {
       console.warn('check_phone_registrations error:', phoneErr)
     } else if (phoneCheck?.exists) {
       setLoading(false)
-      setError('מספר הטלפון הזה כבר רשום במערכת. כבר יש לך גישה לאפליקציה? היכנס והוסף ילד/ה נוסף/ת מהפרופיל שלך. אחרת — פנה למאמן או למזכירות.')
+      setPhoneExists(true)
+      setError('מספר הטלפון הזה כבר רשום במערכת. יש לך כבר פרופיל באפליקציה — התחבר/י כדי להמשיך (הוספת ילד/ה נוסף/ת, או הצטרפות למנוי קאנטרי דרך ההגדרות).')
       return
     }
 
@@ -900,6 +906,15 @@ export default function RegisterPage() {
             <span className="text-xl leading-none" aria-hidden="true">⚠️</span>
             <p className="text-red-700 text-sm font-bold text-right leading-relaxed">{error}</p>
           </div>
+        )}
+
+        {phoneExists && (
+          <a
+            href="/"
+            className="block w-full text-center py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-sm transition focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-emerald-300"
+          >
+            התחברות לחשבון הקיים
+          </a>
         )}
 
         <button type="button" onClick={handleSubmit} disabled={loading} aria-busy={loading || undefined}

@@ -122,6 +122,16 @@ cd /Users/dudibenzaken/teampact-app && npm run dev
 - Deploy: GitHub `main` → Vercel auto-deploy.
 - VAT ישראל: 18%.
 
+### מודל גבייה — שונה לגמרי בין הסניפים! (חובה לזכור, אומת עם דודי 09.09.2026)
+
+- **חולון בגין (וכל סניף "רגיל" בלי `requires_facility_waiver`):** הגבייה **ידנית לגמרי** — המזכירות גובה כסף ישירות (מזומן/ביט/העברה), **מחוץ לאפליקציה**. האפליקציה שם היא רק כלי ניהול מתאמנים/נוכחות/לו"ז — **אין ולא צריך להיות שום תשלום אונליין דרך האפליקציה בבגין.**
+- **חולון קאנטרי (`branches.requires_facility_waiver=true`):** הגבייה **דרך האפליקציה בלבד**, **מנוי חודשי מתחדש אוטומטית** (לא תשלום חד-פעמי!) עם אופציית ביטול בהתראה של חודש מראש. מנגנון בפועל:
+  1. `invoice4u-create-payment-link` — לינק תשלום ראשון, שגם שומר טוקן כרטיס (`AddTokenAndCharge`).
+  2. `invoice4u-callback` — מאשר תשלום, מסמן `invoice4u_token_status='active'`.
+  3. `invoice4u-charge-monthly` — **cron אמיתי** (1 לכל חודש) שמחייב אוטומטית מהטוקן השמור כל מתאמן עם: `branch_id` (השדה **היחיד**, לא `branch_ids`!) בסניף עם `requires_facility_waiver=true`, `active=true`, `membership_status='active'`, `status='approved'`, `invoice4u_token_status='active'`, `invoice4u_customer_id` קיים. כולל pro-rata לביטול באמצע חודש.
+- **⚠️ `green-invoice-*` (create-payment-link/webhook/debug-tokens) הוא קוד ישן/נטוש — הוחלף ב-`invoice4u-*` ב-06-09.2026.** אל תשתמש בו ואל תניח שהוא פעיל — **לבדוק תמיד** מול `mcp__Supabase__list_edge_functions`/`get_edge_function` (הפרויקט האמיתי, לא רק קבצים בריפו המקומי — יש פונקציות שנפרסו ישירות ב-Supabase ולא הצטרפו כלל לריפו!) לפני שמניחים מה רץ בפועל בתשלומים.
+- **מסקנה מעשית:** מתאמן קיים בבגין שרוצים שיעבור לשלם דרך קאנטרי (למשל לא חידש בבגין) — זה לא "לינק תשלום חד-פעמי", זה **הצטרפות למנוי החודשי המתמשך של קאנטרי**: חייב `branch_id` = סניף קאנטרי (כדי שה-cron יתפוס אותו), לינק דרך `invoice4u-create-payment-link` (`type:'subscription'`), ואחרי זה זה רץ לבד כל חודש.
+
 ## הקובץ MEMORY.md
 
 לעדכן בכל סוף משימה משמעותית. סעיף "My last pending task" חייב לשקף את המצב האמיתי בסוף הסשן — מה תוקן, מה לא, מה דחוף.

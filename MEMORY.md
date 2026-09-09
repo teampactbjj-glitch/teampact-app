@@ -6509,3 +6509,86 @@ cd /Users/dudibenzaken/teampact-app && rm -f .git/index.lock && git status --sho
 1. ✅ הושלם: RLS בפרודקשן + קוד ב-main (קומיט `2e5ecda`). דודי צריך רק hard-refresh (Cmd+Shift+R) אחרי שה-deploy ב-Vercel יעלה (בד"כ דקה-שתיים), ואם זה PWA שנפתח כבר — גם Unregister ל-Service Worker אם ה-hard-refresh לא מספיק.
 2. **לא נבדק בפועל ב-UI** (לא לוקאלית ולא בפרודקשן אחרי הדיפלוי) — כדאי שדודי ינסה בעצמו פעם אחת: לחפש מתאמן עם מנוי מוקפא/פג/מבוטל במסך "היום" ולוודא שרואים תג אדום במקום "+ הוסף".
 3. שאר הפריטים הפתוחים (לא נגעתי): פריט 2-4 מהערך הקודם היום (17-16 מתאמנים בלי auth.users; מייקל ג'אנלי; "לחימה משולבת ד-ו" הכפול; pro-rata 1.10; נעילת הרשאות members; גרואו/קארדקום; discount_valid_until; CustomDiscountLink; green-invoice-webhook; green-invoice-debug-tokens; כפתור וואטסאפ ב-2 מסכי כניסה).
+
+---
+
+## 09.09.2026 (המשך) — תיקון טעות: בלבול בין green-invoice (מת) ל-invoice4u (חי), ובין קאנטרי (אונליין/חודשי) לבגין (ידני)
+
+**הטעות שנעשתה:** דודי שאל איך מתאמן קיים בבגין (למשל לירן כהן, לא חידש) יכול לשלם דרך קאנטרי בלי להירשם מחדש. בניתי כפתור "לינק תשלום" ב-AthleteManagement.jsx שהשתמש ב-`green-invoice-create-payment-link` + `green-invoice-webhook`, כתשלום **חד-פעמי**. שתי טעויות יסודיות בו-זמנית:
+1. **ספק סליקה שגוי** — Green Invoice הוא קוד ישן/נטוש, זוהה בקוד המקומי (עדיין קיים בריפו) בלי לבדוק אם הוא באמת מה שרץ בפרודקשן. **לא קראתי את ההיסטוריה ב-MEMORY.md מספיק אחורה** לפני שהתחלתי לכתוב קוד — בדיוק ההפך מהכלל הראשון בקובץ הזה (CLAUDE.md: "אבחון = ראיות מהשרת, לא ניחוש מהקוד").
+2. **מודל גבייה שגוי** — הנחתי תשלום חד-פעמי, כשבפועל קאנטרי הוא מנוי **חודשי מתחדש אוטומטית** (עם ביטול בהתראה של חודש), וכל הגבייה של בגין היא **ידנית לגמרי דרך המזכירות**, לא דרך האפליקציה בכלל.
+
+**התיקון שנעשה:**
+1. הקוד השגוי (`AthleteManagement.jsx` + `green-invoice-webhook/index.ts`) **הוחזר במלואו** ל-`git show HEAD:...` — אפס שינויים תלויים באוויר, שום דבר לא נדחף.
+2. אומת ישירות מול Supabase (`mcp__Supabase__list_edge_functions`/`get_edge_function`, לא ניחוש) שהפעיל בפרודקשן הוא `invoice4u-create-payment-link` (v6) + `invoice4u-callback` (v10) + `invoice4u-charge-monthly` (v4, cron חודשי אמיתי) — כל השלושה **אינם קיימים כלל בריפו המקומי** (נפרסו ישירות ל-Supabase, לא הצטרפו לגיט!). `green-invoice-*` עדיין קיים כ-Edge Functions פעילים טכנית אבל לא בשימוש אמיתי (backlog ישן).
+3. **נוסף סעיף קבוע ב-CLAUDE.md** ("מודל גבייה — שונה לגמרי בין הסניפים") עם כל הפרטים הטכניים (אילו שדות, אילו תנאים ל-cron החודשי, אזהרה מפורשת נגד green-invoice) — כדי שזה לא יישכח שוב.
+
+**מה דודי אישר בפועל (09.09.2026):** מתאמנים קיימים מבגין (לירן כהן ועוד שממתינים) שלא חידשו/רוצים לעבור — המטרה היא **הצטרפות למנוי החודשי המתמשך של קאנטרי דרך invoice4u**, לא תשלום חד-פעמי. "אני רוצה שהתשלום שלהם יהיה דרך הקאנטרי."
+
+**My last pending task (09.09.2026, המשך 2):**
+1. עדיין לא נבנה שום קוד לפיצ'ר "לינק תשלום למתאמן קיים" — הפעם צריך לבנות אותו נכון: `invoice4u-create-payment-link` עם `type:'subscription'`, `registration_payment_ref` על הרשומה **הקיימת** (לא INSERT חדש), ו-**`branch_id` (השדה היחיד) חייב להשתנות לסניף קאנטרי** כדי שה-cron החודשי יתפוס את המתאמן אחרי התשלום הראשון (עדיין לא סוכם עם דודי אם `branch_ids` (המערך) צריך להישאר עם בגין גם כדי שימשיך להתאמן שם פיזית, או שהמעבר הוא מלא לקאנטרי).
+2. לא סוכם עדיין: מה קורה לרשומת ה-`members` הקיימת של לירן מבחינת `subscription_type`/מחיר — צריך לבחור מנוי (בדיוק כמו שדודי ביקש: "בוחר את המנוי שאליו הוא צריך לשלם").
+3. שאר הפריטים הפתוחים מהיום (לא נגעתי): 17-16 מתאמנים בלי auth.users (המשך בדיקה); מייקל ג'אנלי; "לחימה משולבת ד-ו" הכפול; pro-rata 1.10; נעילת הרשאות members למאמנים; גרואו/קארדקום (הוחלף בפועל ב-invoice4u — כדאי לבדוק אם עדיין רלוונטי או שאפשר לסגור); discount_valid_until; CustomDiscountLink.jsx מ-06.08 (עדיין משתמש ב-green-invoice — כדאי לעדכן גם אותו ל-invoice4u באיזשהו שלב); green-invoice-webhook (מת, לשקול מחיקה); green-invoice-debug-tokens (מת, לשקול מחיקה); כפתור וואטסאפ ב-2 מסכי כניסה.
+
+## 09.09.2026 (המשך 3) — נבנה בפועל: הצטרפות/תשלום עצמאי לקאנטרי למתאמן קיים
+
+לפי התוכנית שאושרה עם דודי (מתאמן קיים מתחבר לחשבון שלו — לא נרשם מחדש — ומשלם/מצטרף
+לקאנטרי דרך "הגדרות"), נכתב ונבדק (build מקומי נקי) קוד מלא:
+
+**קבצים ששונו/נוצרו בריפו (עדיין לא נדחפו ל-git, ממתינים לבדיקה מקומית של דודי):**
+- `src/components/RegisterPage.jsx` — כשמספר טלפון כבר קיים: במקום חסימה יבשה, הודעה +
+  כפתור "התחברות לחשבון הקיים" (`phoneExists` state).
+- `src/components/athlete/AthleteDashboard.jsx` — מסך חדש `settingsView==='joinCountry'`:
+  בחירת סוג מנוי, `CountryClubWaiver` + `InjuryRiskWaiver` + `TermsAgreement` (אותם רכיבים
+  משפטיים בדיוק כמו ב-RegisterPage.jsx — לא כפילות), `submitJoinCountry()` שקורא ל-RPC
+  `join_country_start` ואז ל-`invoice4u-create-payment-link` עם `target_subscription_type`.
+  כפתור כניסה חדש בתפריט ההגדרות הראשי ("🏆 הצטרפות לקאנטרי"), מוסתר אם המתאמן כבר
+  `invoice4u_token_status==='active'` בקאנטרי.
+- `supabase/migrations/2026-09-09-join-country-self-service.sql` (**טרם הורץ ב-SQL Editor**)
+  — RPC חדש `join_country_start(p_member_id, p_subscription_type)`: מרשה רק
+  `auth.uid()=p_member_id` או `is_guardian_of` (בדיוק כמו `self_cancel_membership` הקיים),
+  **לא נוגע** ב-branch_ids/subscription_type/membership_status בכלל — רק פותח
+  `registration_payment_ref` חדש ומחזיר את סניף הקאנטרי + מחיר מהמחירון.
+- שלוש פונקציות Edge — נכתבו מקומית לראשונה (עד עכשיו לא היו בריפו בכלל, רק ב-Supabase
+  ישירות) **וטרם נפרסו בפועל (`supabase functions deploy`)**:
+  - `supabase/functions/invoice4u-create-payment-link/index.ts` (v6→v7 מתוכנן): נוסף
+    פרמטר אופציונלי `target_subscription_type` (לא משנה כלום למסלול הרשמה רגיל).
+  - `supabase/functions/invoice4u-callback/index.ts` (v10→v11 מתוכנן): **תיקון באג** —
+    מחיר האימות (`expectedTotal`) חושב מעכשיו תמיד מול מחירון **סניף הקאנטרי**
+    (`requires_facility_waiver=true`), לא `row.branch_id` (יכול להיות בגין!). בנוסף:
+    כש-`orderId` מגיע בפורמט `subscription:<ref>:<subType>` (המקרה החדש) *וגם* הסכום
+    ששולם תואם בדיוק למחירון — ורק אז — מוסיף את סניף הקאנטרי ל-`branch_ids` (שומר על
+    סניפים קיימים אחרים), מעדכן `subscription_type`, ומחזיר `membership_status` ל-`active`
+    (+מנקה `cancel_date`). זה בדיוק התיקון שפותר את מקרה לירן/אריה (membership_status
+    לא חזר ל-active אחרי תשלום — היה נשאר expired/cancelled ולא נתפס בחיוב החודשי הבא).
+  - `supabase/functions/invoice4u-charge-monthly/index.ts` (v4→v5 מתוכנן): זכאות + מחיר
+    הפכו מודעים ל-`branch_ids` (מערך) ולא רק `branch_id` יחיד — מתאמן שה"בית" שלו נשאר
+    סניף אחר אבל יש לו קאנטרי ב-branch_ids+טוקן פעיל ימשיך להיות מחויב אוטומטית.
+
+**עקרון אבטחה שנשמר בקפדנות (לפי בקשת דודי המפורשת "לא יהיה פריצות"):** ה-RPC
+`join_country_start` לא כותב שום שדה גישה/מכסה (לא branch_ids, לא subscription_type, לא
+membership_status) — הכל קורה אך ורק ב-`invoice4u-callback`, ורק אחרי תשלום שאושר בפועל
+אצל Invoice4u ותואם בדיוק למחירון. כך אין שום דרך "לקבל גישה" בלי לשלם קודם בפועל.
+
+**סטטוס נוכחי — build מקומי (`npx vite build --outDir dist-verify-joincountry`) עבר נקי,
+0 שגיאות.** קובץ נעילת git תקוע (`.git/index.lock`) שנמצא בדרך נמחק (אחרי אישור מחיקה
+מהמשתמש) — git עובד תקין עכשיו.
+
+### My last pending task (09.09.2026, המשך 3)
+1. **דודי טרם בדק מקומית** (`npm run dev`) את שני מסכי הפרונט החדשים: RegisterPage.jsx
+   (הודעת "התחברות לחשבון הקיים" כשטלפון קיים) ו-AthleteDashboard.jsx (מסך "הצטרפות
+   לקאנטרי" בהגדרות — כולל תשלום אמיתי/1₪ בדיקה מומלצת עד הסוף לפני push).
+2. **ה-SQL של join_country_start טרם הורץ** ב-Supabase SQL Editor (הקובץ מוכן ב-
+   `supabase/migrations/2026-09-09-join-country-self-service.sql`) — בלעדיו ה-RPC לא קיים
+   וכפתור "הצטרפות לקאנטרי" ייכשל.
+3. **שלוש פונקציות ה-Edge (create-payment-link v7, callback v11, charge-monthly v5) טרם
+   נפרסו** — קוד מוכן מקומית תחת `supabase/functions/invoice4u-*/index.ts`, צריך
+   `supabase functions deploy <slug>` לכל אחת (זה לא קורה אוטומטית מ-git push!).
+4. אחרי push+deploy — מומלץ בדיקה חיה עם 1₪ (בדיוק כמו שנעשה ב-06.09.2026 להרשמה
+   הרגילה): מתאמן קיים (או חשבון בדיקה) מתחבר → הגדרות → הצטרפות לקאנטרי → משלם → לבדוק
+   ב-Supabase שה-branch_ids/subscription_type/membership_status/invoice4u_token_status
+   התעדכנו נכון, ושה-webhook לא "נבלע" (Invoice4u שולחים callback פעמיים).
+5. לא טופל בסבב הזה: תמיכה בהורה שמצטרף לקאנטרי *בשם ילד* דרך המסך החדש (ה-RPC תומך
+   טכנית ב-`is_guardian_of`, אבל ה-UI ב-AthleteDashboard.jsx פועל כרגע רק על הפרופיל
+   המחובר עצמו/`profile.id`) — להרחבה עתידית אם דודי ירצה.
+6. יתר הבאקלוג הפתוח — ללא שינוי, ראו רשימה מפורטת בסעיפים קודמים של MEMORY.md.

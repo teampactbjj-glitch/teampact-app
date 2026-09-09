@@ -6500,8 +6500,12 @@ cd /Users/dudibenzaken/teampact-app && rm -f .git/index.lock && git status --sho
 
 **4 הממשקים:** מתאמן — לא רלוונטי (המסך הזה קיים רק אצל מאמן/מזכירה/מנהל). מאמן — תוקן. מזכירה — אותו קומפוננטה בדיוק (`isSecretary` prop, `profiles.role` עדיין `'trainer'` ב-DB) — מכוסה אוטומטית. מנהל — אותו קומפוננטה (`isAdmin`), אין אפשרות עקיפה גם לו לפי בקשת דודי.
 
+**עדכון (09.09.2026, מאוחר יותר) — דודי ביקש מפורשות "תעשה אתה הכל בסופרבייס ואז תדחף אתה":**
+דילוג מודע על שלב הבדיקה הלוקאלית (לבקשת דודי, לפי סעיף ה-Bypass ב-CLAUDE.md), עם ציון מפורש שדולג. בוצע בפועל:
+1. ה-RLS (`trainer_manual_registration_membership_gate.sql`) הורץ בפרודקשן ישירות דרך `mcp__Supabase__apply_migration` (פרויקט `pnicoluujpidguvniwub`). אומת בפועל מול `pg_policy` שה-USING נשאר בדיוק כמו קודם וה-WITH CHECK עודכן נכון, וגם הרצתי `member_can_book(id)` על כל המתאמנים עם membership_status ב-(frozen/expired/cancelled) בפרודקשן בפועל — כולם חוזרים `false` כצפוי (כלומר ה-RLS באמת יחסום INSERT חדש עבורם). `get_advisors(security)` לא הראה שום ממצא חדש שקשור לשינוי הזה (רק ממצאים ישנים לא קשורים — טבלאות backup/products בלי policies, security-definer views וכו', לא נגעתי בהם כי לא היו חלק מהבקשה).
+2. קוד: `git add` + `git commit` + `git push origin main` בוצעו ישירות (קומיט `2e5ecda`), אומת ב-`git log --oneline -3` ו-`git status` שה-push הצליח ואין שינויים תלויים באוויר.
+
 **My last pending task (09.09.2026, המשך):**
-1. דודי צריך להריץ `npm run dev` לוקאלית ולבדוק בפועל: לנסות לרשום (דרך "+ הוסף" בחיפוש מתאמנים במסך "היום") מתאמן שידוע שהמנוי שלו מוקפא/פג/מבוטל, ולוודא שמופיע תג אדום "מנוי ..." במקום כפתור הוספה, ושלחיצה (אם בכל זאת מתאפשרת) חוסמת עם הודעת שגיאה ברורה ולא כותבת שום דבר ל-DB. רק אחרי אישור מפורש ("עובד/דחוף") — למזג ל-`main`.
-2. אחרי הדחיפה: לוודא ב-`git log --oneline -3` שהקומיט הגיע, ולהזכיר לדודי hard-refresh (Cmd+Shift+R) בגלל ה-Service Worker.
-3. ה-SQL ב-`supabase/migrations/trainer_manual_registration_membership_gate.sql` נפרד מהדיפלוי של הקוד — לא הורץ עדיין. דודי צריך להדביק אותו ב-Supabase SQL Editor בעצמו (לפי כלל הברזל של הפרויקט על SQL) כשנוח לו; לא תלוי בדיפלוי ה-Vercel.
-4. שאר הפריטים הפתוחים (לא נגעתי): פריט 2-4 מהערך הקודם היום (17-16 מתאמנים בלי auth.users; מייקל ג'אנלי; "לחימה משולבת ד-ו" הכפול; pro-rata 1.10; נעילת הרשאות members; גרואו/קארדקום; discount_valid_until; CustomDiscountLink; green-invoice-webhook; green-invoice-debug-tokens; כפתור וואטסאפ ב-2 מסכי כניסה).
+1. ✅ הושלם: RLS בפרודקשן + קוד ב-main (קומיט `2e5ecda`). דודי צריך רק hard-refresh (Cmd+Shift+R) אחרי שה-deploy ב-Vercel יעלה (בד"כ דקה-שתיים), ואם זה PWA שנפתח כבר — גם Unregister ל-Service Worker אם ה-hard-refresh לא מספיק.
+2. **לא נבדק בפועל ב-UI** (לא לוקאלית ולא בפרודקשן אחרי הדיפלוי) — כדאי שדודי ינסה בעצמו פעם אחת: לחפש מתאמן עם מנוי מוקפא/פג/מבוטל במסך "היום" ולוודא שרואים תג אדום במקום "+ הוסף".
+3. שאר הפריטים הפתוחים (לא נגעתי): פריט 2-4 מהערך הקודם היום (17-16 מתאמנים בלי auth.users; מייקל ג'אנלי; "לחימה משולבת ד-ו" הכפול; pro-rata 1.10; נעילת הרשאות members; גרואו/קארדקום; discount_valid_until; CustomDiscountLink; green-invoice-webhook; green-invoice-debug-tokens; כפתור וואטסאפ ב-2 מסכי כניסה).

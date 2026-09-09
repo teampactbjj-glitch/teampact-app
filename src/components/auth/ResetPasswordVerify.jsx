@@ -28,11 +28,15 @@ export default function ResetPasswordVerify() {
     const params = new URLSearchParams(window.location.search)
     const token_hash = params.get('token_hash')
     const type = params.get('type')
-    if (!token_hash || type !== 'recovery') {
+    // 09.09.2026: תומך גם ב-type=invite, לא רק recovery - למתאמן שנוסף ידנית ומעולם
+    // לא השלים הרשמה עצמאית (אין לו חשבון auth.users בכלל), admin-generate-recovery-link
+    // v6 מייצר עבורו קישור invite במקום recovery. verifyOtp חייב לקבל את אותו type
+    // בדיוק שאיתו נוצר הטוקן, אחרת האימות נכשל.
+    if (!token_hash || (type !== 'recovery' && type !== 'invite')) {
       setStatus('error')
       return
     }
-    supabase.auth.verifyOtp({ token_hash, type: 'recovery' }).then(({ error }) => {
+    supabase.auth.verifyOtp({ token_hash, type }).then(({ error }) => {
       setStatus(error ? 'error' : 'ok')
     })
   }, [])

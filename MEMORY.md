@@ -6592,3 +6592,36 @@ membership_status) — הכל קורה אך ורק ב-`invoice4u-callback`, ור
    טכנית ב-`is_guardian_of`, אבל ה-UI ב-AthleteDashboard.jsx פועל כרגע רק על הפרופיל
    המחובר עצמו/`profile.id`) — להרחבה עתידית אם דודי ירצה.
 6. יתר הבאקלוג הפתוח — ללא שינוי, ראו רשימה מפורטת בסעיפים קודמים של MEMORY.md.
+
+## 09.09.2026 (המשך 4) — כל השלבים בוצעו בפועל (SQL + 3 פריסות + push)
+
+לפי בקשת דודי המפורשת ("תעשה מה שצריך בסופרבייס אתה וגם תדחף אתה") — כל מה שסומן
+כ"ממתין" בסעיף הקודם בוצע בפועל באותה שיחה:
+
+1. **SQL הורץ** — RPC `join_country_start` קיים עכשיו בפרודקשן (`mcp__Supabase__apply_migration`).
+2. **שלוש פונקציות ה-Edge נפרסו בפועל** (`mcp__Supabase__deploy_edge_function`, עם `verify_jwt`
+   זהה למה שהיה קודם לכל פונקציה — נבדק במפורש לפני הפריסה כדי לא לשבור אימות):
+   - `invoice4u-create-payment-link` → **v7** (verify_jwt=true, כפי שהיה)
+   - `invoice4u-callback` → **v11** (verify_jwt=false, כפי שהיה — זה webhook ציבורי)
+   - `invoice4u-charge-monthly` → **v5** (verify_jwt=false, כפי שהיה — cron עם x-cron-secret)
+3. נבדקו `get_advisors` (security) אחרי ה-deploy — `join_country_start` מופיע ברשימת
+   "SECURITY DEFINER callable by anon/authenticated", **בדיוק כמו** `self_cancel_membership`
+   הקיים (אותו pattern מדויק, לא חדש/חריג) — צפוי ותקין, יש בדיקת `auth.uid()` פנימית.
+4. **`git push origin main` בוצע** — commit `c317b8b`, כולל RegisterPage.jsx,
+   AthleteDashboard.jsx, שלושת קבצי ה-Edge (עכשיו גם בריפו לראשונה — עד עכשיו היו רק
+   ב-Supabase, לא מתועדים מקומית), ומיגרציית ה-SQL. Vercel אמור לפרוס את הפרונט אוטומטית.
+
+### My last pending task (09.09.2026, המשך 4)
+1. **דודי עדיין לא בדק בפועל** (לא ביקש בדיקה מקומית לפני ה-push — ביקש לדחוף ישר). כדאי
+   לוודא אחרי שה-deploy של Vercel מסתיים: (א) הרשמה עם טלפון קיים ב-RegisterPage מציגה את
+   כפתור ההתחברות; (ב) מתאמן קיים מחובר רואה "🏆 הצטרפות לקאנטרי" בהגדרות ומצליח לעבור עד
+   דף התשלום של Invoice4u (מומלץ בדיקת 1₪ אמיתית, בדיוק כמו ב-06.09.2026, לפני שמישהו אמיתי
+   כמו לירן/אריה עושה את זה).
+2. אחרי בדיקת 1₪ — לוודא ב-Supabase (`members` + `club_waivers`) ש-`branch_ids`,
+   `subscription_type`, `membership_status`, `invoice4u_token_status` התעדכנו נכון, ושתי
+   שורות `club_waivers` (facility + injury_risk) נוצרו.
+3. תיקון עתידי (לא דחוף): לסנכרן את הניסוח ב-CLAUDE.md ("מסקנה מעשית" תחת "מודל גבייה")
+   שעדיין אומר "חייב branch_id=קאנטרי" — הפתרון הסופי בפועל הוא branch_ids-aware, לא דרש
+   שינוי branch_id הראשי. לא משפיע על התפקוד, רק דיוק תיעוד.
+4. תמיכה בהורה שמצטרף בשם ילד דרך המסך החדש — לא מומש (ה-RPC תומך, ה-UI לא) — להרחבה עתידית.
+5. יתר הבאקלוג — ללא שינוי.

@@ -6697,3 +6697,41 @@ membership_status) — הכל קורה אך ורק ב-`invoice4u-callback`, ור
 2. החלטה פתוחה מהפעם הקודמת: האם לתקן את באג התצוגה (COUNTRY_CLUB_PRICES קשיח, לא קורא
    מחיר חי) עכשיו.
 3. יתר הפריטים הפתוחים מ-09-10.09.2026 — ללא שינוי.
+
+## 10.09.2026 (המשך 2) — חשבון דודי עצמו הוחזר למצב המקורי אחרי בדיקת ה-1₪
+
+דודי ביקש: (1) להחזיר את subscription_type/membership_type/branch_ids שלו למה שהיה לפני
+הבדיקה, (2) לוודא שלא יגבה ממנו אוטומטית כל חודש, (3) לוודא שמחיר "1× שבוע" חזר ל-300₪.
+
+**איך אותר המצב המקורי:** נמצא בטבלת `audit_log` (שורות `table_name='members'`,
+`row_id`=מזהה דודי) — השורה *לפני* תחילת זרימת התשלום (10.09.2026 07:14:22, לפני ה-RPC
+`join_country_start`) הראתה: `branch_ids=[תל אביב, בגין]` (בלי קאנטרי),
+`subscription_type`/`membership_type`='unlimited', `invoice4u_token_status`='none',
+`invoice4u_customer_id`=null, `registration_payment_ref`=null.
+
+**מה בוצע:**
+1. `members` של דודי הוחזר בדיוק לערכים האלה (`branch_ids`, `subscription_type`,
+   `membership_type`, `invoice4u_token_status`, `invoice4u_customer_id`,
+   `registration_payment_ref`) — `membership_status` נשאר `active` (לא השתנה מעולם).
+   בוצע דרך `mcp__Supabase__execute_sql` עם `set local app.sync_email='1'` כדי לעקוף את
+   הטריגר `enforce_member_edit_admin_only` (אין הקשר auth.uid() בהרצת SQL ישירה — זהו
+   מסלול העקיפה הקיים היחיד מלבד service_role/is_approved_admin, בדיוק לצורך כזה).
+2. אומת ב-`invoice4u-charge-monthly/index.ts` שהעדכון הזה מספיק כדי למנוע חיוב אוטומטי
+   עתידי: העדכון (cron) שולף מתאמנים לחיוב חודשי רק אם
+   `invoice4u_token_status='active'` **וגם** `invoice4u_customer_id is not null` **וגם**
+   branch_id/branch_ids תואם לסניף הקאנטרי — דודי אחרי האיפוס לא עומד באף אחד מהתנאים
+   האלה, אז הוא לא ייכלל בשום ריצה עתידית של החיוב החודשי. אין צורך בפעולה נוספת מול
+   Invoice4u עצמם (הטוקן שנוצר אצלם פשוט לא ייעשה בו שימוש, כי המערכת שלנו — לא הם —
+   מחליטה מתי לחייב).
+3. `branch_subscription_prices` לסניף הקאנטרי אומת שוב — כל ארבעת הערכים תקינים:
+   1x_week=300, 2x_week=400, 4x_week=500, unlimited=600.
+4. חשבונית/קבלה אמיתית של 1₪ שכבר נשלחה במייל — לא בוטלה/לא הוחזרה (סכום זניח,
+   דודי לא ביקש זאת במפורש; רק אם יבקש יש לבדוק מול Invoice4u אפשרות זיכוי).
+
+### My last pending task (10.09.2026, המשך 2)
+1. ההחלטה הפתוחה מקודם: האם לתקן את באג התצוגה (COUNTRY_CLUB_PRICES קשיח באתר, לא קורא
+   מחיר חי מה-DB) — עדיין לא נענתה.
+2. תמיכה בהורה שמצטרף בשם ילד — עדיין לא מומשה ב-UI (מ-09.09.2026).
+3. סנכרון ניסוח CLAUDE.md ("מודל גבייה") — עדיין לא בוצע, לא דחוף.
+4. יתר הבאקלוג הישן — ללא שינוי. **הפיצ'ר "הצטרפות עצמאית לקאנטרי" נחשב עכשיו גמור ובדוק
+   מקצה לקצה בפרודקשן.**

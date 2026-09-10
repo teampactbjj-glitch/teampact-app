@@ -6625,3 +6625,48 @@ membership_status) — הכל קורה אך ורק ב-`invoice4u-callback`, ור
    שינוי branch_id הראשי. לא משפיע על התפקוד, רק דיוק תיעוד.
 4. תמיכה בהורה שמצטרף בשם ילד דרך המסך החדש — לא מומש (ה-RPC תומך, ה-UI לא) — להרחבה עתידית.
 5. יתר הבאקלוג — ללא שינוי.
+
+## 10.09.2026 — בדיקת 1₪ בפועל חשפה 2 באגים ב"הצטרפות לקאנטרי": אחד תוקן, אחד ממתין להחלטה
+
+דודי התחיל לבדוק בפועל את זרימת "🏆 הצטרפות לקאנטרי" (עדכן מחיר `1x_week` ל-1₪ ב-
+`branch_subscription_prices` כדי לבדוק תשלום אמיתי זעיר, בדיוק כמו שנעשה ב-06.09.2026
+ל-invoice4u-create-payment-link).
+
+**באג 1 — תוקן בפועל:** המסך המשיך להראות את המחירים הישנים (300/400/500/600) גם אחרי
+העדכון בסופרבייס. הסיבה: `COUNTRY_CLUB_PRICES` ב-`AthleteDashboard.jsx` הוא קבוע JS קשיח
+בתוך ה-bundle שכבר נפרס — לא נקרא בזמן אמת מה-DB. **זה רק תצוגה (cosmetic)** — הסכום
+שבאמת נשלח לתשלום (`amount` ב-`submitJoinCountry`) כן משתמש ב-`serverPrice` שמוחזר בזמן
+אמת מ-RPC `join_country_start`, כך שהחיוב בפועל היה תקין (מבוסס על ה-DB), רק המספר על
+המסך היה שגוי/מיושן. **טרם תוקן בקוד** — עדיין פתוח, לא הוחלט אם/מתי לתקן (ראה משימה
+ממתינה #1 למטה).
+
+**באג 2 — תוקן ונפרס בפועל:** כשדודי ניסה בפועל ללחוץ "המשך לתשלום", קיבל שגיאה:
+`column reference "price" is ambiguous`. הסיבה: RPC `join_country_start` (מ-09.09.2026)
+מוגדר עם `returns table(..., price integer)` — זה יוצר משתנה נסתר בשם `price` בתוך גוף
+הפונקציה, שמתנגש עם `branch_subscription_prices.price` בשורה
+`select price into v_price from branch_subscription_prices where ...`. Postgres לא יכול
+להכריע לאיזה מהשניים הכוונה → כשל **לכל משתמש**, לא רק לבדיקה. **תוקן** ע"י alias לטבלה
+(`bsp`) ואיזכור מפורש `bsp.price` — הורץ ישירות בפרודקשן
+(`mcp__Supabase__apply_migration`, migration `fix_join_country_start_ambiguous_price`),
+וגם נשמר כקובץ מקומי חדש: `supabase/migrations/2026-09-10-fix-join-country-start-ambiguous-price.sql`.
+
+### My last pending task (10.09.2026)
+1. **החלטה פתוחה:** לתקן את באג התצוגה (COUNTRY_CLUB_PRICES קשיח) כך שיקרא מחיר חי
+   מ-`branch_subscription_prices` (למשל fetch בטעינת מסך "הצטרפות לקאנטרי", עם הקבוע
+   הקיים כ-fallback בלבד אם השאילתה נכשלת) — כדי שגם בעתיד, אם המחירים ישתנו בסופרבייס,
+   המסך לא ימשיך להראות מחירים ישנים למתאמנים אמיתיים עד לפריסת פרונט חדשה. דודי טרם
+   ענה אם לתקן עכשיו או אחרי שהבדיקה הנוכחית תושלם בהצלחה.
+2. **דודי באמצע בדיקת ה-1₪** — צריך לנסות שוב את "המשך לתשלום" עכשיו שבאג ה-RPC תוקן,
+   ולוודא שמגיע בפועל לדף התשלום של Invoice4u עם סכום נמוך (מבוסס 1₪ פרוררטה).
+3. **אחרי תשלום 1₪ מוצלח:** לוודא ב-Supabase (`members`) ש-`branch_ids`,
+   `subscription_type`, `membership_status`, `invoice4u_token_status` התעדכנו נכון,
+   ושתי שורות `club_waivers` (facility + injury_risk) נוצרו.
+4. **חשוב — לזכור להחזיר את מחיר `1x_week` בסופרבייס בחזרה ל-300** (או כל ערך ששונה)
+   מיד אחרי סיום הבדיקה:
+   ```sql
+   update branch_subscription_prices set price = 300
+     where branch_id = '1b913842-78d7-4e82-bfdf-cf725ac919f3' and subscription_type = '1x_week';
+   ```
+5. **git**: קובץ המיגרציה של תיקון הבאג (2026-09-10-fix-join-country-start-ambiguous-price.sql)
+   עדיין לא הועלה ל-git — נכתב מקומית בריפו אבל לא בוצע commit+push. צריך להשלים.
+6. יתר הפריטים מ-09.09.2026 (המשך 4) — ללא שינוי, עדיין פתוחים.

@@ -374,6 +374,11 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
         toast.warning('המתאמן סומן כמוסר, אך המחיקה הסופית (שחרור המייל) נכשלה. פנה לתמיכה אם צריך למחוק סופית.')
       } else {
         toast.success('המתאמן נמחק לצמיתות')
+        // 14.09.2026 — מתאמן שנמחק סופית לא יכול יותר לאשר/להשלים בקשות שינוי מנוי תלויות —
+        // דוחים אותן כדי שלא יישארו "יתומות" (נספרות בבאדג' אבל בלתי-נראות במסך).
+        supabase.from('profile_change_requests').update({ status: 'rejected' })
+          .eq('athlete_id', id).eq('status', 'pending')
+          .then(({ error: pcrErr }) => { if (pcrErr) console.warn('cleanup profile_change_requests (non-fatal):', pcrErr.message) })
       }
     } else {
       const ok = await confirm({ title: 'בקשת מחיקה', message: 'לשלוח בקשת מחיקה למנהל?', confirmText: 'שלח בקשה' })
@@ -437,6 +442,10 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
       toast.error('המחיקה נחסמה — אין הרשאת מחיקה (RLS). הרץ את מיגרציית הרשאות המחיקה ב-Supabase.')
       return
     }
+    // 14.09.2026 — ראה הערה זהה ב-deleteAthlete: מנקים בקשות שינוי מנוי תלויות כדי שלא יישארו יתומות.
+    supabase.from('profile_change_requests').update({ status: 'rejected' })
+      .eq('athlete_id', id).eq('status', 'pending')
+      .then(({ error: pcrErr }) => { if (pcrErr) console.warn('cleanup profile_change_requests (non-fatal):', pcrErr.message) })
     toast.success('המתאמן נמחק')
     fetchAthletes()
   }
@@ -780,6 +789,13 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
           const { data: deleted, error } = await supabase.from('members').delete().in('id', part).select('id')
           if (error) { console.error('bulk delete error:', error); toast.error('שגיאה במחיקה: ' + error.message); break }
           totalDeleted += deleted?.length || 0
+          // 14.09.2026 — מנקים בקשות שינוי מנוי תלויות של מי שנמחק בפועל בצ'אנק הזה (ראה deleteAthlete).
+          const purgedIds = (deleted || []).map(d => d.id)
+          if (purgedIds.length > 0) {
+            supabase.from('profile_change_requests').update({ status: 'rejected' })
+              .in('athlete_id', purgedIds).eq('status', 'pending')
+              .then(({ error: pcrErr }) => { if (pcrErr) console.warn('cleanup profile_change_requests (non-fatal):', pcrErr.message) })
+          }
         }
         if (totalDeleted === 0) {
           toast.error('אף מתאמן לא נמחק — אין הרשאת מחיקה (RLS). הרץ את מיגרציית הרשאות המחיקה ב-Supabase.')
@@ -905,6 +921,10 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     if (!ok) return
     const { error } = await supabase.from('members').delete().eq('id', id)
     if (error) { toast.error('מחיקה נכשלה: ' + (error.message || 'שגיאה לא ידועה')); return }
+    // 14.09.2026 — ראה הערה זהה ב-deleteAthlete: מנקים בקשות שינוי מנוי תלויות כדי שלא יישארו יתומות.
+    supabase.from('profile_change_requests').update({ status: 'rejected' })
+      .eq('athlete_id', id).eq('status', 'pending')
+      .then(({ error: pcrErr }) => { if (pcrErr) console.warn('cleanup profile_change_requests (non-fatal):', pcrErr.message) })
     toast.success('נמחק לצמיתות')
     fetchAthletes()
   }

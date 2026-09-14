@@ -6,7 +6,7 @@ import { cancelFutureBookings } from '../../lib/freezeCancel'
 
 const SUB_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
 
-export default function ProfileChangeRequests({ onChange, branchFilter = null }) {
+export default function ProfileChangeRequests({ onChange, branchFilter = null, trainerIds = [] }) {
   const toast = useToast()
   const [requests, setRequests] = useState([])
   const [branchesMap, setBranchesMap] = useState({})
@@ -53,10 +53,16 @@ export default function ProfileChangeRequests({ onChange, branchFilter = null })
           return bids.includes(branchFilter)
         })
       : allRequests
-    // בקשות שינוי שם ממאמנים מנוהלות בטאב מאמנים (CoachesManager) — מסנן אותן החוצה
-    // זיהוי: אם athlete_id לא קיים ב-members → זה מאמן ולא מתאמן
+    // בקשות שינוי שם ממאמנים מנוהלות בטאב מאמנים (CoachesManager) — מסנן אותן החוצה.
+    // זיהוי: athlete_id נמצא ברשימת מזהי המאמנים הנוכחית (trainerIds, שמגיעה מההורה).
+    // ⚠️ 14.09.2026 — לפני התיקון הזיהוי היה "אם athlete_id לא קיים ב-members → זה מאמן",
+    // מה שבטעות הסתיר גם בקשות "יתומות" (מתאמן שנמחק לפני שהבקשה טופלה) — הן נספרו
+    // בבאדג' הכללי (allRequests) אבל לא הופיעו כאן בכלל, ולכן הבאדג' נשאר "תקוע" על מספר
+    // שאי-אפשר לאפס דרך המסך. עכשיו בקשות יתומות כאלה כן מוצגות (עם "— ללא שם —") כדי
+    // שאפשר יהיה לדחות אותן ולנקות את הבאדג'.
+    const trainerIdSet = new Set(trainerIds)
     const withoutTrainerNameChanges = filtered.filter(r =>
-      !(r.change_type === 'name' && !mMap[r.athlete_id])
+      !(r.change_type === 'name' && trainerIdSet.has(r.athlete_id))
     )
     setRequests(withoutTrainerNameChanges)
     setLoading(false)

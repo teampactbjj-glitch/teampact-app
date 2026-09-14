@@ -92,6 +92,8 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
   const [leadsCount, setLeadsCount]     = useState(0)
   const [ordersCount, setOrdersCount]   = useState(0)
   const [requestsCount, setRequestsCount] = useState(0)
+  const [requestsTrainerIds, setRequestsTrainerIds] = useState([]) // מזהי מאמנים נוכחיים — לסינון בקשות שינוי-שם-מאמן בתוך ProfileChangeRequests
+  const [requestsOpen, setRequestsOpen] = useState(true) // קיפול/פתיחה של תיבת בקשות שינוי מנוי
   const [announcementsCount, setAnnouncementsCount] = useState(0)
   const [latestAnnouncementAt, setLatestAnnouncementAt] = useState('')
   const [scheduleCount, setScheduleCount] = useState(0) // שיעורים ממתינים לאישור + בקשות מחיקה (אדמין בלבד)
@@ -433,10 +435,12 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
         trainerNameCount = tnc || 0
       }
       setRequestsCount(Math.max(0, (allRequests || 0) - trainerNameCount))
+      setRequestsTrainerIds(trainerIds)
       setPendingCoachesCount((coachReqRes.error ? 0 : (coachReqRes.count || 0)) + trainerNameCount)
     } else if (isSecretary) {
       // מזכירה — שומרת הרשאת אישור מתאמנים בסניף שלה, אז הבאדג'ים נשארים.
       setRequestsCount(allRequests || 0)
+      setRequestsTrainerIds([])
       setScheduleCount(0)
       setAthleteDeletionCount(0)
       setPendingCoachesCount(0)
@@ -444,6 +448,7 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
       // מאמן רגיל — אין הרשאת אישור/מחיקת מתאמנים → לא מציגים שום התראת מתאמנים.
       setLeadsCount(0)
       setRequestsCount(0)
+      setRequestsTrainerIds([])
       setScheduleCount(0)
       setAthleteDeletionCount(0)
       setPendingCoachesCount(0)
@@ -543,9 +548,20 @@ export default function TrainerDashboard({ profile, isAdmin, isSecretary = false
                   <>
                     {isAdmin && !isSecretary && <CustomDiscountLink isAdmin={isAdmin} />}
                     {requestsCount > 0 && (
-                      <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
-                        <h3 className="font-bold text-purple-900 text-sm mb-3">⚙️ בקשות שינוי מנוי ({requestsCount})</h3>
-                        <ProfileChangeRequests onChange={refreshCounts} branchFilter={isSecretary ? secretaryBranchId : null} />
+                      <div className="bg-purple-50 border border-purple-200 rounded-xl overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setRequestsOpen(o => !o)}
+                          className="w-full flex items-center justify-between px-3 py-3 text-right"
+                        >
+                          <span className="font-bold text-purple-900 text-sm">⚙️ בקשות שינוי מנוי ({requestsCount})</span>
+                          <span className="text-purple-700 text-lg">{requestsOpen ? '▲' : '▼'}</span>
+                        </button>
+                        {requestsOpen && (
+                          <div className="px-3 pb-3">
+                            <ProfileChangeRequests onChange={refreshCounts} branchFilter={isSecretary ? secretaryBranchId : null} trainerIds={requestsTrainerIds} />
+                          </div>
+                        )}
                       </div>
                     )}
                   </>

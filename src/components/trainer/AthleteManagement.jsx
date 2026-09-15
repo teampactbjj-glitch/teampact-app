@@ -10,6 +10,8 @@ import { ADULT_BELTS, KIDS_BELTS, getBeltMeta, getMaxStripes } from '../../lib/b
 import { cancelFutureBookings } from '../../lib/freezeCancel'
 
 const MEMBERSHIP_LABELS = { '1x_week': '1× שבוע', '2x_week': '2× שבוע', '4x_week': '4× שבוע', unlimited: 'ללא הגבלה' }
+// חולון-בגין — היחיד שמשתמש כרגע ב-membership_status='expired' (סגירת עונה שנתית)
+const BEGIN_BRANCH_ID = '11111111-1111-1111-1111-111111111111'
 const SESSION_LIMITS = { '1x_week': 1, '2x_week': 2, '4x_week': 4, unlimited: Infinity }
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 
@@ -116,6 +118,7 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
   const [bulkMarking, setBulkMarking] = useState(false)
   const [freezeModal, setFreezeModal] = useState(null)
   const [renewModal, setRenewModal] = useState(null)
+  const [sendingReminders, setSendingReminders] = useState(false)
   // ✅ 18.08.2026 — נשמר בזמן startEdit כדי שנוכל להשוות ב-saveAthlete אם המייל השתנה
   // בפועל (ולסנכרן את חשבון ההתחברות רק אז — ראו syncMemberEmailToAuth למטה).
   const [editingOriginalEmail, setEditingOriginalEmail] = useState('')
@@ -672,16 +675,63 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
     const endYear = today.getMonth() >= 8 ? today.getFullYear() + 1 : today.getFullYear()
     const membership_start = today.toISOString().slice(0, 10)
     const membership_end = `${endYear}-08-31`
-    const { error } = await supabase.from('members').update({
+    // 15.09.2026 — תוקן: לפני התיקון הזה הפונקציה לא בדקה כמה שורות עודכנו בפועל.
+    // אם RLS/הרשאות חוסמים בשקט (0 שורות, בלי error מ-Postgres) — הקוד הישן היה
+    // מציג "המנוי חודש בהצלחה" למרות שכלום לא נשמר בפועל. זו בדיוק התבנית שכבר
+    // תוקנה ב-approvePending() באותו קובץ; עכשיו submitRenew() משתמש באותה בדיקה.
+    const { data, error } = await supabase.from('members').update({
       membership_status: 'active',
       subscription_type: r.subscription_type,
       membership_start,
       membership_end,
-    }).eq('id', r.id)
+    }).eq('id', r.id).select('id')
     if (error) { toast.error('שגיאה: ' + error.message); setRenewModal(m => ({ ...m, saving: false })); return }
-    toast.success('המנוי חודש בהצלחה')
+    if (!data || data.length === 0) {
+      console.error('submitRenew: 0 rows affected (RLS?)', r.id)
+      toast.error('החידוש לא בוצע בפועל (0 שורות עודכנו — כנראה בעיית הרשאות). פנה למנהל, אל תסתמך על ניסיון חוזר.')
+      setRenewModal(m => ({ ...m, saving: false }))
+      return
+    }
+    toast.success(`המנוי חודש בהצלחה — ${MEMBERSHIP_LABELS[r.subscription_type] || r.subscription_type}`)
     setRenewModal(null)
     fetchAthletes()
+  }
+
+  // 15.09.2026, תוקן לפי דרישה מדויקת של דודי — "הודעה באפליקציה", לא מייל.
+  // שולח Push התראה (הודעה בתוך ה-PWA, כמו שכבר נשלח למנהלים בבקשות מחיקה/הצטרפות
+  // דרך notifyPush/send-push הקיימים) לכל מי שסומן 'expired' בחולון-בגין — לא מייל.
+  // חוזר על עצמו כל שנה: הכפתור תמיד מחשב מחדש את הרשימה הנוכחית של "לא חידשו".
+  // מגבלה אמיתית לספר לדודי: Push מגיע רק למי שהתקין את ה-PWA ואישר התראות בעבר —
+  // מי שמעולם לא אישר לא יקבל שום דבר, ואין לנו דרך לדעת מראש כמה זה.
+  async function sendRenewalReminders() {
+    const targets = athletes.filter(a => {
+      const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+      return bids.includes(BEGIN_BRANCH_ID) && a.membership_status === 'expired'
+    })
+    if (targets.length === 0) { toast.error('אין כרגע מתאמנים שסומנו כלא-חידשו בבגין'); return }
+    const ok = await confirm({
+      title: 'שליחת תזכורת חידוש (התראה באפליקציה)',
+      message: `לשלוח התראת פוש בתוך האפליקציה ל-${targets.length} מתאמנים שעדיין לא חידשו בחולון-בגין? זה מגיע רק למי שהתקין את האפליקציה ואישר התראות — לא כולם בהכרח יראו את זה.`,
+      confirmText: `שלח ל-${targets.length}`,
+      danger: true,
+    })
+    if (!ok) return
+    setSendingReminders(true)
+    try {
+      const result = await notifyPush({
+        userIds: targets.map(a => a.id),
+        title: '⏰ המנוי שלך בבגין הסתיים',
+        body: 'תוקף המנוי לאימוני הלחימה בבגין הסתיים ב-31/8. לחידוש יש להירשם מחדש בלינק שנפתח בהקשה על ההתראה.',
+        url: 'https://forms.reh.co.il/begin/',
+        tag: 'begin-renewal-reminder',
+      })
+      if (result?.error) { toast.error('שגיאה בשליחה: ' + result.error); return }
+      toast.success(`נשלח ל-${result?.sent ?? 0} מתוך ${targets.length} (${result?.pruned ? `${result.pruned} לא אישרו התראות מעולם, ` : ''}${result?.failed ?? 0} נכשלו)`)
+    } catch (e) {
+      toast.error('שגיאה בשליחה: ' + (e?.message || e))
+    } finally {
+      setSendingReminders(false)
+    }
   }
 
   // סגירת עונה — סימון גורף של הנבחרים כ-'expired' (לא חידשו). חוסם הרשמה
@@ -1564,6 +1614,24 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
               )}
             </div>
 
+            {/* 15.09.2026 — תזכורת חידוש גורפת לחולון-בגין. מנהל בלבד (פעולת תקשורת המונית). */}
+            {isAdmin && (() => {
+              const remindCount = athletes.filter(a => {
+                const bids = a.branch_ids?.length ? a.branch_ids : (a.branch_id ? [a.branch_id] : [])
+                return bids.includes(BEGIN_BRANCH_ID) && a.membership_status === 'expired'
+              }).length
+              if (remindCount === 0) return null
+              return (
+                <div className="flex justify-end">
+                  <button type="button" onClick={sendRenewalReminders} disabled={sendingReminders}
+                    title="שולח התראת פוש בתוך האפליקציה לכל מי שסומן כלא-חידש בחולון-בגין (רק למי שאישר התראות בעבר)"
+                    className="text-xs bg-orange-500 text-white px-3 py-1.5 rounded-lg hover:bg-orange-600 disabled:opacity-60">
+                    {sendingReminders ? 'שולח...' : `🔔 שלח תזכורת חידוש — בגין (${remindCount})`}
+                  </button>
+                </div>
+              )
+            })()}
+
             {/* סרגל בחירה מרובה — מנהל ומזכירה */}
             {isAdmin && !loading && finalList.length > 0 && (() => {
               const visibleIds = finalList.map(a => a.id)
@@ -1903,6 +1971,12 @@ export default function AthleteManagement({ trainerId, isAdmin, isSecretary = fa
                   <option key={val} value={val}>{label}</option>
                 ))}
               </select>
+            </div>
+            {/* 15.09.2026 — אישור ברור בחלונית עצמה: לא מסתמכים על ה-toast בלבד
+                (שנעלם אחרי כמה שניות) — כאן רואים בבירור, לפני ולאחרי השמירה,
+                בדיוק לכמה פעמים בשבוע המנוי מחודש. */}
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-800 font-medium text-center">
+              המנוי יחודש ל-{MEMBERSHIP_LABELS[renewModal.subscription_type] || renewModal.subscription_type}
             </div>
             <div className="flex gap-2 pt-2">
               <button onClick={() => setRenewModal(null)} disabled={renewModal.saving}

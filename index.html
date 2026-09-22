@@ -1,6 +1,26 @@
 <!doctype html>
 <html lang="he" dir="rtl">
   <head>
+    <script>
+      // רענון אוטומטי חד-פעמי אם קובץ (script/link) נכשל בטעינה — בד"כ HTML ישן
+      // בזיכרון/מטמון (אפליקציה מותקנת שנשארה פתוחה/ברקע) שמצביע על asset עם hash
+      // שכבר לא קיים אחרי דיפלוי חדש. שגיאות טעינת משאבים לא "מבעבעות" רגיל,
+      // לכן חובה capture=true ברמת ה-window. בלי זה — מסך לבן שקט לגמרי, כי זה
+      // קורה לפני שריאקט (וה-ErrorBoundary) בכלל עולים. sessionStorage מונע לולאה.
+      // *חייב* לשבת ראשון ב-<head> — Vite מזיז את תג ה-module script/stylesheet
+      // הראשי ל-<head> בבנייה, ואם הליסנר הזה נרשם אחריהם (למשל בסוף ה-body)
+      // הוא עלול לפספס כשל טעינה שכבר קרה עד אז.
+      (function () {
+        var KEY = 'tp-stale-asset-reload'
+        window.addEventListener('error', function (e) {
+          var t = e.target
+          if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK') && !sessionStorage.getItem(KEY)) {
+            sessionStorage.setItem(KEY, '1')
+            window.location.reload()
+          }
+        }, true)
+      })()
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>TeamPact</title>

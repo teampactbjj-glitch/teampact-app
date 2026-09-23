@@ -8,6 +8,7 @@ import { isStandalone } from '../../lib/platform'
 import { notifyPush } from '../../lib/notifyPush'
 import { nonSecretaryTrainerUserIds } from '../../lib/notifyTargets'
 import ProductDetail from './ProductDetail'
+import { activeSalePrice, saleEndLabel } from '../../lib/sale'
 import MyProgressSection from './MyProgressSection'
 import { useToast, useConfirm } from '../a11y'
 import logoUrl from '../../assets/logo.png'
@@ -1188,7 +1189,8 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
     // כמות
     if (quantity && quantity > 1) payload.quantity = quantity
     // מחיר
-    const unitPrice = selectedOption?.price != null ? selectedOption.price : (item.price ?? null)
+    // מבצע פעיל חל על מחיר הבסיס בלבד (לא על אפשרויות רכישה שיש להן מחיר משלהן)
+    const unitPrice = selectedOption?.price != null ? selectedOption.price : (activeSalePrice(item) ?? item.price ?? null)
     if (unitPrice != null) {
       payload.unit_price = unitPrice
       payload.total_price = unitPrice * (quantity || 1)
@@ -1487,8 +1489,18 @@ function ShopTab({ profile, member, allAnnouncements, onCartCountChange }) {
                       <div className="flex-1">
                         <p className="font-semibold text-gray-800">{item.title}</p>
                         {item.content && <p className="text-xs text-gray-500 mt-1">{item.content}</p>}
+                        {activeSalePrice(item) != null && (
+                          <span className="inline-block mt-1.5 text-[11px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                            🏷️ מבצע{item.sale_end_date ? ` עד ${saleEndLabel(item)}` : ''}{item.sale_label ? ` · ${item.sale_label}` : ''}
+                          </span>
+                        )}
                       </div>
-                      {item.price != null && <span className="text-lg font-bold text-emerald-600 flex-shrink-0">₪{item.price}</span>}
+                      {item.price != null && (activeSalePrice(item) != null ? (
+                        <div className="flex flex-col items-end flex-shrink-0">
+                          <span className="text-xs text-gray-400 line-through">₪{item.price}</span>
+                          <span className="text-lg font-bold text-red-600">₪{activeSalePrice(item)}</span>
+                        </div>
+                      ) : <span className="text-lg font-bold text-emerald-600 flex-shrink-0">₪{item.price}</span>)}
                     </div>
                   </div>
                 </div>
@@ -3004,7 +3016,7 @@ export default function AthleteDashboard({ profile }) {
     if (!force && Date.now() - annFetchAtRef.current < ANN_COOLDOWN_MS) return
     const statusFilter = 'status.eq.approved,status.is.null'
     const [itemsRes, generalRes] = await Promise.all([
-      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, early_price, early_price_deadline, event_date, event_start_time, event_end_time, event_location, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items, links, allow_app_registration').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, type, title, content, description_long, features, image_url, color_images, status, created_at, price, sale_price, sale_end_date, sale_label, early_price, early_price_deadline, event_date, event_start_time, event_end_time, event_location, branch_ids, purchase_options, available_sizes, available_colors, available_lengths, bundle_items, links, allow_app_registration').in('type', ['product', 'seminar', 'bundle']).or(statusFilter).order('created_at', { ascending: false }),
       supabase.from('announcements').select('id, type, title, content, image_url, status, created_at, price, branch_ids, links').in('type', ['general', 'announcement', 'promotion']).or(statusFilter).order('created_at', { ascending: false }).limit(50),
     ])
     annFetchAtRef.current = Date.now()

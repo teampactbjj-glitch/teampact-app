@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
+import { activeSalePrice, saleEndLabel } from '../../lib/sale'
 import { supabase } from '../../lib/supabase'
 import { useToast, useConfirm } from '../a11y'
 import { uploadToCloudinary } from '../../lib/cloudinary'
@@ -86,6 +87,9 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
     available_colors: [],   // ['שחור','לבן']
     available_lengths: [],  // ['ארוך','קצר']
     purchase_options: [],   // אפשרויות רכישה: [{name, price, note, is_featured}]
+    sale_price: '',         // מחיר מבצע (ריק = אין מבצע)
+    sale_end_date: '',      // תאריך סיום מבצע YYYY-MM-DD (כולל)
+    sale_label: '',         // תווית מבצע, למשל 'עד גמר המלאי'
   })
   const [variants, setVariants] = useState([])  // [{size, color, stock, price_override, sku, active}]
   const [uploading, setUploading] = useState(false)
@@ -146,6 +150,9 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       available_colors: product.available_colors || [],
       available_lengths: product.available_lengths || [],
       purchase_options: Array.isArray(product.purchase_options) ? product.purchase_options : [],
+      sale_price: product.sale_price != null ? String(product.sale_price) : '',
+      sale_end_date: product.sale_end_date || '',
+      sale_label: product.sale_label || '',
     })
     // טוען וריאנטים קיימים
     const { data: vars } = await supabase
@@ -193,6 +200,9 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
           available_colors: Array.isArray(draft.form.available_colors) ? draft.form.available_colors : [],
           available_lengths: Array.isArray(draft.form.available_lengths) ? draft.form.available_lengths : [],
           purchase_options: Array.isArray(draft.form.purchase_options) ? draft.form.purchase_options : [],
+          sale_price: draft.form.sale_price || '',
+          sale_end_date: draft.form.sale_end_date || '',
+          sale_label: draft.form.sale_label || '',
         })
         setVariants(Array.isArray(draft.variants) ? draft.variants : [])
         setShowForm(true)
@@ -205,6 +215,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       features: [], has_variants: false, available_sizes: [], available_colors: [],
       available_lengths: [],
       purchase_options: [],
+      sale_price: '', sale_end_date: '', sale_label: '',
     })
     setVariants([])
     setShowForm(true)
@@ -620,6 +631,9 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       type: 'product',
       status: 'approved',           // חשוב: ברירת מחדל ב-DB היא 'pending' וזה מסתיר מתצוגת המתאמן
       price: form.price ? parseFloat(form.price) : null,
+      sale_price: form.sale_price !== '' && form.sale_price != null ? parseFloat(form.sale_price) : null,
+      sale_end_date: form.sale_price !== '' && form.sale_price != null ? (form.sale_end_date || null) : null,
+      sale_label: form.sale_price !== '' && form.sale_price != null ? (form.sale_label || null) : null,
       image_url: form.image_url || null,
       color_images: form.color_images || {},
       trainer_id: trainerId || null,
@@ -709,6 +723,7 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
       features: [], has_variants: false, available_sizes: [], available_colors: [],
       available_lengths: [],
       purchase_options: [],
+      sale_price: '', sale_end_date: '', sale_label: '',
     })
     setVariants([])
     setEditingId(null)
@@ -899,9 +914,12 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
           (v.color || null) === (editForm.selected_color || null) &&
           (v.length || null) === (editForm.selected_length || null)
         )
+        // אותו מוצר → שומרים את המחיר שננעל בהזמנה (כדי שעריכה אחרי סוף מבצע לא תקפיץ את המחיר)
+        const sameProduct = order.product_id === editForm.product_id && order.unit_price != null
+        const productPrice = activeSalePrice(selectedProduct) ?? (selectedProduct.price != null ? parseFloat(selectedProduct.price) : unitPrice)
         unitPrice = matchVariant?.price_override != null
           ? parseFloat(matchVariant.price_override)
-          : (selectedProduct.price != null ? parseFloat(selectedProduct.price) : unitPrice)
+          : (sameProduct ? parseFloat(order.unit_price) : productPrice)
       }
       payload = {
         product_id: editForm.product_id || null,
@@ -1763,6 +1781,37 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                   value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
               </div>
 
+              {/* מבצע */}
+              <div className="space-y-2 bg-red-50 border border-red-100 rounded-xl p-3">
+                <h4 className="text-xs font-bold text-red-700">🏷️ מבצע (אופציונלי)</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[11px] text-gray-600">מחיר מבצע ₪
+                    <input type="number" step="0.01" min="0" className="w-full border rounded-lg px-3 py-2 text-sm bg-white" placeholder="למשל 300"
+                      value={form.sale_price} onChange={e => setForm(p => ({ ...p, sale_price: e.target.value }))} />
+                  </label>
+                  <label className="text-[11px] text-gray-600">בתוקף עד (כולל)
+                    <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                      value={form.sale_end_date} onChange={e => setForm(p => ({ ...p, sale_end_date: e.target.value }))} />
+                  </label>
+                </div>
+                <input className="w-full border rounded-lg px-3 py-2 text-sm bg-white" placeholder="תווית (למשל: עד גמר המלאי)"
+                  value={form.sale_label} onChange={e => setForm(p => ({ ...p, sale_label: e.target.value }))} />
+                {form.sale_price !== '' && form.price !== '' && parseFloat(form.sale_price) >= parseFloat(form.price) && (
+                  <p className="text-[11px] text-red-600">⚠️ מחיר המבצע חייב להיות נמוך מהמחיר הרגיל, אחרת לא יוצג מבצע</p>
+                )}
+                {form.sale_price !== '' && form.price !== '' && parseFloat(form.sale_price) < parseFloat(form.price) && (
+                  <p className="text-[11px] text-red-700 font-semibold">
+                    המתאמנים יראו: <span className="line-through text-gray-400">₪{form.price}</span> ₪{form.sale_price}
+                    {form.sale_end_date ? ` · עד ${new Date(form.sale_end_date + 'T00:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}` : ' · ללא תאריך סיום'}
+                    {form.sale_label ? ` · ${form.sale_label}` : ''}
+                  </p>
+                )}
+                {form.sale_price !== '' && (
+                  <button type="button" className="text-[11px] text-gray-500 underline"
+                    onClick={() => setForm(p => ({ ...p, sale_price: '', sale_end_date: '', sale_label: '' }))}>הסר מבצע</button>
+                )}
+              </div>
+
               {/* תיאור מלא */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-gray-600 border-b pb-1">תיאור מלא (יוצג בדף המוצר)</h4>
@@ -2422,7 +2471,13 @@ export default function ShopManager({ onOrdersChange, isAdmin = false, trainerId
                     {item.image_url && <img src={item.image_url} alt={item.title} className="w-14 h-14 rounded-lg object-cover flex-shrink-0" />}
                     <div className="min-w-0">
                       <p className="font-semibold text-gray-800 truncate">{item.title}</p>
-                      {item.price != null && <p className="text-sm text-emerald-600 font-bold">₪{item.price}</p>}
+                      {item.price != null && (activeSalePrice(item) != null ? (
+                        <p className="text-sm font-bold">
+                          <span className="line-through text-gray-400 font-normal ml-1">₪{item.price}</span>
+                          <span className="text-red-600">₪{activeSalePrice(item)}</span>
+                          <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded mr-1">מבצע{item.sale_end_date ? ` עד ${saleEndLabel(item)}` : ''}</span>
+                        </p>
+                      ) : <p className="text-sm text-emerald-600 font-bold">₪{item.price}</p>)}
                     </div>
                   </div>
                   {isAdmin && (

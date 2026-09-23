@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { ADULT_BELTS, KIDS_BELTS } from '../../lib/belts'
+import { activeSalePrice, saleEndLabel } from '../../lib/sale'
 
 // נרמול שם לצורך השוואה: רווחים, מקפים, גרשיים, זכר/נקבה
 // למשל: "אפור שחור" == "אפור-שחור" == "אפור - שחור"
@@ -322,7 +323,8 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
   const giSizeDone  = !!componentSelections[0]?.size
   const canShowBeltAddon = hasOptions && addOnOpt && (giColorDone && giSizeDone)
 
-  const displayPrice = selectedOption?.price ?? product.price
+  const salePrice = activeSalePrice(product)
+  const displayPrice = selectedOption?.price ?? salePrice ?? product.price
   const displayTotal = displayPrice != null ? displayPrice * quantity : null
 
   // חישוב מלאי לוריאנט הנבחר (לבדיקת כמות מקסימלית)
@@ -521,9 +523,19 @@ export default function ProductDetail({ product, variants = [], compVariantsMap 
           <p className="text-sm text-gray-500 mt-1 leading-relaxed">{product.content}</p>
         )}
         <div className="mt-2">
-          <span className="text-3xl font-bold text-emerald-600">
-            ₪{selectedOption?.price ?? product.price ?? (hasOptions ? Math.min(...options.filter(o=>o.price!=null).map(o=>o.price)) : '')}
-          </span>
+          {selectedOption?.price == null && salePrice != null ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-3xl font-bold text-red-600">₪{salePrice}</span>
+              <span className="text-lg text-gray-400 line-through">₪{product.price}</span>
+              <span className="text-xs font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                🏷️ מבצע{product.sale_end_date ? ` עד ${saleEndLabel(product)}` : ''}{product.sale_label ? ` · ${product.sale_label}` : ''}
+              </span>
+            </div>
+          ) : (
+            <span className="text-3xl font-bold text-emerald-600">
+              ₪{selectedOption?.price ?? product.price ?? (hasOptions ? Math.min(...options.filter(o=>o.price!=null).map(o=>o.price)) : '')}
+            </span>
+          )}
         </div>
       </div>
 
